@@ -10,6 +10,10 @@ on:
         description: "R2 object key of the uploaded file"
         required: true
 
+concurrency:
+  group: db-ingest
+  cancel-in-progress: false
+
 jobs:
   ingest:
     runs-on: ubuntu-latest
