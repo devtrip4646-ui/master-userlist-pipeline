@@ -288,17 +288,36 @@ def inreview_backlog_bucket(hours):
     return ">6h"
 
 
-def withdrawal_processing_by_channel(withdrawal_full_records):
-    """Channel x processing-time-bucket matrix for completed (status=2) withdrawals,
-    duration measured from create_time to review_time (falling back to update_time)."""
+def withdrawal_review_by_channel(withdrawal_full_records):
+    """Channel x processing-time-bucket matrix for orders currently in Payment
+    Processing (status=1), duration measured strictly from create_time to
+    review_time (no update_time fallback -- these orders haven't completed yet)."""
+    matrix = defaultdict(lambda: defaultdict(int))
+    for r in withdrawal_full_records:
+        if r["status"] != 1:
+            continue
+        if not r["create_dt"] or not r["review_dt"]:
+            continue
+        hours = max((r["review_dt"] - r["create_dt"]).total_seconds() / 3600.0, 0)
+        bucket = processing_time_bucket(hours)
+        matrix[r["channel"]][bucket] += 1
+    return [
+        {"channel": ch, "bucket": b, "count": matrix[ch][b]}
+        for ch in sorted(matrix.keys())
+        for b in PROCESSING_TIME_BUCKETS
+    ]
+
+
+def withdrawal_completion_by_channel(withdrawal_full_records):
+    """Channel x processing-time-bucket matrix for Completed (status=2) withdrawals,
+    duration measured from review_time to update_time (the payout step, after review)."""
     matrix = defaultdict(lambda: defaultdict(int))
     for r in withdrawal_full_records:
         if r["status"] != 2:
             continue
-        end_dt = r["review_dt"] or r["update_dt"]
-        if not r["create_dt"] or not end_dt:
+        if not r["review_dt"] or not r["update_dt"]:
             continue
-        hours = max((end_dt - r["create_dt"]).total_seconds() / 3600.0, 0)
+        hours = max((r["update_dt"] - r["review_dt"]).total_seconds() / 3600.0, 0)
         bucket = processing_time_bucket(hours)
         matrix[r["channel"]][bucket] += 1
     return [
@@ -469,7 +488,8 @@ def main():
             "summary": summarize(
                 by_date_records.get(date, []), by_date_withdrawals.get(date, []), by_date_bet_users.get(date, set())
             ),
-            "withdrawal_processing_by_channel": withdrawal_processing_by_channel(by_date_withdrawal_full.get(date, [])),
+            "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full.get(date, [])),
+            "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_orders": withdrawal_orders_export(by_date_withdrawal_full.get(date, []), vip_by_user),
         }
         for date in all_dates
@@ -497,7 +517,8 @@ def main():
         "all_time": {
             **aggregate(all_records),
             "summary": summarize(all_records, all_withdrawals, all_bet_users),
-            "withdrawal_processing_by_channel": withdrawal_processing_by_channel(all_withdrawal_full),
+            "withdrawal_review_by_channel": withdrawal_review_by_channel(all_withdrawal_full),
+            "withdrawal_completion_by_channel": withdrawal_completion_by_channel(all_withdrawal_full),
         },
         "withdrawal_analysis": withdrawal_analysis,
     }
