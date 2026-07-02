@@ -12,7 +12,7 @@ import json
 import os
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
 
@@ -433,6 +433,95 @@ def action_center_reports(mconn, now):
     }
 
 
+def build_deposit_day_stats(deposit_rows):
+    """user_id -> {date: {"count": n, "amount": total}} for COMPLETE deposits.
+
+    NOTE: deposits are only retained for a rolling 33-day window, so a user's
+    true first-ever deposit could already be purged if it happened earlier --
+    in that case a later deposit here would be mis-identified as their "first
+    deposit" (FD). Fine for the last-4-day FD lookback these reports use, but
+    worth knowing if this function is ever reused for a longer window."""
+    stats = defaultdict(lambda: defaultdict(lambda: {"count": 0, "amount": 0.0}))
+    for pay_channel, order_amount, create_time, update_time, status, user_id in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        entry = stats[user_id][dt.date()]
+        entry["count"] += 1
+        entry["amount"] += order_amount or 0.0
+    return stats
+
+
+def yesterday_new_users(deposit_day_stats, all_withdrawal_full, vip_by_user, city_by_user, today):
+    """Users whose first-ever COMPLETE deposit (within the retention window)
+    landed on `today - 1 day`."""
+    yesterday = today - timedelta(days=1)
+    withdraw_by_user = defaultdict(float)
+    for r in all_withdrawal_full:
+        if r["status"] in ACTIVE_WITHDRAW_STATUSES and r["user_id"] is not None:
+            withdraw_by_user[r["user_id"]] += r["amount"] or 0.0
+
+    rows = []
+    for user_id, day_map in deposit_day_stats.items():
+        if min(day_map.keys()) != yesterday:
+            continue
+        entry = day_map[yesterday]
+        total_deposit = round(entry["amount"], 2)
+        total_withdraw = round(withdraw_by_user.get(user_id, 0.0), 2)
+        rows.append({
+            "user_id": user_id,
+            "vip_level": vip_by_user.get(user_id),
+            "deposit_count": entry["count"],
+            "total_deposit": total_deposit,
+            "total_withdraw": total_withdraw,
+            "profit_loss": round(total_deposit - total_withdraw, 2),
+            "region": city_by_user.get(user_id),
+        })
+    rows.sort(key=lambda r: -r["total_deposit"])
+    return rows
+
+
+DEPOSIT_CHALLENGE_RULES = {
+    1: ("Rule 1 (+Rs10) - FD+1 Auto Bonus", 10),
+    2: ("Rule 2 (+Rs20) - Deposited on FD+1", 20),
+    3: ("Rule 3 (+Rs30) - Deposited on FD+2", 30),
+    4: ("Rule 4 (+Rs60) - Deposited on FD+1 & FD+2", 60),
+}
+
+
+def deposit_challenge_bonus(deposit_day_stats, today):
+    """Users whose FD falls in the last 4 days, and which of the 4 challenge
+    rules they've earned so far (only rules whose award day has already
+    passed are evaluated -- a rule isn't shown as "not earned" while its
+    window is still open, it's just not shown yet)."""
+    window_start = today - timedelta(days=3)
+    rows = []
+    for user_id, day_map in deposit_day_stats.items():
+        fd = min(day_map.keys())
+        if not (window_start <= fd <= today):
+            continue
+        deposited_fd1 = (fd + timedelta(days=1)) in day_map
+        deposited_fd2 = (fd + timedelta(days=2)) in day_map
+
+        def add(rule_no):
+            label, amount = DEPOSIT_CHALLENGE_RULES[rule_no]
+            rows.append({"user_id": user_id, "rule": label, "bonus_amount": amount, "fd_date": fd.isoformat()})
+
+        if today >= fd + timedelta(days=1):
+            add(1)
+        if today >= fd + timedelta(days=2) and deposited_fd1:
+            add(2)
+        if today >= fd + timedelta(days=3) and deposited_fd2:
+            add(3)
+        if today >= fd + timedelta(days=3) and deposited_fd1 and deposited_fd2:
+            add(4)
+
+    rows.sort(key=lambda r: (r["fd_date"], r["user_id"]))
+    return rows
+
+
 STATUS_LABELS = {0: "In-Review", 1: "Processing", 2: "Complete", 3: "Rejected", 4: "Failed"}
 
 
@@ -505,13 +594,16 @@ def main():
 
     total_registered_users = None
     vip_by_user = {}
+    city_by_user = {}
     action_center = None
+    now = datetime.now()
     master_db_path = os.path.join(BASE, "master_userlist.db")
     if os.path.exists(master_db_path):
         mconn = sqlite3.connect(master_db_path)
         total_registered_users = mconn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
-        action_center = action_center_reports(mconn, datetime.now())
+        city_by_user = dict(mconn.execute("SELECT user_id, city FROM users").fetchall())
+        action_center = action_center_reports(mconn, now)
         mconn.close()
 
     by_date_records = defaultdict(list)
@@ -590,7 +682,6 @@ def main():
         for date in all_dates
     }
 
-    now = datetime.now()
     withdrawal_analysis = {
         "processing_time_buckets": PROCESSING_TIME_BUCKETS,
         "processing_backlog_buckets": PROCESSING_BACKLOG_BUCKETS,
@@ -599,6 +690,12 @@ def main():
         "inreview_backlog": withdrawal_backlog(all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
         "backlog_as_of": now.isoformat(),
         "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
+    }
+
+    deposit_day_stats = build_deposit_day_stats(deposit_rows)
+    action_center_extra = {
+        "yesterday_new_users": yesterday_new_users(deposit_day_stats, all_withdrawal_full, vip_by_user, city_by_user, now.date()),
+        "deposit_challenge_bonus": deposit_challenge_bonus(deposit_day_stats, now.date()),
     }
 
     report = {
@@ -617,6 +714,7 @@ def main():
         },
         "withdrawal_analysis": withdrawal_analysis,
         "action_center": action_center,
+        "action_center_extra": action_center_extra,
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
