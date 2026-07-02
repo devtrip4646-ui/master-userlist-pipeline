@@ -55,21 +55,30 @@ def fetch_token(s3, bucket):
     return token
 
 
-def fetch_export(token, path, payload):
-    resp = requests.post(
-        f"{API_BASE}/{path}",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        data=payload,
-        timeout=180,
-    )
-    resp.raise_for_status()
-    ctype = resp.headers.get("content-type", "")
-    if "spreadsheet" not in ctype and "ms-excel" not in ctype:
-        raise RuntimeError(f"Unexpected response from {path} (content-type={ctype}): {resp.text[:300]}")
-    return resp.content
+def fetch_export(token, path, payload, attempts=3):
+    last_err = None
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.post(
+                f"{API_BASE}/{path}",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                data=payload,
+                timeout=180,
+            )
+            resp.raise_for_status()
+            ctype = resp.headers.get("content-type", "")
+            if "spreadsheet" not in ctype and "ms-excel" not in ctype:
+                raise RuntimeError(f"Unexpected response from {path} (content-type={ctype}): {resp.text[:300]}")
+            return resp.content
+        except Exception as e:
+            last_err = e
+            print(f"  fetch attempt {attempt}/{attempts} for {path} failed: {e}")
+            if attempt < attempts:
+                time.sleep(10 * attempt)
+    raise last_err
 
 
 def save_xlsx(content, name):
