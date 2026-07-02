@@ -22,9 +22,12 @@ API Token" form on the upload page, without touching GitHub settings.
 import datetime
 import json
 import os
+import sqlite3
+import subprocess
 import sys
 import time
 
+import openpyxl
 import requests
 
 import ci_ingest
@@ -116,6 +119,108 @@ def put_wallet_state(s3, bucket, state):
                    ContentType="application/json")
 
 
+def extract_deposit_user_info(deposit_path):
+    """user_id -> {phone, channel, register_time, city, create_time} from a
+    water/export xlsx (column order: ... userPhone[14], channel[15], ...,
+    userRegisterTime[17], ..., RegisterCity[23], ..., createTime[32], ...)."""
+    wb = openpyxl.load_workbook(deposit_path, read_only=True)
+    ws = wb.active
+    info = {}
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        user_id = row[3]
+        if user_id is None:
+            continue
+        info[int(user_id)] = {
+            "phone": row[14],
+            "channel": row[15],
+            "register_time": row[17],
+            "city": row[23],
+            "create_time": row[32],
+        }
+    wb.close()
+    return info
+
+
+def extract_withdrawal_user_info(withdraw_path):
+    """user_id -> {member_level, create_time} from a withdraw/export xlsx
+    (column order: ... UserId[6], ..., memberLevel[22], ..., createTime[33]).
+    Keeps the most recent (by create_time) row per user if there are several."""
+    wb = openpyxl.load_workbook(withdraw_path, read_only=True)
+    ws = wb.active
+    info = {}
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        user_id = row[6]
+        if user_id is None:
+            continue
+        user_id = int(user_id)
+        member_level, create_time = row[22], row[33]
+        existing = info.get(user_id)
+        if existing is None or (create_time and (not existing["create_time"] or str(create_time) > str(existing["create_time"]))):
+            info[user_id] = {"member_level": member_level, "create_time": create_time}
+    wb.close()
+    return info
+
+
+def sync_master_userlist(master_db_path, deposit_info, withdrawal_info):
+    """Keep master_userlist.db roughly current between full userlist re-uploads:
+    insert a minimal row for any user_id seen in this pull's deposits/withdrawals
+    that isn't in the users table yet, and for existing users refresh vip_level
+    (from the withdrawal export's memberLevel -- the freshest VIP signal we have
+    without a dedicated userlist re-export) and last_active_time. Other fields
+    (balance, total_recharge, etc.) are left untouched for existing users since
+    per-transaction exports don't reliably reflect current cumulative totals --
+    those still need a real userlist re-upload to refresh.
+
+    Returns True if anything changed (caller should re-upload master_userlist.db)."""
+    conn = sqlite3.connect(master_db_path)
+    cur = conn.cursor()
+    existing_ids = {r[0] for r in cur.execute("SELECT user_id FROM users").fetchall()}
+
+    all_user_ids = set(deposit_info) | set(withdrawal_info)
+    new_users = updated_vip = updated_active = 0
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    for user_id in all_user_ids:
+        dep = deposit_info.get(user_id, {})
+        wd = withdrawal_info.get(user_id, {})
+        activity_times = [str(t) for t in (dep.get("create_time"), wd.get("create_time")) if t]
+        latest_activity = max(activity_times) if activity_times else None
+
+        vip_level = None
+        if wd.get("member_level") is not None:
+            try:
+                vip_level = int(wd["member_level"])
+            except (TypeError, ValueError):
+                vip_level = None
+
+        if user_id not in existing_ids:
+            cur.execute(
+                "INSERT INTO users (user_id, phone, city, channel, create_time, last_active_time, vip_level) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, dep.get("phone"), dep.get("city"), dep.get("channel"),
+                 str(dep.get("register_time") or dep.get("create_time") or now_str),
+                 latest_activity or now_str, vip_level if vip_level is not None else 0),
+            )
+            existing_ids.add(user_id)
+            new_users += 1
+        else:
+            if vip_level is not None:
+                cur.execute("UPDATE users SET vip_level = ? WHERE user_id = ?", (vip_level, user_id))
+                updated_vip += 1
+            if latest_activity:
+                cur.execute(
+                    "UPDATE users SET last_active_time = ? WHERE user_id = ? "
+                    "AND (last_active_time IS NULL OR last_active_time < ?)",
+                    (latest_activity, user_id, latest_activity),
+                )
+                updated_active += 1
+
+    conn.commit()
+    conn.close()
+    print(f"Master userlist sync: {new_users} new users inserted, {updated_vip} vip_level refreshed, {updated_active} last_active_time bumped")
+    return new_users > 0 or updated_vip > 0 or updated_active > 0
+
+
 def main():
     bucket = os.environ["R2_BUCKET"]
     s3 = ci_ingest.r2_client()
@@ -191,6 +296,21 @@ def main():
         iu.main()
     finally:
         sys.argv = argv_backup
+
+    # Keep master_userlist.db roughly current between full userlist re-uploads:
+    # insert brand-new user_ids seen in this pull, refresh vip_level/last_active_time
+    # for existing ones. Re-upload master_userlist.db (224MB) only if something
+    # actually changed -- this DOES cost a full re-upload most runs, since a 5-day
+    # deposits/withdrawals window almost always touches at least one user.
+    master_db_path = os.path.join(ci_ingest.BASE, "master_userlist.db")
+    dep_info = extract_deposit_user_info(deposit_path)
+    wd_info = extract_withdrawal_user_info(withdraw_path)
+    if sync_master_userlist(master_db_path, dep_info, wd_info):
+        subprocess.run(
+            [sys.executable, os.path.join(ci_ingest.BASE, "upload_to_r2.py"), "--files", "master_userlist.db"],
+            check=True,
+        )
+        print("Uploaded refreshed master_userlist.db to R2")
 
     # Only mark the wallet target date as covered after a successful ingest
     put_wallet_state(s3, bucket, {"last_run_date": today.isoformat(), "last_wallet_target": wallet_target.isoformat()})
