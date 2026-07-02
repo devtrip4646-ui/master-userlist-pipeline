@@ -69,7 +69,7 @@ def aggregate(records):
 
     # --- completed-only breakdowns (money/volume of successful deposits) ---
     by_channel = {}
-    by_range = {label: {"count": 0, "total_amount": 0.0} for label in RANGE_LABELS}
+    by_range = {label: {"count": 0, "total_amount": 0.0, "users": set()} for label in RANGE_LABELS}
     by_channel_and_range = {}
     hourly = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {"count": 0, "total_amount": 0.0})))
     total_count, total_amount = 0, 0.0
@@ -86,6 +86,8 @@ def aggregate(records):
 
         by_range[rlabel]["count"] += 1
         by_range[rlabel]["total_amount"] += amount
+        if r["user_id"] is not None:
+            by_range[rlabel]["users"].add(r["user_id"])
 
         cr = by_channel_and_range.setdefault((channel, rlabel), {"count": 0, "total_amount": 0.0})
         cr["count"] += 1
@@ -153,7 +155,12 @@ def aggregate(records):
             for ch, v in sorted(by_channel.items(), key=lambda x: -x[1]["total_amount"])
         ],
         "by_amount_range": [
-            {"range": label, "count": by_range[label]["count"], "total_amount": round(by_range[label]["total_amount"], 2)}
+            {
+                "range": label,
+                "count": by_range[label]["count"],
+                "users": len(by_range[label]["users"]),
+                "total_amount": round(by_range[label]["total_amount"], 2),
+            }
             for label in RANGE_LABELS
         ],
         "by_channel_and_range": [
@@ -238,6 +245,82 @@ def summarize(deposit_records, withdrawal_records, bet_user_ids):
     }
 
 
+PROCESSING_TIME_BUCKETS = ["<1h", "1-3h", "3-6h", "6-12h", ">12h"]
+
+
+def processing_time_bucket(hours):
+    if hours < 1:
+        return "<1h"
+    if hours < 3:
+        return "1-3h"
+    if hours < 6:
+        return "3-6h"
+    if hours < 12:
+        return "6-12h"
+    return ">12h"
+
+
+PROCESSING_BACKLOG_BUCKETS = ["3-6h", "6-12h", "12-24h", ">24h"]
+
+
+def processing_backlog_bucket(hours):
+    if hours < 3:
+        return None
+    if hours < 6:
+        return "3-6h"
+    if hours < 12:
+        return "6-12h"
+    if hours < 24:
+        return "12-24h"
+    return ">24h"
+
+
+INREVIEW_BACKLOG_BUCKETS = ["1-3h", "3-6h", ">6h"]
+
+
+def inreview_backlog_bucket(hours):
+    if hours < 1:
+        return None
+    if hours < 3:
+        return "1-3h"
+    if hours < 6:
+        return "3-6h"
+    return ">6h"
+
+
+def withdrawal_processing_by_channel(withdrawal_full_records):
+    """Channel x processing-time-bucket matrix for completed (status=2) withdrawals,
+    duration measured from create_time to review_time (falling back to update_time)."""
+    matrix = defaultdict(lambda: defaultdict(int))
+    for r in withdrawal_full_records:
+        if r["status"] != 2:
+            continue
+        end_dt = r["review_dt"] or r["update_dt"]
+        if not r["create_dt"] or not end_dt:
+            continue
+        hours = max((end_dt - r["create_dt"]).total_seconds() / 3600.0, 0)
+        bucket = processing_time_bucket(hours)
+        matrix[r["channel"]][bucket] += 1
+    return [
+        {"channel": ch, "bucket": b, "count": matrix[ch][b]}
+        for ch in sorted(matrix.keys())
+        for b in PROCESSING_TIME_BUCKETS
+    ]
+
+
+def withdrawal_backlog(withdrawal_full_records, now, status, bucket_fn, bucket_labels):
+    """Snapshot (as of `now`) of orders currently sitting in `status`, aged from create_time."""
+    counts = {label: 0 for label in bucket_labels}
+    for r in withdrawal_full_records:
+        if r["status"] != status or not r["create_dt"]:
+            continue
+        hours = max((now - r["create_dt"]).total_seconds() / 3600.0, 0)
+        bucket = bucket_fn(hours)
+        if bucket:
+            counts[bucket] += 1
+    return [{"bucket": label, "count": counts[label]} for label in bucket_labels]
+
+
 def main():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -246,7 +329,7 @@ def main():
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id FROM deposits"
     ).fetchall()
     withdrawal_rows = cur.execute(
-        "SELECT withdraw_amount, create_time, status, user_id FROM withdrawals"
+        "SELECT withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time FROM withdrawals"
     ).fetchall()
     wallet_rows = cur.execute(
         "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
@@ -302,7 +385,10 @@ def main():
         if date_str:
             by_date_records[date_str].append(record)
 
-    for withdraw_amount, create_time, status, user_id in withdrawal_rows:
+    by_date_withdrawal_full = defaultdict(list)
+    all_withdrawal_full = []
+
+    for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time in withdrawal_rows:
         amount = withdraw_amount or 0.0
         create_dt = parse_dt(create_time)
         date_str = create_dt.strftime("%Y-%m-%d") if create_dt else None
@@ -313,6 +399,17 @@ def main():
         if date_str:
             by_date_withdrawals[date_str].append(record)
 
+        full_record = {
+            "channel": payment_channel or "Unknown",
+            "status": status,
+            "create_dt": create_dt,
+            "review_dt": parse_dt(review_time),
+            "update_dt": parse_dt(update_time),
+        }
+        all_withdrawal_full.append(full_record)
+        if date_str:
+            by_date_withdrawal_full[date_str].append(full_record)
+
     all_dates = sorted(set(by_date_records.keys()) | set(by_date_withdrawals.keys()))
     by_date = {
         date: {
@@ -320,8 +417,19 @@ def main():
             "summary": summarize(
                 by_date_records.get(date, []), by_date_withdrawals.get(date, []), by_date_bet_users.get(date, set())
             ),
+            "withdrawal_processing_by_channel": withdrawal_processing_by_channel(by_date_withdrawal_full.get(date, [])),
         }
         for date in all_dates
+    }
+
+    now = datetime.now()
+    withdrawal_analysis = {
+        "processing_time_buckets": PROCESSING_TIME_BUCKETS,
+        "processing_backlog_buckets": PROCESSING_BACKLOG_BUCKETS,
+        "inreview_backlog_buckets": INREVIEW_BACKLOG_BUCKETS,
+        "processing_backlog": withdrawal_backlog(all_withdrawal_full, now, 1, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS),
+        "inreview_backlog": withdrawal_backlog(all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
+        "backlog_as_of": now.isoformat(),
     }
 
     report = {
@@ -332,7 +440,12 @@ def main():
         "amount_ranges": RANGE_LABELS[:-1],
         "dates": all_dates,
         "by_date": by_date,
-        "all_time": {**aggregate(all_records), "summary": summarize(all_records, all_withdrawals, all_bet_users)},
+        "all_time": {
+            **aggregate(all_records),
+            "summary": summarize(all_records, all_withdrawals, all_bet_users),
+            "withdrawal_processing_by_channel": withdrawal_processing_by_channel(all_withdrawal_full),
+        },
+        "withdrawal_analysis": withdrawal_analysis,
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
