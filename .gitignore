@@ -1,0 +1,5 @@
+.r2_credentials
+.github_credentials
+*.db
+__pycache__/
+incoming/
