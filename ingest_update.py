@@ -84,6 +84,9 @@ def ingest_userlist(files):
 
 
 def ingest_deposits(files):
+    # INSERT OR REPLACE (not IGNORE): a re-fetched deposit with the same id but a
+    # changed status (e.g. pending -> COMPLETE some hours/days later) must overwrite
+    # the existing row, not be silently skipped.
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
     n_cols = len(cur.execute("PRAGMA table_info(deposits)").fetchall())
@@ -93,15 +96,18 @@ def ingest_deposits(files):
             print(f"  skip (already ingested): {f}")
             continue
         _, rows = load_sheet(f)
-        cur.executemany(f"INSERT OR IGNORE INTO deposits VALUES ({','.join(['?']*n_cols)})", [clean(r) for r in rows])
+        cur.executemany(f"INSERT OR REPLACE INTO deposits VALUES ({','.join(['?']*n_cols)})", [clean(r) for r in rows])
         added += cur.rowcount
         mark_ingested(conn, f)
         conn.commit()
-    print(f"Deposits: {added} rows added")
+    print(f"Deposits: {added} rows processed (new + updated)")
     conn.close()
 
 
 def ingest_withdrawals(files):
+    # INSERT OR REPLACE (not IGNORE): a re-fetched withdrawal with the same id but a
+    # changed status (In-Review/Processing -> Complete/Rejected/Failed, possibly days
+    # later) must overwrite the existing row, not be silently skipped.
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
     n_cols = len(cur.execute("PRAGMA table_info(withdrawals)").fetchall())
@@ -111,11 +117,11 @@ def ingest_withdrawals(files):
             print(f"  skip (already ingested): {f}")
             continue
         _, rows = load_sheet(f)
-        cur.executemany(f"INSERT OR IGNORE INTO withdrawals VALUES ({','.join(['?']*n_cols)})", [clean(r) for r in rows])
+        cur.executemany(f"INSERT OR REPLACE INTO withdrawals VALUES ({','.join(['?']*n_cols)})", [clean(r) for r in rows])
         added += cur.rowcount
         mark_ingested(conn, f)
         conn.commit()
-    print(f"Withdrawals: {added} rows added")
+    print(f"Withdrawals: {added} rows processed (new + updated)")
     conn.close()
 
 
