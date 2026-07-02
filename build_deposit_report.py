@@ -207,20 +207,33 @@ def aggregate(records):
     }
 
 
-def summarize(deposit_records, withdrawal_records):
+# Withdrawal status codes: 0 In-Review, 1 Processing, 2 Complete, 3 Rejected, 4 Failed
+ACTIVE_WITHDRAW_STATUSES = (0, 1, 2)
+
+
+def summarize(deposit_records, withdrawal_records, bet_user_ids):
     completed_deposits = [r for r in deposit_records if r["status"] == "COMPLETE"]
-    completed_withdrawals = [r for r in withdrawal_records if r["status"] == 2]
+    active_withdrawals = [r for r in withdrawal_records if r["status"] in ACTIVE_WITHDRAW_STATUSES]
 
     total_deposit = round(sum(r["amount"] for r in completed_deposits), 2)
-    total_withdraw = round(sum(r["amount"] for r in completed_withdrawals), 2)
-    total_users = len({r["user_id"] for r in completed_deposits if r["user_id"] is not None})
-    total_orders = len(completed_deposits)
+    total_withdraw = round(sum(r["amount"] for r in active_withdrawals), 2)
+    deposit_users = {r["user_id"] for r in completed_deposits if r["user_id"] is not None}
+    withdraw_users = {r["user_id"] for r in active_withdrawals if r["user_id"] is not None}
+    active_users = deposit_users | withdraw_users | bet_user_ids
 
     return {
         "total_deposit": total_deposit,
         "total_withdraw": total_withdraw,
-        "total_users": total_users,
-        "total_orders": total_orders,
+        "deposit_orders": len(completed_deposits),
+        "withdraw_orders": len(active_withdrawals),
+        "deposit_users": len(deposit_users),
+        "withdraw_users": len(withdraw_users),
+        "active_users": len(active_users),
+        "difference": round(total_deposit - total_withdraw, 2),
+        "withdraw_deposit_pct": round(total_withdraw / total_deposit * 100, 1) if total_deposit else None,
+        # kept for backward compatibility with the KPI cards
+        "total_users": len(deposit_users),
+        "total_orders": len(completed_deposits),
         "profit": round(total_deposit - total_withdraw, 2),
     }
 
@@ -235,7 +248,25 @@ def main():
     withdrawal_rows = cur.execute(
         "SELECT withdraw_amount, create_time, status, user_id FROM withdrawals"
     ).fetchall()
+    wallet_rows = cur.execute(
+        "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
+    ).fetchall()
     conn.close()
+
+    by_date_bet_users = defaultdict(set)
+    all_bet_users = set()
+    for user_id, create_time in wallet_rows:
+        all_bet_users.add(user_id)
+        create_dt = parse_dt(create_time)
+        if create_dt:
+            by_date_bet_users[create_dt.strftime("%Y-%m-%d")].add(user_id)
+
+    total_registered_users = None
+    master_db_path = os.path.join(BASE, "master_userlist.db")
+    if os.path.exists(master_db_path):
+        mconn = sqlite3.connect(master_db_path)
+        total_registered_users = mconn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        mconn.close()
 
     by_date_records = defaultdict(list)
     all_records = []
@@ -286,7 +317,9 @@ def main():
     by_date = {
         date: {
             **aggregate(by_date_records.get(date, [])),
-            "summary": summarize(by_date_records.get(date, []), by_date_withdrawals.get(date, [])),
+            "summary": summarize(
+                by_date_records.get(date, []), by_date_withdrawals.get(date, []), by_date_bet_users.get(date, set())
+            ),
         }
         for date in all_dates
     }
@@ -294,11 +327,12 @@ def main():
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "latest_record_time": latest_record_time.isoformat() if latest_record_time else None,
+        "total_registered_users": total_registered_users,
         "status_filter": "COMPLETE (success-rate sections include all statuses)",
         "amount_ranges": RANGE_LABELS[:-1],
         "dates": all_dates,
         "by_date": by_date,
-        "all_time": {**aggregate(all_records), "summary": summarize(all_records, all_withdrawals)},
+        "all_time": {**aggregate(all_records), "summary": summarize(all_records, all_withdrawals, all_bet_users)},
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
