@@ -341,6 +341,97 @@ def withdrawal_backlog(withdrawal_full_records, now, status, bucket_fn, bucket_l
     return [{"bucket": label, "count": counts[label]} for label in bucket_labels]
 
 
+# Cumulative deposit ("experience") required to reach each VIP level, per the
+# platform's VIP table. Level N's threshold is the deposit total needed to move
+# from level N-1 to level N.
+VIP_THRESHOLDS = {
+    0: 0, 1: 200, 2: 1500, 3: 9600, 4: 19600, 5: 95600, 6: 295600, 7: 795600,
+    8: 1795600, 9: 3795600, 10: 8795600, 11: 16795600, 12: 28795600,
+    13: 44795600, 14: 69795600, 15: 119795600,
+}
+ACTION_CENTER_LIST_CAP = 500
+
+
+def action_center_reports(mconn, now):
+    """Action Center reports, computed from the master userlist snapshot (not
+    date-scoped -- these are lifetime/as-of-last-upload figures, not tied to the
+    selected date). Two "near upgrade" lists (users whose remaining deposit gap
+    to the next VIP tier is Rs 1-1000 for VIP2-4, Rs 1-50000 for VIP5-15) and two
+    "inactive" lists (users who haven't been active within a VIP-tier-specific
+    day range). Each list is capped at the top ACTION_CENTER_LIST_CAP rows by
+    relevance (closest to upgrade / most inactive) so the report and its Excel
+    download stay a reasonable size."""
+    rows = mconn.execute(
+        "SELECT user_id, vip_level, total_recharge, user_balance, last_active_time FROM users"
+    ).fetchall()
+
+    near_low, near_high, inactive_high, inactive_low = [], [], [], []
+    for user_id, vip_level, total_recharge, user_balance, last_active_time in rows:
+        if vip_level is None:
+            continue
+        total_recharge = total_recharge or 0.0
+        inactive_days = None
+        last_active_dt = parse_dt(last_active_time)
+        if last_active_dt:
+            inactive_days = (now - last_active_dt).days
+
+        if vip_level < 15 and (vip_level + 1) in VIP_THRESHOLDS:
+            gap = VIP_THRESHOLDS[vip_level + 1] - total_recharge
+            near_row = {
+                "user_id": user_id,
+                "current_vip": vip_level,
+                "next_vip": vip_level + 1,
+                "amount_to_next": round(gap, 2),
+                "inactive_days": inactive_days,
+            }
+            if 2 <= vip_level <= 4 and 1 <= gap <= 1000:
+                near_low.append(near_row)
+            elif 5 <= vip_level <= 15 and 1 <= gap <= 50000:
+                near_high.append(near_row)
+
+        if inactive_days is not None:
+            inactive_row = {
+                "user_id": user_id,
+                "vip_level": vip_level,
+                "total_deposit": round(total_recharge, 2),
+                "wallet_balance": round(user_balance or 0.0, 2),
+                "inactive_days": inactive_days,
+                "last_active_date": last_active_dt.strftime("%Y-%m-%d") if last_active_dt else None,
+            }
+            if 5 <= vip_level <= 15 and 15 <= inactive_days <= 240:
+                inactive_high.append(inactive_row)
+            if 2 <= vip_level <= 4 and 10 <= inactive_days <= 180:
+                inactive_low.append(inactive_row)
+
+    near_low.sort(key=lambda r: r["amount_to_next"])
+    near_high.sort(key=lambda r: r["amount_to_next"])
+    inactive_high.sort(key=lambda r: -r["inactive_days"])
+    inactive_low.sort(key=lambda r: -r["inactive_days"])
+
+    return {
+        "near_upgrade_low": {
+            "note": "VIP 2 to VIP 4, gap to next level Rs 1-1000",
+            "total_matching": len(near_low),
+            "rows": near_low[:ACTION_CENTER_LIST_CAP],
+        },
+        "near_upgrade_high": {
+            "note": "VIP 5 to VIP 15, gap to next level Rs 1-50000",
+            "total_matching": len(near_high),
+            "rows": near_high[:ACTION_CENTER_LIST_CAP],
+        },
+        "inactive_high": {
+            "note": "VIP 5 to VIP 15, inactive 15-240 days",
+            "total_matching": len(inactive_high),
+            "rows": inactive_high[:ACTION_CENTER_LIST_CAP],
+        },
+        "inactive_low": {
+            "note": "VIP 2 to VIP 4, inactive 10-180 days",
+            "total_matching": len(inactive_low),
+            "rows": inactive_low[:ACTION_CENTER_LIST_CAP],
+        },
+    }
+
+
 STATUS_LABELS = {0: "In-Review", 1: "Processing", 2: "Complete", 3: "Rejected", 4: "Failed"}
 
 
@@ -413,11 +504,13 @@ def main():
 
     total_registered_users = None
     vip_by_user = {}
+    action_center = None
     master_db_path = os.path.join(BASE, "master_userlist.db")
     if os.path.exists(master_db_path):
         mconn = sqlite3.connect(master_db_path)
         total_registered_users = mconn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
+        action_center = action_center_reports(mconn, datetime.now())
         mconn.close()
 
     by_date_records = defaultdict(list)
@@ -522,6 +615,7 @@ def main():
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(all_withdrawal_full),
         },
         "withdrawal_analysis": withdrawal_analysis,
+        "action_center": action_center,
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
