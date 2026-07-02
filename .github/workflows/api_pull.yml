@@ -1,9 +1,10 @@
 name: Pull deposits/withdrawals/wallet from business API
 
 on:
-  schedule:
-    # every 30 minutes
-    - cron: "*/30 * * * *"
+  # GitHub's own `schedule:` trigger stopped firing for this repo (confirmed dead,
+  # survived disable/re-enable and a fresh commit -- see Cloudflare Worker's
+  # scheduled() handler in worker/src/index.js, which now dispatches this hourly
+  # via the API instead).
   workflow_dispatch: {}
 
 concurrency:

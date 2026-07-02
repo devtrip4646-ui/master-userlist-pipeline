@@ -1,9 +1,8 @@
 name: Sweep orphaned uploads
 
 on:
-  schedule:
-    # every 5 minutes
-    - cron: "*/5 * * * *"
+  # GitHub's own `schedule:` trigger stopped firing for this repo -- dispatched
+  # every 20 min instead by the Cloudflare Worker's scheduled() handler.
   workflow_dispatch: {}
 
 permissions:
