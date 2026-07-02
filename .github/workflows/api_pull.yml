@@ -2,6 +2,7 @@ name: Pull deposits/withdrawals/wallet from business API
 
 on:
   schedule:
+    # every 30 minutes
     - cron: "*/30 * * * *"
   workflow_dispatch: {}
 

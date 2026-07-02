@@ -2,6 +2,7 @@ name: Sweep orphaned uploads
 
 on:
   schedule:
+    # every 5 minutes
     - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
