@@ -442,7 +442,7 @@ def build_deposit_day_stats(deposit_rows):
     deposit" (FD). Fine for the last-4-day FD lookback these reports use, but
     worth knowing if this function is ever reused for a longer window."""
     stats = defaultdict(lambda: defaultdict(lambda: {"count": 0, "amount": 0.0}))
-    for pay_channel, order_amount, create_time, update_time, status, user_id in deposit_rows:
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None:
             continue
         dt = parse_dt(create_time)
@@ -454,20 +454,36 @@ def build_deposit_day_stats(deposit_rows):
     return stats
 
 
-def yesterday_new_users(deposit_day_stats, all_withdrawal_full, vip_by_user, city_by_user, today):
-    """Users whose first-ever COMPLETE deposit (within the retention window)
-    landed on `today - 1 day`."""
+def yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, today):
+    """Users flagged by the source system's own is_first_deposit column
+    (column S in the water/export sheet: 0 = not first deposit, 1 = first
+    deposit) as making their first-ever deposit yesterday. This is the
+    authoritative flag from the platform itself, not an inference from
+    deposit history -- unlike a MIN(create_time) heuristic, it isn't affected
+    by the deposits table's 33-day retention window."""
     yesterday = today - timedelta(days=1)
     withdraw_by_user = defaultdict(float)
     for r in all_withdrawal_full:
         if r["status"] in ACTIVE_WITHDRAW_STATUSES and r["user_id"] is not None:
             withdraw_by_user[r["user_id"]] += r["amount"] or 0.0
 
-    rows = []
-    for user_id, day_map in deposit_day_stats.items():
-        if min(day_map.keys()) != yesterday:
+    day_stats = defaultdict(lambda: {"count": 0, "amount": 0.0})
+    first_deposit_users = set()
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
             continue
-        entry = day_map[yesterday]
+        dt = parse_dt(create_time)
+        if not dt or dt.date() != yesterday:
+            continue
+        entry = day_stats[user_id]
+        entry["count"] += 1
+        entry["amount"] += order_amount or 0.0
+        if is_first_deposit == 1:
+            first_deposit_users.add(user_id)
+
+    rows = []
+    for user_id in first_deposit_users:
+        entry = day_stats[user_id]
         total_deposit = round(entry["amount"], 2)
         total_withdraw = round(withdraw_by_user.get(user_id, 0.0), 2)
         rows.append({
@@ -574,7 +590,7 @@ def main():
     cur = conn.cursor()
 
     deposit_rows = cur.execute(
-        "SELECT pay_channel, order_amount, create_time, update_time, status, user_id FROM deposits"
+        "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"
     ).fetchall()
     withdrawal_rows = cur.execute(
         "SELECT withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no FROM withdrawals"
@@ -612,7 +628,7 @@ def main():
     all_withdrawals = []
     latest_record_time = None
 
-    for pay_channel, order_amount, create_time, update_time, status, user_id in deposit_rows:
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
         channel = pay_channel or "Unknown"
         amount = order_amount or 0.0
         date_str, hour = None, None
@@ -692,10 +708,12 @@ def main():
         "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
     }
 
-    deposit_day_stats = build_deposit_day_stats(deposit_rows)
     action_center_extra = {
-        "yesterday_new_users": yesterday_new_users(deposit_day_stats, all_withdrawal_full, vip_by_user, city_by_user, now.date()),
-        "deposit_challenge_bonus": deposit_challenge_bonus(deposit_day_stats, now.date()),
+        "yesterday_first_deposit_users": yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, now.date()),
+        # Left empty pending the correct calculation rules -- do not reactivate
+        # deposit_challenge_bonus(build_deposit_day_stats(deposit_rows), now.date())
+        # until confirmed.
+        "deposit_challenge_bonus": [],
     }
 
     report = {
