@@ -1,8 +1,8 @@
 """
-Builds an aggregated deposit report (channel-wise, amount-range, and hourly
-channel x amount-range breakdowns), bucketed per calendar date, from the
-deposits table and uploads it as JSON to R2 for the "04-project-performance"
-dashboard Worker to serve.
+Builds an aggregated deposit report -- channel-wise, amount-range, hourly
+breakdowns, and success-rate analysis (total vs completed, by amount range /
+channel / hour) -- bucketed per calendar date, from the deposits table and
+uploads it as JSON to R2 for the "04-project-performance" dashboard Worker.
 
 Usage: python3 build_deposit_report.py
 Requires daily_records.db to be present locally (already downloaded by the
@@ -51,17 +51,31 @@ def load_creds():
     }
 
 
+def parse_dt(s):
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace(" ", "T"))
+    except ValueError:
+        return None
+
+
 def aggregate(records):
-    """records: list of (channel, amount, hour). Returns the four report sections."""
+    """
+    records: list of dicts with keys channel, amount, hour, status,
+    completion_minutes, user_id. Returns all report sections for this scope.
+    """
+    completed = [r for r in records if r["status"] == "COMPLETE"]
+
+    # --- completed-only breakdowns (money/volume of successful deposits) ---
     by_channel = {}
     by_range = {label: {"count": 0, "total_amount": 0.0} for label in RANGE_LABELS}
     by_channel_and_range = {}
     hourly = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {"count": 0, "total_amount": 0.0})))
+    total_count, total_amount = 0, 0.0
 
-    total_count = 0
-    total_amount = 0.0
-
-    for channel, amount, hour in records:
+    for r in completed:
+        channel, amount, hour = r["channel"], r["amount"], r["hour"]
         rlabel = bucket_for_amount(amount)
         total_count += 1
         total_amount += amount
@@ -81,6 +95,51 @@ def aggregate(records):
             hcr = hourly[hour][channel][rlabel]
             hcr["count"] += 1
             hcr["total_amount"] += amount
+
+    # --- success-rate breakdowns (all statuses vs completed) ---
+    succ_range = {label: {"total": 0, "completed": 0, "min_sum": 0.0, "min_n": 0} for label in RANGE_LABELS}
+    succ_channel = {}
+    hourly_succ_channel = defaultdict(lambda: defaultdict(lambda: {"total": 0, "completed": 0}))
+    hourly_succ_range = defaultdict(lambda: defaultdict(lambda: {"total": 0, "completed": 0}))
+
+    for r in records:
+        channel, amount, hour = r["channel"], r["amount"], r["hour"]
+        rlabel = bucket_for_amount(amount)
+        is_completed = r["status"] == "COMPLETE"
+
+        sr = succ_range[rlabel]
+        sr["total"] += 1
+        if is_completed:
+            sr["completed"] += 1
+            if r["completion_minutes"] is not None:
+                sr["min_sum"] += r["completion_minutes"]
+                sr["min_n"] += 1
+
+        sc = succ_channel.setdefault(channel, {
+            "total": 0, "completed": 0, "completed_users": set(), "completed_amount": 0.0, "min_sum": 0.0, "min_n": 0
+        })
+        sc["total"] += 1
+        if is_completed:
+            sc["completed"] += 1
+            sc["completed_amount"] += amount
+            if r["user_id"] is not None:
+                sc["completed_users"].add(r["user_id"])
+            if r["completion_minutes"] is not None:
+                sc["min_sum"] += r["completion_minutes"]
+                sc["min_n"] += 1
+
+        if hour is not None:
+            hsc = hourly_succ_channel[hour][channel]
+            hsc["total"] += 1
+            if is_completed:
+                hsc["completed"] += 1
+            hsr = hourly_succ_range[hour][rlabel]
+            hsr["total"] += 1
+            if is_completed:
+                hsr["completed"] += 1
+
+    def pct(completed, total):
+        return round(completed / total * 100, 1) if total else 0
 
     return {
         "totals": {"count": total_count, "total_amount": round(total_amount, 2)},
@@ -113,6 +172,38 @@ def aggregate(records):
             for ch, ranges in chans.items()
             for rl, v in ranges.items()
         ],
+        "success_by_range": [
+            {
+                "range": label,
+                "total": v["total"],
+                "completed": v["completed"],
+                "success_pct": pct(v["completed"], v["total"]),
+                "avg_minutes": round(v["min_sum"] / v["min_n"], 1) if v["min_n"] else None,
+            }
+            for label, v in succ_range.items()
+        ],
+        "success_by_channel": [
+            {
+                "channel": ch,
+                "total": v["total"],
+                "comp_orders": v["completed"],
+                "comp_users": len(v["completed_users"]),
+                "comp_amount": round(v["completed_amount"], 2),
+                "success_pct": pct(v["completed"], v["total"]),
+                "avg_minutes": round(v["min_sum"] / v["min_n"], 1) if v["min_n"] else None,
+            }
+            for ch, v in sorted(succ_channel.items(), key=lambda x: -x[1]["completed_amount"])
+        ],
+        "hourly_success_by_channel": [
+            {"hour": hour, "channel": ch, "total": v["total"], "completed": v["completed"], "success_pct": pct(v["completed"], v["total"])}
+            for hour, chans in sorted(hourly_succ_channel.items())
+            for ch, v in chans.items()
+        ],
+        "hourly_success_by_range": [
+            {"hour": hour, "range": rl, "total": v["total"], "completed": v["completed"], "success_pct": pct(v["completed"], v["total"])}
+            for hour, ranges in sorted(hourly_succ_range.items())
+            for rl, v in ranges.items()
+        ],
     }
 
 
@@ -121,24 +212,35 @@ def main():
     cur = conn.cursor()
 
     rows = cur.execute(
-        "SELECT pay_channel, order_amount, create_time FROM deposits WHERE status = 'COMPLETE'"
+        "SELECT pay_channel, order_amount, create_time, update_time, status, user_id FROM deposits"
     ).fetchall()
     conn.close()
 
     by_date_records = defaultdict(list)
     all_records = []
 
-    for pay_channel, order_amount, create_time in rows:
+    for pay_channel, order_amount, create_time, update_time, status, user_id in rows:
         channel = pay_channel or "Unknown"
         amount = order_amount or 0.0
         date_str, hour = None, None
-        if create_time:
-            try:
-                dt = datetime.fromisoformat(create_time.replace(" ", "T"))
-                date_str, hour = dt.strftime("%Y-%m-%d"), dt.hour
-            except ValueError:
-                pass
-        record = (channel, amount, hour)
+        create_dt = parse_dt(create_time)
+        if create_dt:
+            date_str, hour = create_dt.strftime("%Y-%m-%d"), create_dt.hour
+
+        completion_minutes = None
+        if status == "COMPLETE":
+            update_dt = parse_dt(update_time)
+            if create_dt and update_dt:
+                completion_minutes = max((update_dt - create_dt).total_seconds() / 60.0, 0)
+
+        record = {
+            "channel": channel,
+            "amount": amount,
+            "hour": hour,
+            "status": status,
+            "completion_minutes": completion_minutes,
+            "user_id": user_id,
+        }
         all_records.append(record)
         if date_str:
             by_date_records[date_str].append(record)
@@ -147,7 +249,7 @@ def main():
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "status_filter": "COMPLETE",
+        "status_filter": "COMPLETE (success-rate sections include all statuses)",
         "amount_ranges": RANGE_LABELS[:-1],
         "dates": sorted(by_date_records.keys()),
         "by_date": by_date,
@@ -157,7 +259,8 @@ def main():
     out_path = os.path.join(BASE, "deposit_report.json")
     with open(out_path, "w") as f:
         json.dump(report, f)
-    print(f"Wrote {out_path} ({len(all_records)} completed deposits across {len(by_date)} dates)")
+    completed_n = sum(1 for r in all_records if r["status"] == "COMPLETE")
+    print(f"Wrote {out_path} ({completed_n}/{len(all_records)} completed deposits across {len(by_date)} dates)")
 
     creds = load_creds()
     s3 = boto3.client(
