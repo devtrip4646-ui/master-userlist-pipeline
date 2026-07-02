@@ -1,7 +1,8 @@
 """
 Builds an aggregated deposit report (channel-wise, amount-range, and hourly
-channel x amount-range breakdowns) from the deposits table and uploads it as
-JSON to R2 for the "04-project-performance" dashboard Worker to serve.
+channel x amount-range breakdowns), bucketed per calendar date, from the
+deposits table and uploads it as JSON to R2 for the "04-project-performance"
+dashboard Worker to serve.
 
 Usage: python3 build_deposit_report.py
 Requires daily_records.db to be present locally (already downloaded by the
@@ -10,7 +11,7 @@ caller) and R2 credentials in env vars or .r2_credentials.
 import json
 import os
 import sqlite3
-import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 
 import boto3
@@ -28,16 +29,13 @@ AMOUNT_RANGES = [
     (10000, 19999),
     (20000, 50000),
 ]
-
-
-def range_label(lo, hi):
-    return f"{lo}-{hi}"
+RANGE_LABELS = [f"{lo}-{hi}" for lo, hi in AMOUNT_RANGES] + ["Other"]
 
 
 def bucket_for_amount(amount):
     for lo, hi in AMOUNT_RANGES:
         if lo <= amount <= hi:
-            return range_label(lo, hi)
+            return f"{lo}-{hi}"
     return "Other"
 
 
@@ -53,29 +51,18 @@ def load_creds():
     }
 
 
-def main():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    rows = cur.execute(
-        "SELECT pay_channel, order_amount, create_time, status FROM deposits WHERE status = 'COMPLETE'"
-    ).fetchall()
-
-    range_labels = [range_label(lo, hi) for lo, hi in AMOUNT_RANGES]
-
+def aggregate(records):
+    """records: list of (channel, amount, hour). Returns the four report sections."""
     by_channel = {}
-    by_range = {label: {"count": 0, "total_amount": 0.0} for label in range_labels + ["Other"]}
+    by_range = {label: {"count": 0, "total_amount": 0.0} for label in RANGE_LABELS}
     by_channel_and_range = {}
-    hourly = {}  # hour -> {channel -> {range -> {count,total}}}
+    hourly = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {"count": 0, "total_amount": 0.0})))
 
     total_count = 0
     total_amount = 0.0
 
-    for pay_channel, order_amount, create_time, status in rows:
-        channel = pay_channel or "Unknown"
-        amount = order_amount or 0.0
+    for channel, amount, hour in records:
         rlabel = bucket_for_amount(amount)
-
         total_count += 1
         total_amount += amount
 
@@ -86,28 +73,16 @@ def main():
         by_range[rlabel]["count"] += 1
         by_range[rlabel]["total_amount"] += amount
 
-        cr_key = (channel, rlabel)
-        cr = by_channel_and_range.setdefault(cr_key, {"count": 0, "total_amount": 0.0})
+        cr = by_channel_and_range.setdefault((channel, rlabel), {"count": 0, "total_amount": 0.0})
         cr["count"] += 1
         cr["total_amount"] += amount
 
-        hour = None
-        if create_time:
-            try:
-                hour = datetime.fromisoformat(create_time.replace(" ", "T")).hour
-            except ValueError:
-                hour = None
         if hour is not None:
-            h = hourly.setdefault(hour, {})
-            hc = h.setdefault(channel, {})
-            hcr = hc.setdefault(rlabel, {"count": 0, "total_amount": 0.0})
+            hcr = hourly[hour][channel][rlabel]
             hcr["count"] += 1
             hcr["total_amount"] += amount
 
-    report = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "status_filter": "COMPLETE",
-        "amount_ranges": range_labels,
+    return {
         "totals": {"count": total_count, "total_amount": round(total_amount, 2)},
         "by_channel": [
             {
@@ -120,11 +95,11 @@ def main():
         ],
         "by_amount_range": [
             {"range": label, "count": by_range[label]["count"], "total_amount": round(by_range[label]["total_amount"], 2)}
-            for label in range_labels + ["Other"]
+            for label in RANGE_LABELS
         ],
         "by_channel_and_range": [
             {"channel": ch, "range": rl, "count": v["count"], "total_amount": round(v["total_amount"], 2)}
-            for (ch, rl), v in sorted(by_channel_and_range.items(), key=lambda x: (-x[1]["total_amount"]))
+            for (ch, rl), v in sorted(by_channel_and_range.items(), key=lambda x: -x[1]["total_amount"])
         ],
         "hourly": [
             {
@@ -140,12 +115,49 @@ def main():
         ],
     }
 
+
+def main():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    rows = cur.execute(
+        "SELECT pay_channel, order_amount, create_time FROM deposits WHERE status = 'COMPLETE'"
+    ).fetchall()
     conn.close()
+
+    by_date_records = defaultdict(list)
+    all_records = []
+
+    for pay_channel, order_amount, create_time in rows:
+        channel = pay_channel or "Unknown"
+        amount = order_amount or 0.0
+        date_str, hour = None, None
+        if create_time:
+            try:
+                dt = datetime.fromisoformat(create_time.replace(" ", "T"))
+                date_str, hour = dt.strftime("%Y-%m-%d"), dt.hour
+            except ValueError:
+                pass
+        record = (channel, amount, hour)
+        all_records.append(record)
+        if date_str:
+            by_date_records[date_str].append(record)
+
+    by_date = {date: aggregate(recs) for date, recs in sorted(by_date_records.items())}
+
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status_filter": "COMPLETE",
+        "amount_ranges": RANGE_LABELS[:-1],
+        "dates": sorted(by_date_records.keys()),
+        "by_date": by_date,
+        "all_time": aggregate(all_records),
+    }
 
     out_path = os.path.join(BASE, "deposit_report.json")
     with open(out_path, "w") as f:
         json.dump(report, f)
-    print(f"Wrote {out_path} ({total_count} completed deposits, total {total_amount:.2f})")
+    print(f"Wrote {out_path} ({len(all_records)} completed deposits across {len(by_date)} dates)")
 
     creds = load_creds()
     s3 = boto3.client(
