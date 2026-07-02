@@ -1,3 +1,4 @@
+import argparse
 import os
 import boto3
 
@@ -28,11 +29,16 @@ def get_client(creds):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--files", nargs="*", default=["master_userlist.db", "daily_records.db"],
+                     help="Which DB files to upload (default: both). Skip files that weren't touched to save time.")
+    args = ap.parse_args()
+
     creds = load_creds()
     s3 = get_client(creds)
     bucket = creds["R2_BUCKET"]
 
-    for fname in ["master_userlist.db", "daily_records.db"]:
+    for fname in args.files:
         path = os.path.join(BASE, fname)
         if not os.path.exists(path):
             print(f"skip (not found): {fname}")

@@ -203,8 +203,8 @@ def purge_old_daily_records():
     conn.close()
 
 
-def upload_to_r2():
-    subprocess.run([sys.executable, os.path.join(BASE, "upload_to_r2.py")], check=True)
+def upload_to_r2(files):
+    subprocess.run([sys.executable, os.path.join(BASE, "upload_to_r2.py"), "--files"] + files, check=True)
 
 
 def main():
@@ -230,7 +230,16 @@ def main():
         purge_old_daily_records()
 
     if not args.no_upload:
-        upload_to_r2()
+        # Only upload DBs that were actually touched this run -- master_userlist.db is
+        # 200MB+ and rarely changes; re-uploading it on every deposits/withdrawals/wallet
+        # pull wastes minutes on the scheduled pipeline for no reason.
+        touched = []
+        if args.userlist:
+            touched.append("master_userlist.db")
+        if args.deposits or args.withdrawals or args.wallet:
+            touched.append("daily_records.db")
+        if touched:
+            upload_to_r2(touched)
 
 
 if __name__ == "__main__":

@@ -34,7 +34,20 @@ API_BASE = "https://api.dlmanagers.online/prod-api/business"
 PACKAGE_ID = "5"
 IST_OFFSET = datetime.timedelta(hours=5, minutes=30)
 TOKEN_KEY = "config/business_api_token.txt"
+TOKEN_STATUS_KEY = "config/token_status.json"
 WALLET_STATE_KEY = "reports/wallet_fetch_state.json"
+
+
+def put_token_status(s3, bucket, ok, message=None):
+    s3.put_object(
+        Bucket=bucket, Key=TOKEN_STATUS_KEY,
+        Body=json.dumps({
+            "ok": ok,
+            "message": message,
+            "checked_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }).encode("utf-8"),
+        ContentType="application/json",
+    )
 
 
 def ist_today():
@@ -46,10 +59,12 @@ def fetch_token(s3, bucket):
         obj = s3.get_object(Bucket=bucket, Key=TOKEN_KEY)
         token = obj["Body"].read().decode("utf-8").strip()
     except Exception as e:
+        put_token_status(s3, bucket, ok=False, message="update new bearer token to run the pipeline")
         print(f"FATAL: could not load business API token from r2://{bucket}/{TOKEN_KEY}: {e}", file=sys.stderr)
         print("Set it via the 'Business API Token' form on the upload page first.", file=sys.stderr)
         sys.exit(1)
     if not token:
+        put_token_status(s3, bucket, ok=False, message="update new bearer token to run the pipeline")
         print(f"FATAL: business API token at r2://{bucket}/{TOKEN_KEY} is empty", file=sys.stderr)
         sys.exit(1)
     return token
@@ -118,44 +133,51 @@ def main():
     today = ist_today()
     ts = int(time.time() * 1000)
 
-    # Deposits: 5-day window, date-only bounds (confirmed inclusive of the full end day)
-    dep_start = today - datetime.timedelta(days=4)
-    deposit_bytes = fetch_export(token, "water/export", {
-        "packageId": PACKAGE_ID, "pageNum": 1, "pageSize": 10, "useUpiQuery": "true",
-        "queryDate[0]": dep_start.isoformat(), "queryDate[1]": today.isoformat(),
-    })
-    deposit_path = save_xlsx(deposit_bytes, f"{ts}_water_api_pull.xlsx")
-    print(f"Fetched deposits {dep_start} .. {today}: {len(deposit_bytes)} bytes")
+    try:
+        # Deposits: 5-day window, date-only bounds (confirmed inclusive of the full end day)
+        dep_start = today - datetime.timedelta(days=4)
+        deposit_bytes = fetch_export(token, "water/export", {
+            "packageId": PACKAGE_ID, "pageNum": 1, "pageSize": 10, "useUpiQuery": "true",
+            "queryDate[0]": dep_start.isoformat(), "queryDate[1]": today.isoformat(),
+        })
+        deposit_path = save_xlsx(deposit_bytes, f"{ts}_water_api_pull.xlsx")
+        print(f"Fetched deposits {dep_start} .. {today}: {len(deposit_bytes)} bytes")
 
-    # Withdrawals: end bound is exclusive of the named day, so use (today + 1) at
-    # 00:00:00 to include all of today. Query all 5 statuses (In-Review, Processing,
-    # Complete, Rejected, Failed) -- the whole point of the 5-day window is to catch
-    # orders that transition into any of those terminal states after creation.
-    wd_start = today - datetime.timedelta(days=4)
-    wd_end = today + datetime.timedelta(days=1)
-    withdraw_bytes = fetch_export(token, "withdraw/export", {
-        "packageId": PACKAGE_ID, "pageNum": 1, "pageSize": 10,
-        "statusList[0]": 0, "statusList[1]": 1, "statusList[2]": 2, "statusList[3]": 3, "statusList[4]": 4,
-        "queryDate[0]": f"{wd_start.isoformat()} 00:00:00", "queryDate[1]": f"{wd_end.isoformat()} 00:00:00",
-    })
-    withdraw_path = save_xlsx(withdraw_bytes, f"{ts}_withdraw_api_pull.xlsx")
-    print(f"Fetched withdrawals {wd_start} .. {today} (inclusive): {len(withdraw_bytes)} bytes")
+        # Withdrawals: end bound is exclusive of the named day, so use (today + 1) at
+        # 00:00:00 to include all of today. Query all 5 statuses (In-Review, Processing,
+        # Complete, Rejected, Failed) -- the whole point of the 5-day window is to catch
+        # orders that transition into any of those terminal states after creation.
+        wd_start = today - datetime.timedelta(days=4)
+        wd_end = today + datetime.timedelta(days=1)
+        withdraw_bytes = fetch_export(token, "withdraw/export", {
+            "packageId": PACKAGE_ID, "pageNum": 1, "pageSize": 10,
+            "statusList[0]": 0, "statusList[1]": 1, "statusList[2]": 2, "statusList[3]": 3, "statusList[4]": 4,
+            "queryDate[0]": f"{wd_start.isoformat()} 00:00:00", "queryDate[1]": f"{wd_end.isoformat()} 00:00:00",
+        })
+        withdraw_path = save_xlsx(withdraw_bytes, f"{ts}_withdraw_api_pull.xlsx")
+        print(f"Fetched withdrawals {wd_start} .. {today} (inclusive): {len(withdraw_bytes)} bytes")
 
-    # Wallet: single day, with day-rollover-aware target date
-    wallet_state = get_wallet_state(s3, bucket)
-    last_run_date = wallet_state.get("last_run_date")
-    if last_run_date != today.isoformat():
-        wallet_target = today - datetime.timedelta(days=1)
-        print(f"First run of {today} -- wallet export will finalize {wallet_target}")
-    else:
-        wallet_target = today
-        print(f"Same-day rerun -- wallet export continues with {wallet_target}")
-    wallet_bytes = fetch_export(token, "detail/export", {
-        "packageId": PACKAGE_ID, "pageNum": 1, "pageSize": 10,
-        "queryDate[0]": wallet_target.isoformat(), "queryDate[1]": wallet_target.isoformat(),
-    })
-    wallet_path = save_xlsx(wallet_bytes, f"{ts}_detail_api_pull.xlsx")
-    print(f"Fetched wallet {wallet_target}: {len(wallet_bytes)} bytes")
+        # Wallet: single day, with day-rollover-aware target date
+        wallet_state = get_wallet_state(s3, bucket)
+        last_run_date = wallet_state.get("last_run_date")
+        if last_run_date != today.isoformat():
+            wallet_target = today - datetime.timedelta(days=1)
+            print(f"First run of {today} -- wallet export will finalize {wallet_target}")
+        else:
+            wallet_target = today
+            print(f"Same-day rerun -- wallet export continues with {wallet_target}")
+        wallet_bytes = fetch_export(token, "detail/export", {
+            "packageId": PACKAGE_ID, "pageNum": 1, "pageSize": 10,
+            "queryDate[0]": wallet_target.isoformat(), "queryDate[1]": wallet_target.isoformat(),
+        })
+        wallet_path = save_xlsx(wallet_bytes, f"{ts}_detail_api_pull.xlsx")
+        print(f"Fetched wallet {wallet_target}: {len(wallet_bytes)} bytes")
+    except Exception as e:
+        # Every export uses the same bearer token, so any unrecoverable fetch failure
+        # here is treated as an expired/invalid token -- surfaced on the upload page.
+        put_token_status(s3, bucket, ok=False, message="update new bearer token to run the pipeline")
+        print(f"FATAL: business API fetch failed, marking token as invalid: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # Ingest everything in one pass (handles purge + re-upload to R2 internally)
     argv_backup = sys.argv
@@ -173,6 +195,9 @@ def main():
     # Only mark the wallet target date as covered after a successful ingest
     put_wallet_state(s3, bucket, {"last_run_date": today.isoformat(), "last_wallet_target": wallet_target.isoformat()})
     print(f"Wallet state updated: last_run_date={today}")
+
+    # Successful pull+ingest confirms the token is valid -- clear any stale alert
+    put_token_status(s3, bucket, ok=True)
 
 
 if __name__ == "__main__":
