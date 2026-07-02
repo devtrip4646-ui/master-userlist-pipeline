@@ -381,6 +381,7 @@ def action_center_reports(mconn, now):
                 "user_id": user_id,
                 "current_vip": vip_level,
                 "next_vip": vip_level + 1,
+                "total_deposit": round(total_recharge, 2),
                 "amount_to_next": round(gap, 2),
                 "inactive_days": inactive_days,
             }
