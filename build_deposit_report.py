@@ -207,25 +207,51 @@ def aggregate(records):
     }
 
 
+def summarize(deposit_records, withdrawal_records):
+    completed_deposits = [r for r in deposit_records if r["status"] == "COMPLETE"]
+    completed_withdrawals = [r for r in withdrawal_records if r["status"] == 2]
+
+    total_deposit = round(sum(r["amount"] for r in completed_deposits), 2)
+    total_withdraw = round(sum(r["amount"] for r in completed_withdrawals), 2)
+    total_users = len({r["user_id"] for r in completed_deposits if r["user_id"] is not None})
+    total_orders = len(completed_deposits)
+
+    return {
+        "total_deposit": total_deposit,
+        "total_withdraw": total_withdraw,
+        "total_users": total_users,
+        "total_orders": total_orders,
+        "profit": round(total_deposit - total_withdraw, 2),
+    }
+
+
 def main():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    rows = cur.execute(
+    deposit_rows = cur.execute(
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id FROM deposits"
+    ).fetchall()
+    withdrawal_rows = cur.execute(
+        "SELECT withdraw_amount, create_time, status, user_id FROM withdrawals"
     ).fetchall()
     conn.close()
 
     by_date_records = defaultdict(list)
     all_records = []
+    by_date_withdrawals = defaultdict(list)
+    all_withdrawals = []
+    latest_record_time = None
 
-    for pay_channel, order_amount, create_time, update_time, status, user_id in rows:
+    for pay_channel, order_amount, create_time, update_time, status, user_id in deposit_rows:
         channel = pay_channel or "Unknown"
         amount = order_amount or 0.0
         date_str, hour = None, None
         create_dt = parse_dt(create_time)
         if create_dt:
             date_str, hour = create_dt.strftime("%Y-%m-%d"), create_dt.hour
+            if latest_record_time is None or create_dt > latest_record_time:
+                latest_record_time = create_dt
 
         completion_minutes = None
         if status == "COMPLETE":
@@ -245,15 +271,34 @@ def main():
         if date_str:
             by_date_records[date_str].append(record)
 
-    by_date = {date: aggregate(recs) for date, recs in sorted(by_date_records.items())}
+    for withdraw_amount, create_time, status, user_id in withdrawal_rows:
+        amount = withdraw_amount or 0.0
+        create_dt = parse_dt(create_time)
+        date_str = create_dt.strftime("%Y-%m-%d") if create_dt else None
+        if create_dt and (latest_record_time is None or create_dt > latest_record_time):
+            latest_record_time = create_dt
+        record = {"amount": amount, "status": status, "user_id": user_id}
+        all_withdrawals.append(record)
+        if date_str:
+            by_date_withdrawals[date_str].append(record)
+
+    all_dates = sorted(set(by_date_records.keys()) | set(by_date_withdrawals.keys()))
+    by_date = {
+        date: {
+            **aggregate(by_date_records.get(date, [])),
+            "summary": summarize(by_date_records.get(date, []), by_date_withdrawals.get(date, [])),
+        }
+        for date in all_dates
+    }
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "latest_record_time": latest_record_time.isoformat() if latest_record_time else None,
         "status_filter": "COMPLETE (success-rate sections include all statuses)",
         "amount_ranges": RANGE_LABELS[:-1],
-        "dates": sorted(by_date_records.keys()),
+        "dates": all_dates,
         "by_date": by_date,
-        "all_time": aggregate(all_records),
+        "all_time": {**aggregate(all_records), "summary": summarize(all_records, all_withdrawals)},
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
