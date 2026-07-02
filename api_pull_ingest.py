@@ -18,6 +18,9 @@ reports/wallet_fetch_state.json so this survives across independent runs.
 The API bearer token is not a GitHub secret -- it's stored in R2 at
 config/business_api_token.txt and can be updated any time via the "Business
 API Token" form on the upload page, without touching GitHub settings.
+
+master_userlist.db (VIP level, total deposit, new user_ids) is also kept
+current on every pull via sync_master_userlist() -- see its docstring.
 """
 import datetime
 import json
@@ -26,6 +29,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from collections import defaultdict
 
 import openpyxl
 import requests
@@ -39,6 +43,24 @@ IST_OFFSET = datetime.timedelta(hours=5, minutes=30)
 TOKEN_KEY = "config/business_api_token.txt"
 TOKEN_STATUS_KEY = "config/token_status.json"
 WALLET_STATE_KEY = "reports/wallet_fetch_state.json"
+
+# Cumulative deposit ("experience") required to reach each VIP level, per the
+# platform's own VIP table. VIP level is purely a function of total deposit --
+# never withdrawal history. Kept in sync with build_deposit_report.py's copy.
+VIP_THRESHOLDS = {
+    0: 0, 1: 200, 2: 1500, 3: 9600, 4: 19600, 5: 95600, 6: 295600, 7: 795600,
+    8: 1795600, 9: 3795600, 10: 8795600, 11: 16795600, 12: 28795600,
+    13: 44795600, 14: 69795600, 15: 119795600,
+}
+
+
+def vip_level_for_total(total_recharge):
+    total_recharge = total_recharge or 0.0
+    level = 0
+    for lvl, threshold in VIP_THRESHOLDS.items():
+        if total_recharge >= threshold:
+            level = max(level, lvl)
+    return level
 
 
 def put_token_status(s3, bucket, ok, message=None):
@@ -141,84 +163,80 @@ def extract_deposit_user_info(deposit_path):
     return info
 
 
-def extract_withdrawal_user_info(withdraw_path):
-    """user_id -> {member_level, create_time} from a withdraw/export xlsx
-    (column order: ... UserId[6], ..., memberLevel[22], ..., createTime[33]).
-    Keeps the most recent (by create_time) row per user if there are several."""
-    wb = openpyxl.load_workbook(withdraw_path, read_only=True)
-    ws = wb.active
-    info = {}
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        user_id = row[6]
-        if user_id is None:
-            continue
-        user_id = int(user_id)
-        member_level, create_time = row[22], row[33]
-        existing = info.get(user_id)
-        if existing is None or (create_time and (not existing["create_time"] or str(create_time) > str(existing["create_time"]))):
-            info[user_id] = {"member_level": member_level, "create_time": create_time}
-    wb.close()
-    return info
+def sync_master_userlist(master_db_path, deposit_rows, deposit_info):
+    """VIP level is purely a function of cumulative total deposit (the platform's
+    own VIP table -- level N requires total_recharge >= VIP_THRESHOLDS[N]),
+    never withdrawal history. Keeps master_userlist.db current on every pull:
 
+      1. Recomputes vip_level for EVERY existing user from their stored
+         total_recharge, correcting any previously-wrong value.
+      2. Adds newly-seen COMPLETE deposits to each user's total_recharge. A
+         dedicated deposit_sync_time column (not the real update_time field,
+         to avoid conflicting with genuine userlist re-uploads) tracks how far
+         we've already counted, so re-fetching the same 5-day window on every
+         run never double-counts a deposit.
+      3. Inserts a minimal row (with total_recharge/vip_level computed from
+         their deposits seen so far, plus phone/city/channel from deposit_info)
+         for any user_id not already in the table.
 
-def sync_master_userlist(master_db_path, deposit_info, withdrawal_info):
-    """Keep master_userlist.db roughly current between full userlist re-uploads:
-    insert a minimal row for any user_id seen in this pull's deposits/withdrawals
-    that isn't in the users table yet, and for existing users refresh vip_level
-    (from the withdrawal export's memberLevel -- the freshest VIP signal we have
-    without a dedicated userlist re-export) and last_active_time. Other fields
-    (balance, total_recharge, etc.) are left untouched for existing users since
-    per-transaction exports don't reliably reflect current cumulative totals --
-    those still need a real userlist re-upload to refresh.
-
-    Returns True if anything changed (caller should re-upload master_userlist.db)."""
+    Always returns True: the recompute pass in step 1 touches every existing
+    user's vip_level every run, so master_userlist.db always changes."""
     conn = sqlite3.connect(master_db_path)
     cur = conn.cursor()
-    existing_ids = {r[0] for r in cur.execute("SELECT user_id FROM users").fetchall()}
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN deposit_sync_time TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists from a previous run
 
-    all_user_ids = set(deposit_info) | set(withdrawal_info)
-    new_users = updated_vip = updated_active = 0
-    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    existing_rows = cur.execute("SELECT user_id, total_recharge, deposit_sync_time FROM users").fetchall()
+    existing = {uid: {"total_recharge": tr, "sync_time": st} for uid, tr, st in existing_rows}
 
-    for user_id in all_user_ids:
-        dep = deposit_info.get(user_id, {})
-        wd = withdrawal_info.get(user_id, {})
-        activity_times = [str(t) for t in (dep.get("create_time"), wd.get("create_time")) if t]
-        latest_activity = max(activity_times) if activity_times else None
+    fixed = 0
+    for uid, info in existing.items():
+        cur.execute("UPDATE users SET vip_level = ? WHERE user_id = ?", (vip_level_for_total(info["total_recharge"]), uid))
+        fixed += 1
+    conn.commit()
 
-        vip_level = None
-        if wd.get("member_level") is not None:
-            try:
-                vip_level = int(wd["member_level"])
-            except (TypeError, ValueError):
-                vip_level = None
+    deltas = defaultdict(lambda: {"amount": 0.0, "max_create_time": None})
+    for pay_channel, order_amount, create_time, update_time_col, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None or not create_time:
+            continue
+        baseline = existing.get(user_id, {}).get("sync_time")
+        if baseline and str(create_time) <= str(baseline):
+            continue
+        d = deltas[user_id]
+        d["amount"] += order_amount or 0.0
+        if not d["max_create_time"] or str(create_time) > str(d["max_create_time"]):
+            d["max_create_time"] = create_time
 
-        if user_id not in existing_ids:
+    new_users = updated = 0
+    for user_id, d in deltas.items():
+        sync_time = str(d["max_create_time"])
+        if user_id not in existing:
+            total = round(d["amount"], 2)
+            vip = vip_level_for_total(total)
+            dep = deposit_info.get(user_id, {})
             cur.execute(
-                "INSERT INTO users (user_id, phone, city, channel, create_time, last_active_time, vip_level) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user_id, dep.get("phone"), dep.get("city"), dep.get("channel"),
-                 str(dep.get("register_time") or dep.get("create_time") or now_str),
-                 latest_activity or now_str, vip_level if vip_level is not None else 0),
+                "INSERT INTO users (user_id, phone, city, channel, total_recharge, vip_level, "
+                "last_active_time, deposit_sync_time, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, dep.get("phone"), dep.get("city"), dep.get("channel"), total, vip,
+                 sync_time, sync_time, str(dep.get("register_time") or sync_time)),
             )
-            existing_ids.add(user_id)
             new_users += 1
         else:
-            if vip_level is not None:
-                cur.execute("UPDATE users SET vip_level = ? WHERE user_id = ?", (vip_level, user_id))
-                updated_vip += 1
-            if latest_activity:
-                cur.execute(
-                    "UPDATE users SET last_active_time = ? WHERE user_id = ? "
-                    "AND (last_active_time IS NULL OR last_active_time < ?)",
-                    (latest_activity, user_id, latest_activity),
-                )
-                updated_active += 1
+            new_total = round((existing[user_id]["total_recharge"] or 0.0) + d["amount"], 2)
+            cur.execute(
+                "UPDATE users SET total_recharge = ?, vip_level = ?, deposit_sync_time = ?, last_active_time = ? "
+                "WHERE user_id = ?",
+                (new_total, vip_level_for_total(new_total), sync_time, sync_time, user_id),
+            )
+            updated += 1
 
     conn.commit()
     conn.close()
-    print(f"Master userlist sync: {new_users} new users inserted, {updated_vip} vip_level refreshed, {updated_active} last_active_time bumped")
-    return new_users > 0 or updated_vip > 0 or updated_active > 0
+    print(f"Master userlist VIP recompute: {fixed} users' vip_level recalculated from total_recharge")
+    print(f"Master userlist sync: {new_users} new users inserted, {updated} users' total_recharge/vip_level updated from new deposits")
+    return True
 
 
 def main():
@@ -297,15 +315,21 @@ def main():
     finally:
         sys.argv = argv_backup
 
-    # Keep master_userlist.db roughly current between full userlist re-uploads:
-    # insert brand-new user_ids seen in this pull, refresh vip_level/last_active_time
-    # for existing ones. Re-upload master_userlist.db (224MB) only if something
-    # actually changed -- this DOES cost a full re-upload most runs, since a 5-day
-    # deposits/withdrawals window almost always touches at least one user.
+    # Keep master_userlist.db current on every pull: VIP level is derived purely
+    # from cumulative total deposit (see sync_master_userlist docstring). Read
+    # deposit_rows from the just-ingested daily_records.db (not the raw xlsx) so
+    # this always matches what's actually stored. Always re-uploads
+    # master_userlist.db (224MB) -- the vip_level recompute pass touches every
+    # existing user every run.
     master_db_path = os.path.join(ci_ingest.BASE, "master_userlist.db")
+    daily_db_path = os.path.join(ci_ingest.BASE, "daily_records.db")
+    daily_conn = sqlite3.connect(daily_db_path)
+    deposit_rows_for_sync = daily_conn.execute(
+        "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"
+    ).fetchall()
+    daily_conn.close()
     dep_info = extract_deposit_user_info(deposit_path)
-    wd_info = extract_withdrawal_user_info(withdraw_path)
-    if sync_master_userlist(master_db_path, dep_info, wd_info):
+    if sync_master_userlist(master_db_path, deposit_rows_for_sync, dep_info):
         subprocess.run(
             [sys.executable, os.path.join(ci_ingest.BASE, "upload_to_r2.py"), "--files", "master_userlist.db"],
             check=True,
