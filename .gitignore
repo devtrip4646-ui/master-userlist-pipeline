@@ -3,3 +3,6 @@
 *.db
 __pycache__/
 incoming/
+**/.cf_deploy_token
+**/node_modules/
+deposit_report.json

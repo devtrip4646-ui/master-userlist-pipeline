@@ -321,6 +321,53 @@ def withdrawal_backlog(withdrawal_full_records, now, status, bucket_fn, bucket_l
     return [{"bucket": label, "count": counts[label]} for label in bucket_labels]
 
 
+STATUS_LABELS = {0: "In-Review", 1: "Processing", 2: "Complete", 3: "Rejected", 4: "Failed"}
+
+
+def withdrawal_waiting_hours(r):
+    end_dt = r["review_dt"] or r["update_dt"]
+    if not r["create_dt"] or not end_dt:
+        return None
+    return round(max((end_dt - r["create_dt"]).total_seconds() / 3600.0, 0), 2)
+
+
+def withdrawal_orders_export(withdrawal_full_records, vip_by_user):
+    """Raw order-level rows for the withdrawal Excel export: order number, channel,
+    amount, status, waiting time, user id and VIP level."""
+    rows = []
+    for r in withdrawal_full_records:
+        rows.append({
+            "order_no": r["order_no"],
+            "channel": r["channel"],
+            "amount": r["amount"],
+            "status": STATUS_LABELS.get(r["status"], r["status"]),
+            "waiting_hours": withdrawal_waiting_hours(r),
+            "user_id": r["user_id"],
+            "vip_level": vip_by_user.get(r["user_id"]),
+        })
+    return rows
+
+
+def last4days_completion(by_date_withdrawal_full, dates):
+    """For the last 4 dates: count of completed withdrawals within 4h vs more than 4h."""
+    last4 = dates[-4:]
+    result = []
+    for date in last4:
+        within, over = 0, 0
+        for r in by_date_withdrawal_full.get(date, []):
+            if r["status"] != 2:
+                continue
+            hours = withdrawal_waiting_hours(r)
+            if hours is None:
+                continue
+            if hours <= 4:
+                within += 1
+            else:
+                over += 1
+        result.append({"date": date, "within_4h": within, "more_than_4h": over})
+    return result
+
+
 def main():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -329,7 +376,7 @@ def main():
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id FROM deposits"
     ).fetchall()
     withdrawal_rows = cur.execute(
-        "SELECT withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time FROM withdrawals"
+        "SELECT withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no FROM withdrawals"
     ).fetchall()
     wallet_rows = cur.execute(
         "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
@@ -345,10 +392,12 @@ def main():
             by_date_bet_users[create_dt.strftime("%Y-%m-%d")].add(user_id)
 
     total_registered_users = None
+    vip_by_user = {}
     master_db_path = os.path.join(BASE, "master_userlist.db")
     if os.path.exists(master_db_path):
         mconn = sqlite3.connect(master_db_path)
         total_registered_users = mconn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
         mconn.close()
 
     by_date_records = defaultdict(list)
@@ -388,7 +437,7 @@ def main():
     by_date_withdrawal_full = defaultdict(list)
     all_withdrawal_full = []
 
-    for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time in withdrawal_rows:
+    for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no in withdrawal_rows:
         amount = withdraw_amount or 0.0
         create_dt = parse_dt(create_time)
         date_str = create_dt.strftime("%Y-%m-%d") if create_dt else None
@@ -405,6 +454,9 @@ def main():
             "create_dt": create_dt,
             "review_dt": parse_dt(review_time),
             "update_dt": parse_dt(update_time),
+            "order_no": order_no,
+            "user_id": user_id,
+            "amount": amount,
         }
         all_withdrawal_full.append(full_record)
         if date_str:
@@ -418,6 +470,7 @@ def main():
                 by_date_records.get(date, []), by_date_withdrawals.get(date, []), by_date_bet_users.get(date, set())
             ),
             "withdrawal_processing_by_channel": withdrawal_processing_by_channel(by_date_withdrawal_full.get(date, [])),
+            "withdrawal_orders": withdrawal_orders_export(by_date_withdrawal_full.get(date, []), vip_by_user),
         }
         for date in all_dates
     }
@@ -430,6 +483,7 @@ def main():
         "processing_backlog": withdrawal_backlog(all_withdrawal_full, now, 1, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS),
         "inreview_backlog": withdrawal_backlog(all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
         "backlog_as_of": now.isoformat(),
+        "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
     }
 
     report = {
