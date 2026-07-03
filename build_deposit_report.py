@@ -742,10 +742,7 @@ def main():
 
     action_center_extra = {
         "yesterday_first_deposit_users": yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, now.date()),
-        # Left empty pending the correct calculation rules -- do not reactivate
-        # deposit_challenge_bonus(build_deposit_day_stats(deposit_rows), now.date())
-        # until confirmed.
-        "deposit_challenge_bonus": [],
+        "deposit_challenge_bonus": deposit_challenge_bonus(build_deposit_day_stats(deposit_rows), now.date()),
     }
 
     report = {
