@@ -532,6 +532,49 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
     }
 
 
+def vip_upgrade_analytics(vip_upgrade_candidates, action_center):
+    """Users who were in the near-upgrade cohort (gap Rs 1-1000 for VIP2-4,
+    Rs 1-50000 for VIP5-15) as of the START of today and have since crossed
+    into the next VIP tier. vip_upgrade_candidates comes from
+    api_pull_ingest.py's sync_master_userlist(), which is the only place
+    with a stable day-start snapshot to compare against (the pipeline runs
+    hourly, so a naive "before this run vs after this run" diff would lose
+    upgrades from earlier the same day once a later run's report overwrites
+    it).
+
+    Each row also carries amount_over_minimum = today's deposit minus the
+    exact gap that was needed to cross the threshold -- a bare-minimum
+    crosser is ~0, a big spender well above it. Useful for telling "the
+    near-upgrade push is converting people right at the line" apart from
+    "these are just big depositors who would have crossed anyway".
+
+    "% converted" denominator is reconstructed as upgraded_today +
+    still_near_upgrade (from action_center's near_upgrade_low/high, already
+    computed this run), same pattern as the Reactivation report."""
+    low_rows = sorted(vip_upgrade_candidates.get("low", []), key=lambda r: -r["total_deposit"])
+    high_rows = sorted(vip_upgrade_candidates.get("high", []), key=lambda r: -r["total_deposit"])
+
+    still_near_low = action_center["near_upgrade_low"]["total_matching"] if action_center else 0
+    still_near_high = action_center["near_upgrade_high"]["total_matching"] if action_center else 0
+    baseline_low = len(low_rows) + still_near_low
+    baseline_high = len(high_rows) + still_near_high
+
+    return {
+        "low": {
+            "note": "VIP 2 to VIP 4, upgraded today from the near-upgrade cohort",
+            "upgraded_count": len(low_rows),
+            "pct_upgraded": round(len(low_rows) / baseline_low * 100, 2) if baseline_low else 0.0,
+            "rows": low_rows[:ACTION_CENTER_LIST_CAP],
+        },
+        "high": {
+            "note": "VIP 5 to VIP 15, upgraded today from the near-upgrade cohort",
+            "upgraded_count": len(high_rows),
+            "pct_upgraded": round(len(high_rows) / baseline_high * 100, 2) if baseline_high else 0.0,
+            "rows": high_rows[:ACTION_CENTER_LIST_CAP],
+        },
+    }
+
+
 def build_deposit_day_stats(deposit_rows):
     """user_id -> {date: {"count": n, "amount": total}} for COMPLETE deposits.
 
@@ -794,6 +837,7 @@ def main():
     city_by_user = {}
     action_center = None
     reactivation = None
+    vip_upgrade = None
     # Source timestamps (create_time, last_active_time, etc.) are IST, but this
     # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
     # be ~5.5h behind IST, making very recent activity look like it's in the
@@ -812,6 +856,12 @@ def main():
             with open(reactivation_candidates_path) as f:
                 reactivation_candidates = json.load(f)
         reactivation = deposit_reactivation_analytics(mconn, reactivation_candidates, action_center)
+        vip_upgrade_path = os.path.join(BASE, "vip_upgrade_candidates.json")
+        vip_upgrade_candidates = {"low": [], "high": []}
+        if os.path.exists(vip_upgrade_path):
+            with open(vip_upgrade_path) as f:
+                vip_upgrade_candidates = json.load(f)
+        vip_upgrade = vip_upgrade_analytics(vip_upgrade_candidates, action_center)
         mconn.close()
 
     by_date_records = defaultdict(list)
@@ -924,6 +974,7 @@ def main():
         "action_center_extra": action_center_extra,
         "region_vip_analytics": region_vip_deposit_analytics(by_date_records, city_by_user, vip_by_user, all_dates),
         "reactivation": reactivation,
+        "vip_upgrade": vip_upgrade,
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")

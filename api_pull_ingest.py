@@ -207,14 +207,53 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
     most of the 10-180/15-240 day range the Reactivation report needs to
     cover.
 
-    Returns (changed, reactivation_candidates) -- changed is True iff at
-    least one row was actually inserted or updated this run."""
+    Also detects "VIP upgrade candidates": users who were in the near-upgrade
+    cohort (gap Rs 1-1000 for VIP2-4, Rs 1-50000 for VIP5-15) as of the START
+    of today and have since crossed into the next tier. This can't just
+    compare "before this run" vs "after this run" -- the pipeline runs
+    hourly, so a user could cross a tier in one run and cross again in a
+    later run the same day, and each run's report is freshly regenerated
+    (not cumulative), so a naive per-run diff would silently lose earlier
+    upgrades from earlier today. Instead, a (vip_level, total_recharge)
+    snapshot is taken once, on the first run of each calendar day (into the
+    vip_day_start table, before any of today's updates are applied), and
+    every run for the rest of the day compares current state against that
+    same stable snapshot.
+
+    Returns (changed, reactivation_candidates, vip_upgrade_candidates) --
+    changed is True iff at least one row was actually inserted or updated
+    this run. vip_upgrade_candidates is {"low": [...], "high": [...]}."""
     conn = sqlite3.connect(master_db_path)
     cur = conn.cursor()
     try:
         cur.execute("ALTER TABLE users ADD COLUMN deposit_sync_time TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists from a previous run
+
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS vip_day_start "
+        "(user_id INTEGER PRIMARY KEY, vip_level INTEGER, total_recharge REAL)"
+    )
+    cur.execute("CREATE TABLE IF NOT EXISTS vip_day_start_meta (snapshot_date TEXT)")
+    today_str = today.isoformat()
+    meta_row = cur.execute("SELECT snapshot_date FROM vip_day_start_meta").fetchone()
+    snapshot_created = not meta_row or meta_row[0] != today_str
+    if snapshot_created:
+        # New day (or first run ever) -- snapshot BEFORE any of today's
+        # updates are applied below, so it reflects yesterday's end-of-day
+        # state and stays stable across every run for the rest of today.
+        # Must force a reupload below even if nothing else changes this run
+        # (see `changed` at the bottom) -- otherwise this snapshot never
+        # reaches R2, and the next run would re-snapshot from ITS
+        # already-partway-through-the-day state instead of true day-start.
+        cur.execute("DELETE FROM vip_day_start")
+        cur.execute(
+            "INSERT INTO vip_day_start (user_id, vip_level, total_recharge) "
+            "SELECT user_id, vip_level, total_recharge FROM users"
+        )
+        cur.execute("DELETE FROM vip_day_start_meta")
+        cur.execute("INSERT INTO vip_day_start_meta (snapshot_date) VALUES (?)", (today_str,))
+        conn.commit()
 
     existing_rows = cur.execute(
         "SELECT user_id, total_recharge, vip_level, deposit_sync_time, last_active_time FROM users"
@@ -233,7 +272,6 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
             fixed += 1
     conn.commit()
 
-    today_str = today.isoformat()
     today_amount = defaultdict(float)
     today_active = set()
     deltas = defaultdict(lambda: {"amount": 0.0, "max_create_time": None})
@@ -311,8 +349,11 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
             sets, params = [], []
             if d and d["max_create_time"]:
                 new_total = round((prior["total_recharge"] or 0.0) + d["amount"], 2)
+                new_vip = vip_level_for_total(new_total)
                 sets += ["total_recharge = ?", "vip_level = ?", "deposit_sync_time = ?"]
-                params += [new_total, vip_level_for_total(new_total), str(d["max_create_time"])]
+                params += [new_total, new_vip, str(d["max_create_time"])]
+                prior["total_recharge"] = new_total
+                prior["vip_level"] = new_vip
             current_last_active = prior["last_active_time"]
             if not current_last_active or latest_activity > str(current_last_active):
                 sets.append("last_active_time = ?")
@@ -322,12 +363,48 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
                 cur.execute(f"UPDATE users SET {', '.join(sets)} WHERE user_id = ?", params)
                 updated += 1
 
+    # VIP upgrade candidates: compare each user's CURRENT vip_level (as of
+    # right now, after everything above) against the stable day-start
+    # snapshot. Only counts users who were actually in the near-upgrade
+    # cohort at day start -- a user who jumped several tiers from far away
+    # (a huge lump-sum deposit) doesn't belong in a "near upgrade converted"
+    # report.
+    day_start = {
+        uid: {"vip_level": vl, "total_recharge": tr}
+        for uid, vl, tr in cur.execute("SELECT user_id, vip_level, total_recharge FROM vip_day_start").fetchall()
+    }
+    vip_upgrade_low, vip_upgrade_high = [], []
+    for user_id, ds in day_start.items():
+        cur_info = existing.get(user_id)
+        if not cur_info or cur_info["vip_level"] <= ds["vip_level"]:
+            continue
+        ds_vip = ds["vip_level"]
+        ds_total = ds["total_recharge"] or 0.0
+        if ds_vip >= 15 or (ds_vip + 1) not in VIP_THRESHOLDS:
+            continue  # no next tier to have been "near"
+        gap = VIP_THRESHOLDS[ds_vip + 1] - ds_total
+        deposit_today = round(today_amount.get(user_id, 0.0), 2)
+        row = {
+            "user_id": user_id,
+            "vip_before": ds_vip,
+            "vip_after": cur_info["vip_level"],
+            "total_deposit": deposit_today,
+            "amount_over_minimum": round(deposit_today - gap, 2),
+        }
+        if 2 <= ds_vip <= 4 and 1 <= gap <= 1000:
+            vip_upgrade_low.append(row)
+        elif 5 <= ds_vip <= 15 and 1 <= gap <= 50000:
+            vip_upgrade_high.append(row)
+    vip_upgrade_candidates = {"low": vip_upgrade_low, "high": vip_upgrade_high}
+
     conn.commit()
     conn.close()
     print(f"Master userlist VIP recompute: {fixed} users' vip_level actually changed")
     print(f"Master userlist sync: {new_users} new users inserted, {updated} users updated from deposit/withdrawal/wallet activity")
     print(f"Reactivation candidates today: {len(reactivation_candidates)}")
-    return (fixed > 0 or new_users > 0 or updated > 0), reactivation_candidates
+    print(f"VIP upgrade candidates today: {len(vip_upgrade_low)} low, {len(vip_upgrade_high)} high")
+    changed = fixed > 0 or new_users > 0 or updated > 0 or snapshot_created
+    return changed, reactivation_candidates, vip_upgrade_candidates
 
 
 def main():
@@ -435,7 +512,7 @@ def main():
     ).fetchall())
     daily_conn.close()
     dep_info = extract_deposit_user_info(deposit_path)
-    ok, reactivation_candidates = sync_master_userlist(
+    ok, reactivation_candidates, vip_upgrade_candidates = sync_master_userlist(
         master_db_path, deposit_rows_for_sync, withdrawal_activity, wallet_activity, dep_info, today
     )
     if ok:
@@ -445,13 +522,18 @@ def main():
         )
         print("Uploaded refreshed master_userlist.db to R2")
 
-    # Handed off to build_deposit_report.py (runs next, same job/workspace) via a
-    # local file rather than R2 -- this list only reflects "as of this exact run",
+    # Handed off to build_deposit_report.py (runs next, same job/workspace) via
+    # local files rather than R2 -- these only reflect "as of this exact run",
     # not something that needs to persist or be re-fetched independently.
     reactivation_path = os.path.join(ci_ingest.BASE, "reactivation_candidates.json")
     with open(reactivation_path, "w") as f:
         json.dump(reactivation_candidates, f)
     print(f"Wrote {len(reactivation_candidates)} reactivation candidates to {reactivation_path}")
+
+    vip_upgrade_path = os.path.join(ci_ingest.BASE, "vip_upgrade_candidates.json")
+    with open(vip_upgrade_path, "w") as f:
+        json.dump(vip_upgrade_candidates, f)
+    print(f"Wrote {len(vip_upgrade_candidates['low'])} low + {len(vip_upgrade_candidates['high'])} high VIP upgrade candidates to {vip_upgrade_path}")
 
     # Only mark the wallet target date as covered after a successful ingest
     put_wallet_state(s3, bucket, {"last_run_date": today.isoformat(), "last_wallet_target": wallet_target.isoformat()})
