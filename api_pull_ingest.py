@@ -437,9 +437,17 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
         funnel_stats = compute_conversion_funnels(cur, today)
         cur.execute("DELETE FROM funnel_stats")
         cur.execute("INSERT INTO funnel_stats (stat_date, data) VALUES (?, ?)", (today_str, json.dumps(funnel_stats)))
-        n_days = compute_and_save_daily_performance(cur, deposit_rows, withdrawal_rows, today)
         conn.commit()
-        print(f"Daily performance rollup refreshed for {n_days} dates (permanent, survives the 33-day purge)")
+
+    # Runs every hourly pull, not just on day-rollover: it's cheap (a single
+    # pass over the already-in-memory deposit_rows/withdrawal_rows, not a
+    # fresh DB read), and running it every hour means a historical day's
+    # totals (e.g. a withdrawal that only reaches Complete status hours
+    # after being created) get corrected promptly instead of waiting for
+    # tomorrow's first run.
+    n_days = compute_and_save_daily_performance(cur, deposit_rows, withdrawal_rows, today)
+    conn.commit()
+    print(f"Daily performance rollup refreshed for {n_days} dates (permanent, survives the 33-day purge)")
 
     existing_rows = cur.execute(
         "SELECT user_id, total_recharge, vip_level, deposit_sync_time, last_active_time, total_withdrawal, withdrawal_sync_time FROM users"
