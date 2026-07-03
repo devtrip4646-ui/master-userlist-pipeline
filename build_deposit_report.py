@@ -575,7 +575,10 @@ def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today):
         if today >= fd + timedelta(days=3) and deposited_fd1 and deposited_fd2:
             add(4)
 
-    rows.sort(key=lambda r: (r["fd_date"], r["user_id"]))
+    # Highest bonus first within each FD date -- otherwise Rule 1 (auto,
+    # awarded to nearly everyone) buries the more meaningful Rule 2/3/4
+    # entries (users who actually kept depositing) on later pages.
+    rows.sort(key=lambda r: (r["fd_date"], -r["bonus_amount"], r["user_id"]))
     return rows
 
 
