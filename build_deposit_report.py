@@ -646,30 +646,50 @@ def last4days_completion(by_date_withdrawal_full, dates):
 
 def region_vip_deposit_analytics(by_date_records, city_by_user, vip_by_user, dates):
     """For each of the last 7 dates: top 10 regions by total COMPLETE deposit
-    amount, and total COMPLETE deposit amount + order count per VIP level.
-    Powers the Analytics page's region/VIP charts with a 7-day date switch."""
+    amount (with order count and unique user count), and total COMPLETE
+    deposit amount + order count + unique user count per VIP level. Powers
+    the Analytics page's region/VIP charts with a 7-day date switch."""
     last7 = dates[-7:]
     result = {}
     for date in last7:
         region_totals = defaultdict(float)
+        region_counts = defaultdict(int)
+        region_users = defaultdict(set)
         vip_totals = defaultdict(float)
         vip_counts = defaultdict(int)
+        vip_users = defaultdict(set)
         for r in by_date_records.get(date, []):
             if r["status"] != "COMPLETE" or r["user_id"] is None:
                 continue
             region = city_by_user.get(r["user_id"]) or "Unknown"
             region_totals[region] += r["amount"]
+            region_counts[region] += 1
+            region_users[region].add(r["user_id"])
             vip = vip_by_user.get(r["user_id"])
             if vip is not None:
                 vip_totals[vip] += r["amount"]
                 vip_counts[vip] += 1
+                vip_users[vip].add(r["user_id"])
         top_regions = sorted(region_totals.items(), key=lambda x: -x[1])[:10]
         vip_rows = [
-            {"vip_level": vip, "total_deposit": round(vip_totals[vip], 2), "count": vip_counts[vip]}
+            {
+                "vip_level": vip,
+                "total_deposit": round(vip_totals[vip], 2),
+                "count": vip_counts[vip],
+                "user_count": len(vip_users[vip]),
+            }
             for vip in sorted(vip_totals.keys())
         ]
         result[date] = {
-            "top_regions": [{"region": region, "total_deposit": round(total, 2)} for region, total in top_regions],
+            "top_regions": [
+                {
+                    "region": region,
+                    "total_deposit": round(total, 2),
+                    "count": region_counts[region],
+                    "user_count": len(region_users[region]),
+                }
+                for region, total in top_regions
+            ],
             "vip_breakdown": vip_rows,
         }
     return result
