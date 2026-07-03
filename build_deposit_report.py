@@ -843,20 +843,29 @@ def last4days_completion(by_date_withdrawal_full, dates):
     return result
 
 
-def region_vip_deposit_analytics(by_date_records, city_by_user, vip_by_user, dates):
+def region_vip_deposit_analytics(by_date_records, by_date_withdrawals, city_by_user, vip_by_user, dates):
     """For each of the last 7 dates: top 10 regions by total COMPLETE deposit
-    amount (with order count and unique user count), and total COMPLETE
-    deposit amount + order count + unique user count per VIP level. Powers
-    the Analytics page's region/VIP charts with a 7-day date switch."""
+    amount (with order count, unique user count, total withdrawal, and net
+    revenue = deposit - withdrawal), and the same breakdown per VIP level.
+    Powers the Analytics page's region/VIP charts with a 7-day date switch.
+
+    Net revenue matters here because gross deposit volume alone can be
+    misleading -- a region can look like a top performer by deposit total
+    while actually being net-negative for the house once withdrawals are
+    subtracted. Regions/tiers are still ranked by deposit (that's still the
+    natural "where's the volume" question), but every row also carries
+    total_withdrawal/net_revenue so that's never hidden."""
     last7 = dates[-7:]
     result = {}
     for date in last7:
         region_totals = defaultdict(float)
         region_counts = defaultdict(int)
         region_users = defaultdict(set)
+        region_withdrawals = defaultdict(float)
         vip_totals = defaultdict(float)
         vip_counts = defaultdict(int)
         vip_users = defaultdict(set)
+        vip_withdrawals = defaultdict(float)
         for r in by_date_records.get(date, []):
             if r["status"] != "COMPLETE" or r["user_id"] is None:
                 continue
@@ -869,6 +878,14 @@ def region_vip_deposit_analytics(by_date_records, city_by_user, vip_by_user, dat
                 vip_totals[vip] += r["amount"]
                 vip_counts[vip] += 1
                 vip_users[vip].add(r["user_id"])
+        for r in by_date_withdrawals.get(date, []):
+            if r["status"] != 2 or r["user_id"] is None:  # 2 = Complete
+                continue
+            region = city_by_user.get(r["user_id"]) or "Unknown"
+            region_withdrawals[region] += r["amount"]
+            vip = vip_by_user.get(r["user_id"])
+            if vip is not None:
+                vip_withdrawals[vip] += r["amount"]
         top_regions = sorted(region_totals.items(), key=lambda x: -x[1])[:10]
         vip_rows = [
             {
@@ -876,6 +893,8 @@ def region_vip_deposit_analytics(by_date_records, city_by_user, vip_by_user, dat
                 "total_deposit": round(vip_totals[vip], 2),
                 "count": vip_counts[vip],
                 "user_count": len(vip_users[vip]),
+                "total_withdrawal": round(vip_withdrawals.get(vip, 0.0), 2),
+                "net_revenue": round(vip_totals[vip] - vip_withdrawals.get(vip, 0.0), 2),
             }
             for vip in sorted(vip_totals.keys())
         ]
@@ -886,12 +905,78 @@ def region_vip_deposit_analytics(by_date_records, city_by_user, vip_by_user, dat
                     "total_deposit": round(total, 2),
                     "count": region_counts[region],
                     "user_count": len(region_users[region]),
+                    "total_withdrawal": round(region_withdrawals.get(region, 0.0), 2),
+                    "net_revenue": round(total - region_withdrawals.get(region, 0.0), 2),
                 }
                 for region, total in top_regions
             ],
             "vip_breakdown": vip_rows,
         }
     return result
+
+
+def performance_history(mconn):
+    """Permanent daily/weekly/monthly Total Deposit / Total Withdrawal / Net
+    Revenue trends. Reads from master_userlist.db's daily_performance table
+    (populated once per day by api_pull_ingest.py's sync_master_userlist),
+    which is NEVER purged -- unlike daily_records.db's rolling 33-day
+    window, this is unlimited history: every day's totals survive forever
+    once written, even after that day's row-level detail eventually ages
+    out and gets purged. Weekly/monthly are derived here on read via simple
+    date-bucketing since daily_performance itself stays small (one row per
+    calendar date, not per transaction)."""
+    try:
+        daily_rows = mconn.execute(
+            "SELECT date, total_deposit, deposit_count, unique_depositors, "
+            "total_withdrawal, withdrawal_count, unique_withdrawers, net_revenue "
+            "FROM daily_performance ORDER BY date"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {"daily": [], "weekly": [], "monthly": []}  # pre-dates this feature
+
+    daily = [
+        {
+            "date": d, "total_deposit": td, "deposit_count": dc, "unique_depositors": ud,
+            "total_withdrawal": tw, "withdrawal_count": wc, "unique_withdrawers": uw, "net_revenue": nr,
+        }
+        for d, td, dc, ud, tw, wc, uw, nr in daily_rows
+    ]
+
+    def rollup(rows, key_fn):
+        buckets = {}
+        for r in rows:
+            key = key_fn(r["date"])
+            b = buckets.setdefault(key, {
+                "period": key, "start_date": r["date"], "end_date": r["date"],
+                "total_deposit": 0.0, "total_withdrawal": 0.0, "net_revenue": 0.0,
+                "deposit_count": 0, "withdrawal_count": 0,
+            })
+            b["total_deposit"] += r["total_deposit"]
+            b["total_withdrawal"] += r["total_withdrawal"]
+            b["net_revenue"] += r["net_revenue"]
+            b["deposit_count"] += r["deposit_count"]
+            b["withdrawal_count"] += r["withdrawal_count"]
+            b["start_date"] = min(b["start_date"], r["date"])
+            b["end_date"] = max(b["end_date"], r["date"])
+        result = sorted(buckets.values(), key=lambda b: b["start_date"])
+        for b in result:
+            b["total_deposit"] = round(b["total_deposit"], 2)
+            b["total_withdrawal"] = round(b["total_withdrawal"], 2)
+            b["net_revenue"] = round(b["net_revenue"], 2)
+        return result
+
+    def week_key(date_str):
+        y, w, _ = datetime.strptime(date_str, "%Y-%m-%d").isocalendar()
+        return f"{y}-W{w:02d}"
+
+    def month_key(date_str):
+        return date_str[:7]
+
+    return {
+        "daily": daily,
+        "weekly": rollup(daily, week_key),
+        "monthly": rollup(daily, month_key),
+    }
 
 
 def main():
@@ -923,6 +1008,7 @@ def main():
     action_center = None
     reactivation = None
     vip_upgrade = None
+    performance = None
     # Source timestamps (create_time, last_active_time, etc.) are IST, but this
     # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
     # be ~5.5h behind IST, making very recent activity look like it's in the
@@ -960,6 +1046,8 @@ def main():
             funnel_data = json.loads(funnel_row[0])
             reactivation["funnel"] = funnel_data.get("reactivation")
             vip_upgrade["funnel"] = funnel_data.get("vip_upgrade")
+
+        performance = performance_history(mconn)
 
         mconn.close()
 
@@ -1084,10 +1172,11 @@ def main():
         "withdrawal_analysis": withdrawal_analysis,
         "action_center": action_center,
         "action_center_extra": action_center_extra,
-        "region_vip_analytics": region_vip_deposit_analytics(by_date_records, city_by_user, vip_by_user, all_dates),
+        "region_vip_analytics": region_vip_deposit_analytics(by_date_records, by_date_withdrawals, city_by_user, vip_by_user, all_dates),
         "reactivation": reactivation,
         "vip_upgrade": vip_upgrade,
         "retention": retention,
+        "performance_history": performance,
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
