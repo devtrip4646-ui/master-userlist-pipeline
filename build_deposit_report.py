@@ -535,17 +535,30 @@ DEPOSIT_CHALLENGE_RULES = {
 }
 
 
-def deposit_challenge_bonus(deposit_day_stats, today):
-    """Users whose FD falls in the last 4 days, and which of the 4 challenge
-    rules they've earned so far (only rules whose award day has already
-    passed are evaluated -- a rule isn't shown as "not earned" while its
-    window is still open, it's just not shown yet)."""
+def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today):
+    """Users flagged by the source system's own is_first_deposit column
+    (column S: 1 = first deposit) with FD in the last 4 days, and which of
+    the 4 challenge rules they've earned so far (only rules whose award day
+    has already passed are evaluated -- a rule isn't shown as "not earned"
+    while its window is still open, it's just not shown yet). FD is taken
+    from the is_first_deposit flag, not inferred from MIN(create_time) -- the
+    flag is authoritative and isn't affected by the deposits table's 33-day
+    retention window."""
     window_start = today - timedelta(days=3)
+    fd_by_user = {}
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None or is_first_deposit != 1:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        fd_by_user[user_id] = dt.date()
+
     rows = []
-    for user_id, day_map in deposit_day_stats.items():
-        fd = min(day_map.keys())
+    for user_id, fd in fd_by_user.items():
         if not (window_start <= fd <= today):
             continue
+        day_map = deposit_day_stats.get(user_id, {})
         deposited_fd1 = (fd + timedelta(days=1)) in day_map
         deposited_fd2 = (fd + timedelta(days=2)) in day_map
 
@@ -742,7 +755,7 @@ def main():
 
     action_center_extra = {
         "yesterday_first_deposit_users": yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, now.date()),
-        "deposit_challenge_bonus": deposit_challenge_bonus(build_deposit_day_stats(deposit_rows), now.date()),
+        "deposit_challenge_bonus": deposit_challenge_bonus(deposit_rows, build_deposit_day_stats(deposit_rows), now.date()),
     }
 
     report = {
