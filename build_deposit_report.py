@@ -461,6 +461,91 @@ def action_center_reports(mconn, now):
     }
 
 
+def deposit_reactivation_analytics(mconn, deposit_rows, action_center, today):
+    """Users who deposited TODAY after a qualifying inactive gap since their
+    previous deposit (within the 33-day retention window) -- i.e. they just
+    reactivated. Two VIP-tier-scoped cohorts, using the same day ranges as
+    the Inactive-Low/Inactive-High action-center lists so a user "moving"
+    from one report to the other is exactly consistent:
+      Low  (VIP2-4):  previous gap 10-180 days
+      High (VIP5-15): previous gap 15-240 days
+    Users with no prior deposit in the visible window (first-timers, or
+    truly stale beyond retention) are excluded -- there's no way to
+    confirm they were "inactive" rather than new.
+
+    "% reactivated" denominator is reconstructed as reactivated_today +
+    still_currently_inactive (from action_center, already computed this run
+    -- reactivated users are correctly excluded from it since their
+    inactive_days reset to 0 once today's deposit lands in master_userlist.db).
+    No separate "yesterday's inactive list" snapshot needs to be stored."""
+    vip_by_user = {}
+    balance_by_user = {}
+    for user_id, vip_level, user_balance in mconn.execute(
+        "SELECT user_id, vip_level, user_balance FROM users"
+    ).fetchall():
+        vip_by_user[user_id] = vip_level
+        balance_by_user[user_id] = user_balance
+
+    deposit_dates_by_user = defaultdict(set)
+    deposit_amount_today = defaultdict(float)
+    today_depositors = set()
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        d = dt.date()
+        deposit_dates_by_user[user_id].add(d)
+        if d == today:
+            today_depositors.add(user_id)
+            deposit_amount_today[user_id] += order_amount or 0.0
+
+    low_rows, high_rows = [], []
+    for user_id in today_depositors:
+        prior_dates = [d for d in deposit_dates_by_user[user_id] if d < today]
+        if not prior_dates:
+            continue
+        gap_days = (today - max(prior_dates)).days
+        vip_level = vip_by_user.get(user_id)
+        if vip_level is None:
+            continue
+        row = {
+            "user_id": user_id,
+            "vip_level": vip_level,
+            "total_deposit": round(deposit_amount_today[user_id], 2),
+            "wallet_balance": round(balance_by_user.get(user_id) or 0.0, 2),
+            "inactive_days": gap_days,
+        }
+        if 2 <= vip_level <= 4 and 10 <= gap_days <= 180:
+            low_rows.append(row)
+        elif 5 <= vip_level <= 15 and 15 <= gap_days <= 240:
+            high_rows.append(row)
+
+    low_rows.sort(key=lambda r: -r["inactive_days"])
+    high_rows.sort(key=lambda r: -r["inactive_days"])
+
+    still_inactive_low = action_center["inactive_low"]["total_matching"] if action_center else 0
+    still_inactive_high = action_center["inactive_high"]["total_matching"] if action_center else 0
+    baseline_low = len(low_rows) + still_inactive_low
+    baseline_high = len(high_rows) + still_inactive_high
+
+    return {
+        "low": {
+            "note": "VIP 2 to VIP 4, reactivated today (was inactive 10-180 days)",
+            "reactivated_count": len(low_rows),
+            "pct_reactivated": round(len(low_rows) / baseline_low * 100, 1) if baseline_low else 0.0,
+            "rows": low_rows[:ACTION_CENTER_LIST_CAP],
+        },
+        "high": {
+            "note": "VIP 5 to VIP 15, reactivated today (was inactive 15-240 days)",
+            "reactivated_count": len(high_rows),
+            "pct_reactivated": round(len(high_rows) / baseline_high * 100, 1) if baseline_high else 0.0,
+            "rows": high_rows[:ACTION_CENTER_LIST_CAP],
+        },
+    }
+
+
 def build_deposit_day_stats(deposit_rows):
     """user_id -> {date: {"count": n, "amount": total}} for COMPLETE deposits.
 
@@ -722,6 +807,7 @@ def main():
     vip_by_user = {}
     city_by_user = {}
     action_center = None
+    reactivation = None
     # Source timestamps (create_time, last_active_time, etc.) are IST, but this
     # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
     # be ~5.5h behind IST, making very recent activity look like it's in the
@@ -734,6 +820,7 @@ def main():
         vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
         city_by_user = dict(mconn.execute("SELECT user_id, city FROM users").fetchall())
         action_center = action_center_reports(mconn, now)
+        reactivation = deposit_reactivation_analytics(mconn, deposit_rows, action_center, now.date())
         mconn.close()
 
     by_date_records = defaultdict(list)
@@ -845,6 +932,7 @@ def main():
         "action_center": action_center,
         "action_center_extra": action_center_extra,
         "region_vip_analytics": region_vip_deposit_analytics(by_date_records, city_by_user, vip_by_user, all_dates),
+        "reactivation": reactivation,
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
