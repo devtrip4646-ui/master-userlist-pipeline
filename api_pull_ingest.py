@@ -163,34 +163,52 @@ def extract_deposit_user_info(deposit_path):
     return info
 
 
-def sync_master_userlist(master_db_path, deposit_rows, deposit_info, today):
-    """VIP level is purely a function of cumulative total deposit (the platform's
-    own VIP table -- level N requires total_recharge >= VIP_THRESHOLDS[N]),
-    never withdrawal history. Keeps master_userlist.db current on every pull:
+def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wallet_activity, deposit_info, today):
+    """VIP level and total_recharge are purely a function of cumulative
+    deposits (the platform's own VIP table -- level N requires
+    total_recharge >= VIP_THRESHOLDS[N]), never withdrawal or wallet
+    activity. But last_active_time -- "has this user touched the platform at
+    all" -- is bumped by ANY of deposit, withdrawal, or wallet (bet)
+    activity, whichever is most recent. Keeps master_userlist.db current on
+    every pull:
 
-      1. Recomputes vip_level for EVERY existing user from their stored
-         total_recharge, correcting any previously-wrong value.
+      1. Recomputes vip_level for every existing user from their stored
+         total_recharge, correcting any previously-wrong value -- but only
+         WRITES when it actually changed.
       2. Adds newly-seen COMPLETE deposits to each user's total_recharge. A
          dedicated deposit_sync_time column (not the real update_time field,
          to avoid conflicting with genuine userlist re-uploads) tracks how far
          we've already counted, so re-fetching the same 5-day window on every
          run never double-counts a deposit.
-      3. Inserts a minimal row (with total_recharge/vip_level computed from
-         their deposits seen so far, plus phone/city/channel from deposit_info)
-         for any user_id not already in the table.
+      3. Bumps last_active_time for any user touched by a deposit,
+         withdrawal, or wallet transaction more recent than their current
+         value -- again, only writes when it actually moves forward.
+      4. Inserts a minimal row for any user_id seen in ANY of the three
+         sources but not already in the table (phone/city/channel only
+         available when the insert is deposit-sourced).
 
-    Also detects "reactivation candidates": existing users who deposited
-    TODAY, using their last_active_time as it stood BEFORE this run updates
-    it. This is the only place that can compute this reliably -- daily_records
-    .db's deposits table is purged to a rolling 33-day window, so trying to
-    derive "how long were they inactive" from deposit history alone (as the
-    report originally did) silently drops every comeback after a gap longer
-    than that, which is most of the 10-180/15-240 day range the Reactivation
-    report needs to cover.
+    withdrawal_activity/wallet_activity are {user_id: latest create_time str}
+    -- computed once via a cheap GROUP BY MAX query in main() rather than
+    scanned row-by-row here, since wallet_transactions alone can be tens of
+    millions of rows across its 33-day window.
 
-    Always returns (True, reactivation_candidates): the recompute pass in
-    step 1 touches every existing user's vip_level every run, so
-    master_userlist.db always changes."""
+    Skipping no-op writes (instead of touching every row every run
+    unconditionally) is what keeps this run's SQLite write volume, and
+    therefore its runtime/GitHub Actions billed minutes, proportional to
+    what actually changed rather than to the full user table every time.
+
+    Also detects "reactivation candidates": existing users active TODAY
+    (via any of the three sources), using their last_active_time as it stood
+    BEFORE this run updates it. This is the only place that can compute this
+    reliably -- daily_records.db's deposits/withdrawals/wallet tables are
+    purged to a rolling 33-day window, so trying to derive "how long were
+    they inactive" from that history alone (as the report originally did)
+    silently drops every comeback after a gap longer than that, which is
+    most of the 10-180/15-240 day range the Reactivation report needs to
+    cover.
+
+    Returns (changed, reactivation_candidates) -- changed is True iff at
+    least one row was actually inserted or updated this run."""
     conn = sqlite3.connect(master_db_path)
     cur = conn.cursor()
     try:
@@ -199,27 +217,32 @@ def sync_master_userlist(master_db_path, deposit_rows, deposit_info, today):
         pass  # column already exists from a previous run
 
     existing_rows = cur.execute(
-        "SELECT user_id, total_recharge, deposit_sync_time, last_active_time FROM users"
+        "SELECT user_id, total_recharge, vip_level, deposit_sync_time, last_active_time FROM users"
     ).fetchall()
     existing = {
-        uid: {"total_recharge": tr, "sync_time": st, "last_active_time": lat}
-        for uid, tr, st, lat in existing_rows
+        uid: {"total_recharge": tr, "vip_level": vl, "sync_time": st, "last_active_time": lat}
+        for uid, tr, vl, st, lat in existing_rows
     }
 
     fixed = 0
     for uid, info in existing.items():
-        cur.execute("UPDATE users SET vip_level = ? WHERE user_id = ?", (vip_level_for_total(info["total_recharge"]), uid))
-        fixed += 1
+        correct_vip = vip_level_for_total(info["total_recharge"])
+        if correct_vip != info["vip_level"]:
+            cur.execute("UPDATE users SET vip_level = ? WHERE user_id = ?", (correct_vip, uid))
+            info["vip_level"] = correct_vip
+            fixed += 1
     conn.commit()
 
     today_str = today.isoformat()
     today_amount = defaultdict(float)
+    today_active = set()
     deltas = defaultdict(lambda: {"amount": 0.0, "max_create_time": None})
     for pay_channel, order_amount, create_time, update_time_col, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None or not create_time:
             continue
         if str(create_time).startswith(today_str):
             today_amount[user_id] += order_amount or 0.0
+            today_active.add(user_id)
         baseline = existing.get(user_id, {}).get("sync_time")
         if baseline and str(create_time) <= str(baseline):
             continue
@@ -228,8 +251,15 @@ def sync_master_userlist(master_db_path, deposit_rows, deposit_info, today):
         if not d["max_create_time"] or str(create_time) > str(d["max_create_time"]):
             d["max_create_time"] = create_time
 
+    for user_id, ts in withdrawal_activity.items():
+        if ts and str(ts).startswith(today_str):
+            today_active.add(user_id)
+    for user_id, ts in wallet_activity.items():
+        if ts and str(ts).startswith(today_str):
+            today_active.add(user_id)
+
     reactivation_candidates = []
-    for user_id, amount in today_amount.items():
+    for user_id in today_active:
         prior = existing.get(user_id)
         if not prior or not prior["last_active_time"]:
             continue  # brand-new / never-active user, not a "reactivation"
@@ -243,38 +273,61 @@ def sync_master_userlist(master_db_path, deposit_rows, deposit_info, today):
         reactivation_candidates.append({
             "user_id": user_id,
             "inactive_days": gap_days,
-            "total_deposit": round(amount, 2),
+            "total_deposit": round(today_amount.get(user_id, 0.0), 2),
         })
 
+    # Union of every user touched by ANY of the three sources this run --
+    # each may need a last_active_time bump even with zero deposit delta.
+    touched_users = set(deltas.keys()) | set(withdrawal_activity.keys()) | set(wallet_activity.keys())
+
     new_users = updated = 0
-    for user_id, d in deltas.items():
-        sync_time = str(d["max_create_time"])
-        if user_id not in existing:
-            total = round(d["amount"], 2)
-            vip = vip_level_for_total(total)
+    for user_id in touched_users:
+        d = deltas.get(user_id)
+        candidate_times = []
+        if d and d["max_create_time"]:
+            candidate_times.append(str(d["max_create_time"]))
+        if withdrawal_activity.get(user_id):
+            candidate_times.append(str(withdrawal_activity[user_id]))
+        if wallet_activity.get(user_id):
+            candidate_times.append(str(wallet_activity[user_id]))
+        if not candidate_times:
+            continue
+        latest_activity = max(candidate_times)
+
+        prior = existing.get(user_id)
+        if prior is None:
+            deposit_amount = round(d["amount"], 2) if d else 0.0
+            vip = vip_level_for_total(deposit_amount)
             dep = deposit_info.get(user_id, {})
+            deposit_sync_time = str(d["max_create_time"]) if d and d["max_create_time"] else None
             cur.execute(
                 "INSERT INTO users (user_id, phone, city, channel, total_recharge, vip_level, "
                 "last_active_time, deposit_sync_time, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (user_id, dep.get("phone"), dep.get("city"), dep.get("channel"), total, vip,
-                 sync_time, sync_time, str(dep.get("register_time") or sync_time)),
+                (user_id, dep.get("phone"), dep.get("city"), dep.get("channel"), deposit_amount, vip,
+                 latest_activity, deposit_sync_time, str(dep.get("register_time") or latest_activity)),
             )
             new_users += 1
         else:
-            new_total = round((existing[user_id]["total_recharge"] or 0.0) + d["amount"], 2)
-            cur.execute(
-                "UPDATE users SET total_recharge = ?, vip_level = ?, deposit_sync_time = ?, last_active_time = ? "
-                "WHERE user_id = ?",
-                (new_total, vip_level_for_total(new_total), sync_time, sync_time, user_id),
-            )
-            updated += 1
+            sets, params = [], []
+            if d and d["max_create_time"]:
+                new_total = round((prior["total_recharge"] or 0.0) + d["amount"], 2)
+                sets += ["total_recharge = ?", "vip_level = ?", "deposit_sync_time = ?"]
+                params += [new_total, vip_level_for_total(new_total), str(d["max_create_time"])]
+            current_last_active = prior["last_active_time"]
+            if not current_last_active or latest_activity > str(current_last_active):
+                sets.append("last_active_time = ?")
+                params.append(latest_activity)
+            if sets:
+                params.append(user_id)
+                cur.execute(f"UPDATE users SET {', '.join(sets)} WHERE user_id = ?", params)
+                updated += 1
 
     conn.commit()
     conn.close()
-    print(f"Master userlist VIP recompute: {fixed} users' vip_level recalculated from total_recharge")
-    print(f"Master userlist sync: {new_users} new users inserted, {updated} users' total_recharge/vip_level updated from new deposits")
+    print(f"Master userlist VIP recompute: {fixed} users' vip_level actually changed")
+    print(f"Master userlist sync: {new_users} new users inserted, {updated} users updated from deposit/withdrawal/wallet activity")
     print(f"Reactivation candidates today: {len(reactivation_candidates)}")
-    return True, reactivation_candidates
+    return (fixed > 0 or new_users > 0 or updated > 0), reactivation_candidates
 
 
 def main():
@@ -353,21 +406,38 @@ def main():
     finally:
         sys.argv = argv_backup
 
-    # Keep master_userlist.db current on every pull: VIP level is derived purely
-    # from cumulative total deposit (see sync_master_userlist docstring). Read
-    # deposit_rows from the just-ingested daily_records.db (not the raw xlsx) so
-    # this always matches what's actually stored. Always re-uploads
-    # master_userlist.db (224MB) -- the vip_level recompute pass touches every
-    # existing user every run.
+    # Keep master_userlist.db current on every pull: VIP level/total_recharge
+    # are derived purely from cumulative deposits, but last_active_time is
+    # bumped by ANY of deposit, withdrawal, or wallet activity (see
+    # sync_master_userlist docstring). Read straight from the just-ingested
+    # daily_records.db (not the raw xlsx files) so this always matches what's
+    # actually stored. withdrawal/wallet activity is aggregated via a single
+    # GROUP BY MAX query each -- wallet_transactions alone can be tens of
+    # millions of rows across its 33-day window, so fetching every row into
+    # Python here would be a real cost, not just a correctness risk.
     master_db_path = os.path.join(ci_ingest.BASE, "master_userlist.db")
     daily_db_path = os.path.join(ci_ingest.BASE, "daily_records.db")
     daily_conn = sqlite3.connect(daily_db_path)
     deposit_rows_for_sync = daily_conn.execute(
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"
     ).fetchall()
+    # idx_wd_user/idx_wt_user (created once in build_daily_records.py, already
+    # persisted in R2) let SQLite group by user_id without a full sort. A new
+    # composite (user_id, create_time) index isn't worth adding here: this
+    # local daily_records.db copy is opened AFTER ingest_update.py already
+    # re-uploaded it to R2, so a new index built here would just be rebuilt
+    # from scratch on every future run instead of paying for itself once.
+    withdrawal_activity = dict(daily_conn.execute(
+        "SELECT user_id, MAX(create_time) FROM withdrawals WHERE user_id IS NOT NULL GROUP BY user_id"
+    ).fetchall())
+    wallet_activity = dict(daily_conn.execute(
+        "SELECT user_id, MAX(create_time) FROM wallet_transactions WHERE user_id IS NOT NULL GROUP BY user_id"
+    ).fetchall())
     daily_conn.close()
     dep_info = extract_deposit_user_info(deposit_path)
-    ok, reactivation_candidates = sync_master_userlist(master_db_path, deposit_rows_for_sync, dep_info, today)
+    ok, reactivation_candidates = sync_master_userlist(
+        master_db_path, deposit_rows_for_sync, withdrawal_activity, wallet_activity, dep_info, today
+    )
     if ok:
         subprocess.run(
             [sys.executable, os.path.join(ci_ingest.BASE, "upload_to_r2.py"), "--files", "master_userlist.db"],

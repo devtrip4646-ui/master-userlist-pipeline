@@ -462,26 +462,31 @@ def action_center_reports(mconn, now):
 
 
 def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center):
-    """Users who deposited TODAY after a qualifying inactive gap since their
+    """Users active TODAY (deposit, withdrawal, or wallet/bet activity --
+    whichever is most recent) after a qualifying inactive gap since their
     previous activity. Two VIP-tier-scoped cohorts, using the same day ranges
     as the Inactive-Low/Inactive-High action-center lists so a user "moving"
     from one report to the other is exactly consistent:
       Low  (VIP2-4):  previous gap 10-180 days
       High (VIP5-15): previous gap 15-240 days
+    total_deposit on each row is specifically today's DEPOSIT amount (0 if
+    the user reactivated via a withdrawal or wallet transaction with no
+    matching deposit today) -- VIP/total_recharge stay deposit-only even
+    though the activity/inactivity signal itself is not.
 
     reactivation_candidates comes from api_pull_ingest.py's
-    sync_master_userlist(), NOT from daily_records.db's deposits table --
-    that table is purged to a rolling 33-day window, which would silently
-    drop every comeback after a longer gap (i.e. most of the 10-180/15-240
-    day range). sync_master_userlist runs earlier in the same job and is the
-    only place that still has each user's PRE-update last_active_time
-    (unbounded history), so it computes the true gap there and hands the
-    candidate list off via a local JSON file.
+    sync_master_userlist(), NOT derived here from daily_records.db directly
+    -- those tables are purged to a rolling 33-day window, which would
+    silently drop every comeback after a longer gap (i.e. most of the
+    10-180/15-240 day range). sync_master_userlist runs earlier in the same
+    job and is the only place that still has each user's PRE-update
+    last_active_time (unbounded history), so it computes the true gap there
+    and hands the candidate list off via a local JSON file.
 
     "% reactivated" denominator is reconstructed as reactivated_today +
     still_currently_inactive (from action_center, already computed this run
     -- reactivated users are correctly excluded from it since their
-    inactive_days reset to 0 once today's deposit lands in master_userlist.db).
+    inactive_days reset to 0 once today's activity lands in master_userlist.db).
     No separate "yesterday's inactive list" snapshot needs to be stored."""
     vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
 
@@ -515,13 +520,13 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
         "low": {
             "note": "VIP 2 to VIP 4, reactivated today (was inactive 10-180 days)",
             "reactivated_count": len(low_rows),
-            "pct_reactivated": round(len(low_rows) / baseline_low * 100, 1) if baseline_low else 0.0,
+            "pct_reactivated": round(len(low_rows) / baseline_low * 100, 2) if baseline_low else 0.0,
             "rows": low_rows[:ACTION_CENTER_LIST_CAP],
         },
         "high": {
             "note": "VIP 5 to VIP 15, reactivated today (was inactive 15-240 days)",
             "reactivated_count": len(high_rows),
-            "pct_reactivated": round(len(high_rows) / baseline_high * 100, 1) if baseline_high else 0.0,
+            "pct_reactivated": round(len(high_rows) / baseline_high * 100, 2) if baseline_high else 0.0,
             "rows": high_rows[:ACTION_CENTER_LIST_CAP],
         },
     }
