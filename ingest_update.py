@@ -159,6 +159,16 @@ def ingest_wallet(files):
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
     n_cols = len(cur.execute("PRAGMA table_info(wallet_transactions)").fetchall())
+    # bonuses is normally created once by the original bootstrap (build_daily_records.py),
+    # not by this ongoing script -- IF NOT EXISTS here so a from-scratch daily_records.db
+    # doesn't fail on the INSERT below.
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS bonuses ("
+        "id INTEGER PRIMARY KEY, user_id INTEGER, bonus_name TEXT, matched_category TEXT, "
+        "change_value REAL, change_after REAL, create_time TEXT, source TEXT)"
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_user ON bonuses(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_name ON bonuses(bonus_name)")
     added = 0
     new_bonus_rows = []
     for f in files:

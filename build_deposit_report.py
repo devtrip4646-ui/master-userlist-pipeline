@@ -10,6 +10,7 @@ caller) and R2 credentials in env vars or .r2_credentials.
 """
 import json
 import os
+import re
 import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -979,6 +980,202 @@ def performance_history(mconn):
     }
 
 
+# Same heuristic as ingest_update.py's classify_bonus() (duplicated, not
+# imported -- same pattern as VIP_THRESHOLDS being duplicated across
+# api_pull_ingest.py and here, so this script stays runnable standalone).
+# Used to exclude bonus payouts from game engagement/GGR numbers -- without
+# this, "Welcome Back Bonus" would show up as if it were a played game.
+GAME_CANONICAL_BONUSES = [
+    "Welcome Back Bonus", "Loyalty Bonus", "First deposit", "Second Deposit",
+    "Third deposit", "Fourth deposit", "Low VIP", "Mid VIP", "High VIP", "Super VIP",
+    "Evolution Live Betting Bonus", "Daily Active Bonus", "Daily Active Bonus Low",
+]
+_DEPOSIT_ORDINAL_RE = re.compile(r"^(first|second|third|fourth|fifth)\s+deposit$", re.I)
+_VIP_TIER_RE = re.compile(r"^(low|mid|high|super)\s*vip$", re.I)
+_VIP_WEEK_OR_LEVEL_RE = re.compile(r"vip\s*(week|level)", re.I)
+_GAME_CANON_NORM = {re.sub(r"\s+", " ", c.strip().lower()): c for c in GAME_CANONICAL_BONUSES}
+
+
+def _is_bonus_name(game_name):
+    if not game_name:
+        return False
+    norm = re.sub(r"\s+", " ", str(game_name).strip().lower())
+    if norm in _GAME_CANON_NORM:
+        return True
+    s = str(game_name).strip()
+    if _DEPOSIT_ORDINAL_RE.match(s) or _VIP_TIER_RE.match(s) or _VIP_WEEK_OR_LEVEL_RE.search(s):
+        return True
+    if "bonus" in norm and ":" not in s:
+        return True
+    return False
+
+
+def game_engagement_ggr(daily_conn):
+    """Which games get played most, and which make (or lose) the house the
+    most money -- from wallet_transactions.game_name + change_value, which
+    up to now has only ever been used to count "was this user active",
+    never looked at as actual gameplay data despite being the single
+    largest data source this pipeline ingests.
+
+    GGR (Gross Gaming Revenue) per game = -SUM(change_value): change_value
+    is the user's wallet delta for that transaction (positive = they
+    won/received money, negative = they bet/lost money), so the negative of
+    the total across all players on a game IS the house's net position on
+    it -- positive means the house is profiting from that game, negative
+    means it's paying out more than it collects ("bleeding").
+
+    Bonus-classified game_name values (see _is_bonus_name) are excluded so
+    bonus payouts never get miscounted as gameplay.
+
+    Uses idx_wt_game (already indexed) for an efficient GROUP BY directly in
+    SQLite rather than fetching wallet_transactions row-by-row into Python
+    -- that table alone can be tens of millions of rows. Scoped to
+    daily_records.db's currently-retained window (up to 33 days) -- unlike
+    Net Revenue, this wasn't identified as needing permanent history, so no
+    rollup table was built for it."""
+    rows = daily_conn.execute(
+        "SELECT game_name, COUNT(*), COUNT(DISTINCT user_id), SUM(change_value) "
+        "FROM wallet_transactions WHERE game_name IS NOT NULL AND game_name != '' "
+        "GROUP BY game_name"
+    ).fetchall()
+    games = []
+    for game_name, play_count, unique_players, net_change in rows:
+        if _is_bonus_name(game_name):
+            continue
+        games.append({
+            "game_name": game_name,
+            "play_count": play_count,
+            "unique_players": unique_players,
+            "ggr": round(-(net_change or 0.0), 2),
+        })
+    by_ggr = sorted(games, key=lambda g: -g["ggr"])
+    return {
+        "by_engagement": sorted(games, key=lambda g: -g["play_count"])[:15],
+        "by_ggr_top": by_ggr[:10],
+        "by_ggr_bottom": [g for g in reversed(by_ggr) if g["ggr"] < 0][:10],
+    }
+
+
+def acquisition_channel_analytics(mconn, now):
+    """Acquisition channel -- deposits' own 'channel' column (spreadsheet
+    column P, index 15; NOT pay_channel, which is the payment METHOD like
+    UPI/bank transfer, already covered by the existing Deposit Channel
+    Analysis section). This is which marketing/agent channel referred the
+    user, captured once at their first deposit and stored permanently on
+    master_userlist.db (see extract_deposit_user_info in
+    api_pull_ingest.py). For each channel: user count, total lifetime
+    deposit (LTV, using total_recharge) and withdrawal (total_withdrawal) --
+    both already permanent and immune to the 33-day purge, so this whole
+    report needs no daily_records.db access at all -- net revenue per
+    channel (this doubles as the "Net Revenue by channel" angle, using the
+    same acquisition-channel dimension rather than payment-method channel,
+    which is a separate, already-covered concept), average LTV per user,
+    and % still active within 30 days as a retention signal."""
+    rows = mconn.execute(
+        "SELECT channel, total_recharge, total_withdrawal, last_active_time FROM users WHERE channel IS NOT NULL AND channel != ''"
+    ).fetchall()
+    by_channel = defaultdict(lambda: {"users": 0, "total_ltv": 0.0, "total_withdrawal": 0.0, "active_count": 0})
+    for channel, total_recharge, total_withdrawal, last_active_time in rows:
+        b = by_channel[channel]
+        b["users"] += 1
+        b["total_ltv"] += total_recharge or 0.0
+        b["total_withdrawal"] += total_withdrawal or 0.0
+        last_active_dt = parse_dt(last_active_time)
+        if last_active_dt and (now - last_active_dt).days <= 30:
+            b["active_count"] += 1
+    result = [
+        {
+            "channel": channel,
+            "user_count": b["users"],
+            "total_ltv": round(b["total_ltv"], 2),
+            "avg_ltv": round(b["total_ltv"] / b["users"], 2) if b["users"] else 0.0,
+            "total_withdrawal": round(b["total_withdrawal"], 2),
+            "net_revenue": round(b["total_ltv"] - b["total_withdrawal"], 2),
+            "active_count": b["active_count"],
+            "retention_pct": round(b["active_count"] / b["users"] * 100, 2) if b["users"] else 0.0,
+        }
+        for channel, b in by_channel.items()
+    ]
+    result.sort(key=lambda r: -r["avg_ltv"])
+    return result
+
+
+def bonus_claim_report(mconn, deposit_challenge_bonus_rows):
+    """Unifies BOTH bonus systems this platform runs, so "which bonus is
+    better/safer" can be answered across all of them, not just one:
+      1. wallet_transactions-sourced bonuses (Welcome Back, Loyalty, ordinal
+         deposit bonuses, VIP tier bonuses, Daily Active, Evolution Live
+         Betting, etc.) -- lifetime totals from the permanent
+         bonus_performance rollup (see compute_and_save_bonus_performance in
+         api_pull_ingest.py), since the source `bonuses` table itself is
+         purged to daily_records.db's rolling 33-day window.
+      2. The 3-Day Deposit Challenge Bonus (Rules 1-4, +Rs10/20/30/60) --
+         today's payable claims, passed in directly since
+         deposit_report.json already computes this fresh every run.
+
+    Learning about new bonuses: bonus_performance is keyed by whatever
+    category classify_bonus() (in ingest_update.py) tags a game_name with,
+    so any NEW bonus that matches the EXISTING patterns (another "X
+    Deposit", another VIP tier name, anything containing "bonus") gets
+    picked up and its history starts accumulating automatically the first
+    day it appears -- no code change needed. A genuinely novel bonus name
+    that doesn't match any of those patterns would currently be missed
+    entirely (misread as a real game) -- that's a real limitation of the
+    underlying heuristic itself, not something this report can fix on its
+    own. If the platform introduces a bonus whose name doesn't fit "X
+    Deposit" / "X VIP" / doesn't contain "bonus", CANONICAL_BONUSES in
+    ingest_update.py needs a one-line addition to start tracking it."""
+    try:
+        rows = mconn.execute(
+            "SELECT bonus_category, SUM(claim_count), SUM(total_value), SUM(unique_users), MIN(date), MAX(date) "
+            "FROM bonus_performance GROUP BY bonus_category"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []  # pre-dates this feature
+
+    wallet_bonuses = [
+        {
+            "bonus_category": category,
+            "claim_count": claim_count,
+            "total_value": round(total_value or 0.0, 2),
+            "avg_value": round((total_value or 0.0) / claim_count, 2) if claim_count else 0.0,
+            # Sum of each day's unique-claimer count -- a repeat claimer across
+            # multiple days is counted more than once, this is NOT a true
+            # all-time unique-user count (bonus_performance only stores daily
+            # aggregates, not user-level rows, so a true figure isn't available
+            # without a much larger permanent table).
+            "unique_users_daily_sum": unique_users,
+            "first_seen": first_seen,
+            "last_seen": last_seen,
+        }
+        for category, claim_count, total_value, unique_users, first_seen, last_seen in rows
+    ]
+    wallet_bonuses.sort(key=lambda b: -b["total_value"])
+
+    dcb_totals = defaultdict(lambda: {"claim_count": 0, "total_value": 0.0, "users": set()})
+    for r in deposit_challenge_bonus_rows:
+        d = dcb_totals[r["rule"]]
+        d["claim_count"] += 1
+        d["total_value"] += r["bonus_amount"]
+        d["users"].add(r["user_id"])
+    deposit_challenge_bonuses = [
+        {
+            "bonus_category": rule,
+            "claim_count": d["claim_count"],
+            "total_value": round(d["total_value"], 2),
+            "avg_value": round(d["total_value"] / d["claim_count"], 2) if d["claim_count"] else 0.0,
+            "unique_users_today": len(d["users"]),
+        }
+        for rule, d in dcb_totals.items()
+    ]
+    deposit_challenge_bonuses.sort(key=lambda b: -b["total_value"])
+
+    return {
+        "wallet_bonuses": wallet_bonuses,
+        "deposit_challenge_bonuses": deposit_challenge_bonuses,
+    }
+
+
 def main():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -992,6 +1189,7 @@ def main():
     wallet_rows = cur.execute(
         "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
     ).fetchall()
+    game_ggr = game_engagement_ggr(conn)
     conn.close()
 
     by_date_bet_users = defaultdict(set)
@@ -1009,6 +1207,7 @@ def main():
     reactivation = None
     vip_upgrade = None
     performance = None
+    acquisition_channel = None
     # Source timestamps (create_time, last_active_time, etc.) are IST, but this
     # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
     # be ~5.5h behind IST, making very recent activity look like it's in the
@@ -1048,6 +1247,7 @@ def main():
             vip_upgrade["funnel"] = funnel_data.get("vip_upgrade")
 
         performance = performance_history(mconn)
+        acquisition_channel = acquisition_channel_analytics(mconn, now)
 
         mconn.close()
 
@@ -1148,6 +1348,12 @@ def main():
         "bonus_claimer": bonus_claimer_retention(deposit_challenge_bonus_rows, deposit_rows, city_by_user, now.date()),
     }
 
+    bonus_claims = None
+    if os.path.exists(master_db_path):
+        mconn2 = sqlite3.connect(master_db_path)
+        bonus_claims = bonus_claim_report(mconn2, deposit_challenge_bonus_rows)
+        mconn2.close()
+
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         # The exact IST calendar date used as "today" for Reactivation, VIP
@@ -1177,6 +1383,9 @@ def main():
         "vip_upgrade": vip_upgrade,
         "retention": retention,
         "performance_history": performance,
+        "game_ggr": game_ggr,
+        "acquisition_channel": acquisition_channel,
+        "bonus_claims": bonus_claims,
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")

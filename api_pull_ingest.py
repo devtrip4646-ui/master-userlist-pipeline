@@ -324,7 +324,55 @@ def compute_and_save_daily_performance(cur, deposit_rows, withdrawal_rows, today
     return len(all_dates)
 
 
-def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_activity, deposit_info, today):
+def compute_and_save_bonus_performance(cur, bonus_rows, today):
+    """Permanent per-day, per-bonus-category rollup -- daily_records.db's
+    `bonuses` table (populated by ingest_update.py's classify_bonus(), which
+    tags wallet_transactions.game_name values matching known bonus patterns:
+    CANONICAL_BONUSES plus ordinal-deposit/VIP-tier/"bonus"-keyword regexes)
+    is ALSO purged to the rolling 33-day window, same as everything else in
+    daily_records.db. Without this table, "which bonus performed well last
+    month" would already be unanswerable by the time you asked.
+
+    Mirrors compute_and_save_daily_performance exactly: re-derives every
+    date currently present in bonus_rows (except today, still accumulating)
+    on every run, so a date keeps self-correcting for as long as its source
+    rows are still retained, and simply keeps its last-computed value
+    forever once they finally purge.
+
+    bonus_rows are (matched_category, user_id, change_value, create_time)
+    from daily_records.db's bonuses table -- a small table (a subset of
+    wallet_transactions), safe to fetch in full."""
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS bonus_performance ("
+        "bonus_category TEXT, date TEXT, claim_count INTEGER, total_value REAL, unique_users INTEGER, "
+        "PRIMARY KEY (bonus_category, date))"
+    )
+    by_cat_date = defaultdict(lambda: {"count": 0, "value": 0.0, "users": set()})
+    for matched_category, user_id, change_value, create_time in bonus_rows:
+        if not matched_category or not create_time:
+            continue
+        d = str(create_time)[:10]
+        entry = by_cat_date[(matched_category, d)]
+        entry["count"] += 1
+        entry["value"] += change_value or 0.0
+        if user_id is not None:
+            entry["users"].add(user_id)
+
+    today_str = today.isoformat()
+    n = 0
+    for (category, d), entry in by_cat_date.items():
+        if d == today_str:
+            continue
+        cur.execute(
+            "INSERT OR REPLACE INTO bonus_performance (bonus_category, date, claim_count, total_value, unique_users) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (category, d, entry["count"], round(entry["value"], 2), len(entry["users"])),
+        )
+        n += 1
+    return n
+
+
+def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_activity, bonus_rows, deposit_info, today):
     """VIP level and total_recharge are purely a function of cumulative
     deposits (the platform's own VIP table -- level N requires
     total_recharge >= VIP_THRESHOLDS[N]), never withdrawal or wallet
@@ -446,8 +494,9 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
     # after being created) get corrected promptly instead of waiting for
     # tomorrow's first run.
     n_days = compute_and_save_daily_performance(cur, deposit_rows, withdrawal_rows, today)
+    n_bonus = compute_and_save_bonus_performance(cur, bonus_rows, today)
     conn.commit()
-    print(f"Daily performance rollup refreshed for {n_days} dates (permanent, survives the 33-day purge)")
+    print(f"Daily performance rollup refreshed for {n_days} dates; bonus performance for {n_bonus} category-dates (both permanent, survive the 33-day purge)")
 
     existing_rows = cur.execute(
         "SELECT user_id, total_recharge, vip_level, deposit_sync_time, last_active_time, total_withdrawal, withdrawal_sync_time FROM users"
@@ -752,10 +801,16 @@ def main():
     wallet_activity = dict(daily_conn.execute(
         "SELECT user_id, MAX(create_time) FROM wallet_transactions WHERE user_id IS NOT NULL GROUP BY user_id"
     ).fetchall())
+    try:
+        bonus_rows_for_sync = daily_conn.execute(
+            "SELECT matched_category, user_id, change_value, create_time FROM bonuses"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        bonus_rows_for_sync = []  # table doesn't exist yet (e.g. no wallet data ingested so far)
     daily_conn.close()
     dep_info = extract_deposit_user_info(deposit_path)
     ok, reactivation_candidates, vip_upgrade_candidates = sync_master_userlist(
-        master_db_path, deposit_rows_for_sync, withdrawal_rows_for_sync, wallet_activity, dep_info, today
+        master_db_path, deposit_rows_for_sync, withdrawal_rows_for_sync, wallet_activity, bonus_rows_for_sync, dep_info, today
     )
     if ok:
         subprocess.run(
