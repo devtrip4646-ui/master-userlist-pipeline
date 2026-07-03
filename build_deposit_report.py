@@ -1033,6 +1033,30 @@ def game_engagement_ggr(daily_conn):
     daily_records.db's currently-retained window (up to 33 days) -- unlike
     Net Revenue, this wasn't identified as needing permanent history, so no
     rollup table was built for it."""
+    # TEMP DIAGNOSTIC (remove once GGR sign convention is confirmed): every
+    # game in initial results showed negative GGR, including the "top GGR"
+    # list, which is implausible for a real platform -- sample the relationship
+    # between direction/consume_type and change_value's sign to verify the
+    # -SUM(change_value) formula actually matches "house profit" semantics.
+    diag = daily_conn.execute(
+        "SELECT direction, consume_type, "
+        "SUM(CASE WHEN change_value > 0 THEN 1 ELSE 0 END) as pos_count, "
+        "SUM(CASE WHEN change_value < 0 THEN 1 ELSE 0 END) as neg_count, "
+        "SUM(change_value) as total_change, COUNT(*) as n "
+        "FROM wallet_transactions WHERE game_name IS NOT NULL AND game_name != '' "
+        "GROUP BY direction, consume_type ORDER BY n DESC LIMIT 20"
+    ).fetchall()
+    print("GGR_DIAGNOSTIC direction/consume_type breakdown (direction, consume_type, pos_count, neg_count, total_change, n):")
+    for row in diag:
+        print("  ", row)
+    sample = daily_conn.execute(
+        "SELECT game_name, direction, consume_type, change_value, change_after "
+        "FROM wallet_transactions WHERE game_name = 'Aviator' LIMIT 10"
+    ).fetchall()
+    print("GGR_DIAGNOSTIC sample Aviator rows (game_name, direction, consume_type, change_value, change_after):")
+    for row in sample:
+        print("  ", row)
+
     rows = daily_conn.execute(
         "SELECT game_name, COUNT(*), COUNT(DISTINCT user_id), SUM(change_value) "
         "FROM wallet_transactions WHERE game_name IS NOT NULL AND game_name != '' "
