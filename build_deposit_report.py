@@ -640,7 +640,11 @@ def main():
     vip_by_user = {}
     city_by_user = {}
     action_center = None
-    now = datetime.now()
+    # Source timestamps (create_time, last_active_time, etc.) are IST, but this
+    # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
+    # be ~5.5h behind IST, making very recent activity look like it's in the
+    # future (negative inactive_days/hours). Compute "now" in IST to match.
+    now = datetime.utcnow() + timedelta(hours=5, minutes=30)
     master_db_path = os.path.join(BASE, "master_userlist.db")
     if os.path.exists(master_db_path):
         mconn = sqlite3.connect(master_db_path)
