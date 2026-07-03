@@ -1017,12 +1017,23 @@ def game_engagement_ggr(daily_conn):
     never looked at as actual gameplay data despite being the single
     largest data source this pipeline ingests.
 
-    GGR (Gross Gaming Revenue) per game = -SUM(change_value): change_value
-    is the user's wallet delta for that transaction (positive = they
-    won/received money, negative = they bet/lost money), so the negative of
-    the total across all players on a game IS the house's net position on
-    it -- positive means the house is profiting from that game, negative
-    means it's paying out more than it collects ("bleeding").
+    GGR (Gross Gaming Revenue) per game = SUM(change_value WHERE direction=1)
+    - SUM(change_value WHERE direction=0). change_value in this data is
+    ALWAYS a positive magnitude (confirmed via diagnostic: 0 negative rows
+    among game_name-tagged transactions in either direction group) -- an
+    earlier version of this function wrongly assumed change_value itself was
+    signed (positive=win, negative=bet) and used -SUM(change_value), which
+    produced every single game showing a large negative GGR including the
+    "top GGR" list, an implausible pattern for a real platform. `direction`
+    (0 or 1) is what actually carries debit/credit sign.
+    direction=1 rows are far more numerous with a smaller average amount
+    (~Rs21) and direction=0 rows are fewer with a larger average (~Rs93) --
+    consistent with direction=1 = frequent small bets (debits) and
+    direction=0 = less frequent, larger win payouts (credits), which is the
+    interpretation used here. This is inferred from volume/magnitude
+    patterns, not an explicit field label, since there's no accompanying
+    documentation for this export format -- worth confirming against the
+    platform's own definition if this number drives real decisions.
 
     Bonus-classified game_name values (see _is_bonus_name) are excluded so
     bonus payouts never get miscounted as gameplay.
@@ -1033,44 +1044,22 @@ def game_engagement_ggr(daily_conn):
     daily_records.db's currently-retained window (up to 33 days) -- unlike
     Net Revenue, this wasn't identified as needing permanent history, so no
     rollup table was built for it."""
-    # TEMP DIAGNOSTIC (remove once GGR sign convention is confirmed): every
-    # game in initial results showed negative GGR, including the "top GGR"
-    # list, which is implausible for a real platform -- sample the relationship
-    # between direction/consume_type and change_value's sign to verify the
-    # -SUM(change_value) formula actually matches "house profit" semantics.
-    diag = daily_conn.execute(
-        "SELECT direction, consume_type, "
-        "SUM(CASE WHEN change_value > 0 THEN 1 ELSE 0 END) as pos_count, "
-        "SUM(CASE WHEN change_value < 0 THEN 1 ELSE 0 END) as neg_count, "
-        "SUM(change_value) as total_change, COUNT(*) as n "
-        "FROM wallet_transactions WHERE game_name IS NOT NULL AND game_name != '' "
-        "GROUP BY direction, consume_type ORDER BY n DESC LIMIT 20"
-    ).fetchall()
-    print("GGR_DIAGNOSTIC direction/consume_type breakdown (direction, consume_type, pos_count, neg_count, total_change, n):")
-    for row in diag:
-        print("  ", row)
-    sample = daily_conn.execute(
-        "SELECT game_name, direction, consume_type, change_value, change_after "
-        "FROM wallet_transactions WHERE game_name = 'Aviator' LIMIT 10"
-    ).fetchall()
-    print("GGR_DIAGNOSTIC sample Aviator rows (game_name, direction, consume_type, change_value, change_after):")
-    for row in sample:
-        print("  ", row)
-
     rows = daily_conn.execute(
-        "SELECT game_name, COUNT(*), COUNT(DISTINCT user_id), SUM(change_value) "
+        "SELECT game_name, COUNT(*), COUNT(DISTINCT user_id), "
+        "SUM(CASE WHEN direction = 1 THEN change_value ELSE 0 END), "
+        "SUM(CASE WHEN direction = 0 THEN change_value ELSE 0 END) "
         "FROM wallet_transactions WHERE game_name IS NOT NULL AND game_name != '' "
         "GROUP BY game_name"
     ).fetchall()
     games = []
-    for game_name, play_count, unique_players, net_change in rows:
+    for game_name, play_count, unique_players, bet_total, win_total in rows:
         if _is_bonus_name(game_name):
             continue
         games.append({
             "game_name": game_name,
             "play_count": play_count,
             "unique_players": unique_players,
-            "ggr": round(-(net_change or 0.0), 2),
+            "ggr": round((bet_total or 0.0) - (win_total or 0.0), 2),
         })
     by_ggr = sorted(games, key=lambda g: -g["ggr"])
     return {
