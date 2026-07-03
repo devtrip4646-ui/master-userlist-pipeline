@@ -163,7 +163,7 @@ def extract_deposit_user_info(deposit_path):
     return info
 
 
-def sync_master_userlist(master_db_path, deposit_rows, deposit_info):
+def sync_master_userlist(master_db_path, deposit_rows, deposit_info, today):
     """VIP level is purely a function of cumulative total deposit (the platform's
     own VIP table -- level N requires total_recharge >= VIP_THRESHOLDS[N]),
     never withdrawal history. Keeps master_userlist.db current on every pull:
@@ -179,8 +179,18 @@ def sync_master_userlist(master_db_path, deposit_rows, deposit_info):
          their deposits seen so far, plus phone/city/channel from deposit_info)
          for any user_id not already in the table.
 
-    Always returns True: the recompute pass in step 1 touches every existing
-    user's vip_level every run, so master_userlist.db always changes."""
+    Also detects "reactivation candidates": existing users who deposited
+    TODAY, using their last_active_time as it stood BEFORE this run updates
+    it. This is the only place that can compute this reliably -- daily_records
+    .db's deposits table is purged to a rolling 33-day window, so trying to
+    derive "how long were they inactive" from deposit history alone (as the
+    report originally did) silently drops every comeback after a gap longer
+    than that, which is most of the 10-180/15-240 day range the Reactivation
+    report needs to cover.
+
+    Always returns (True, reactivation_candidates): the recompute pass in
+    step 1 touches every existing user's vip_level every run, so
+    master_userlist.db always changes."""
     conn = sqlite3.connect(master_db_path)
     cur = conn.cursor()
     try:
@@ -188,8 +198,13 @@ def sync_master_userlist(master_db_path, deposit_rows, deposit_info):
     except sqlite3.OperationalError:
         pass  # column already exists from a previous run
 
-    existing_rows = cur.execute("SELECT user_id, total_recharge, deposit_sync_time FROM users").fetchall()
-    existing = {uid: {"total_recharge": tr, "sync_time": st} for uid, tr, st in existing_rows}
+    existing_rows = cur.execute(
+        "SELECT user_id, total_recharge, deposit_sync_time, last_active_time FROM users"
+    ).fetchall()
+    existing = {
+        uid: {"total_recharge": tr, "sync_time": st, "last_active_time": lat}
+        for uid, tr, st, lat in existing_rows
+    }
 
     fixed = 0
     for uid, info in existing.items():
@@ -197,10 +212,14 @@ def sync_master_userlist(master_db_path, deposit_rows, deposit_info):
         fixed += 1
     conn.commit()
 
+    today_str = today.isoformat()
+    today_amount = defaultdict(float)
     deltas = defaultdict(lambda: {"amount": 0.0, "max_create_time": None})
     for pay_channel, order_amount, create_time, update_time_col, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None or not create_time:
             continue
+        if str(create_time).startswith(today_str):
+            today_amount[user_id] += order_amount or 0.0
         baseline = existing.get(user_id, {}).get("sync_time")
         if baseline and str(create_time) <= str(baseline):
             continue
@@ -208,6 +227,24 @@ def sync_master_userlist(master_db_path, deposit_rows, deposit_info):
         d["amount"] += order_amount or 0.0
         if not d["max_create_time"] or str(create_time) > str(d["max_create_time"]):
             d["max_create_time"] = create_time
+
+    reactivation_candidates = []
+    for user_id, amount in today_amount.items():
+        prior = existing.get(user_id)
+        if not prior or not prior["last_active_time"]:
+            continue  # brand-new / never-active user, not a "reactivation"
+        try:
+            prior_dt = datetime.datetime.fromisoformat(str(prior["last_active_time"]).replace(" ", "T"))
+        except ValueError:
+            continue
+        gap_days = (today - prior_dt.date()).days
+        if gap_days <= 0:
+            continue  # already active as of today/yesterday going into this run
+        reactivation_candidates.append({
+            "user_id": user_id,
+            "inactive_days": gap_days,
+            "total_deposit": round(amount, 2),
+        })
 
     new_users = updated = 0
     for user_id, d in deltas.items():
@@ -236,7 +273,8 @@ def sync_master_userlist(master_db_path, deposit_rows, deposit_info):
     conn.close()
     print(f"Master userlist VIP recompute: {fixed} users' vip_level recalculated from total_recharge")
     print(f"Master userlist sync: {new_users} new users inserted, {updated} users' total_recharge/vip_level updated from new deposits")
-    return True
+    print(f"Reactivation candidates today: {len(reactivation_candidates)}")
+    return True, reactivation_candidates
 
 
 def main():
@@ -329,12 +367,21 @@ def main():
     ).fetchall()
     daily_conn.close()
     dep_info = extract_deposit_user_info(deposit_path)
-    if sync_master_userlist(master_db_path, deposit_rows_for_sync, dep_info):
+    ok, reactivation_candidates = sync_master_userlist(master_db_path, deposit_rows_for_sync, dep_info, today)
+    if ok:
         subprocess.run(
             [sys.executable, os.path.join(ci_ingest.BASE, "upload_to_r2.py"), "--files", "master_userlist.db"],
             check=True,
         )
         print("Uploaded refreshed master_userlist.db to R2")
+
+    # Handed off to build_deposit_report.py (runs next, same job/workspace) via a
+    # local file rather than R2 -- this list only reflects "as of this exact run",
+    # not something that needs to persist or be re-fetched independently.
+    reactivation_path = os.path.join(ci_ingest.BASE, "reactivation_candidates.json")
+    with open(reactivation_path, "w") as f:
+        json.dump(reactivation_candidates, f)
+    print(f"Wrote {len(reactivation_candidates)} reactivation candidates to {reactivation_path}")
 
     # Only mark the wallet target date as covered after a successful ingest
     put_wallet_state(s3, bucket, {"last_run_date": today.isoformat(), "last_wallet_target": wallet_target.isoformat()})

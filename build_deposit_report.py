@@ -461,60 +461,41 @@ def action_center_reports(mconn, now):
     }
 
 
-def deposit_reactivation_analytics(mconn, deposit_rows, action_center, today):
+def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center):
     """Users who deposited TODAY after a qualifying inactive gap since their
-    previous deposit (within the 33-day retention window) -- i.e. they just
-    reactivated. Two VIP-tier-scoped cohorts, using the same day ranges as
-    the Inactive-Low/Inactive-High action-center lists so a user "moving"
+    previous activity. Two VIP-tier-scoped cohorts, using the same day ranges
+    as the Inactive-Low/Inactive-High action-center lists so a user "moving"
     from one report to the other is exactly consistent:
       Low  (VIP2-4):  previous gap 10-180 days
       High (VIP5-15): previous gap 15-240 days
-    Users with no prior deposit in the visible window (first-timers, or
-    truly stale beyond retention) are excluded -- there's no way to
-    confirm they were "inactive" rather than new.
+
+    reactivation_candidates comes from api_pull_ingest.py's
+    sync_master_userlist(), NOT from daily_records.db's deposits table --
+    that table is purged to a rolling 33-day window, which would silently
+    drop every comeback after a longer gap (i.e. most of the 10-180/15-240
+    day range). sync_master_userlist runs earlier in the same job and is the
+    only place that still has each user's PRE-update last_active_time
+    (unbounded history), so it computes the true gap there and hands the
+    candidate list off via a local JSON file.
 
     "% reactivated" denominator is reconstructed as reactivated_today +
     still_currently_inactive (from action_center, already computed this run
     -- reactivated users are correctly excluded from it since their
     inactive_days reset to 0 once today's deposit lands in master_userlist.db).
     No separate "yesterday's inactive list" snapshot needs to be stored."""
-    vip_by_user = {}
-    balance_by_user = {}
-    for user_id, vip_level, user_balance in mconn.execute(
-        "SELECT user_id, vip_level, user_balance FROM users"
-    ).fetchall():
-        vip_by_user[user_id] = vip_level
-        balance_by_user[user_id] = user_balance
-
-    deposit_dates_by_user = defaultdict(set)
-    deposit_amount_today = defaultdict(float)
-    today_depositors = set()
-    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
-        if status != "COMPLETE" or user_id is None:
-            continue
-        dt = parse_dt(create_time)
-        if not dt:
-            continue
-        d = dt.date()
-        deposit_dates_by_user[user_id].add(d)
-        if d == today:
-            today_depositors.add(user_id)
-            deposit_amount_today[user_id] += order_amount or 0.0
+    vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
 
     low_rows, high_rows = [], []
-    for user_id in today_depositors:
-        prior_dates = [d for d in deposit_dates_by_user[user_id] if d < today]
-        if not prior_dates:
-            continue
-        gap_days = (today - max(prior_dates)).days
+    for cand in reactivation_candidates:
+        user_id = cand["user_id"]
+        gap_days = cand["inactive_days"]
         vip_level = vip_by_user.get(user_id)
         if vip_level is None:
             continue
         row = {
             "user_id": user_id,
             "vip_level": vip_level,
-            "total_deposit": round(deposit_amount_today[user_id], 2),
-            "wallet_balance": round(balance_by_user.get(user_id) or 0.0, 2),
+            "total_deposit": cand["total_deposit"],
             "inactive_days": gap_days,
         }
         if 2 <= vip_level <= 4 and 10 <= gap_days <= 180:
@@ -820,7 +801,12 @@ def main():
         vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
         city_by_user = dict(mconn.execute("SELECT user_id, city FROM users").fetchall())
         action_center = action_center_reports(mconn, now)
-        reactivation = deposit_reactivation_analytics(mconn, deposit_rows, action_center, now.date())
+        reactivation_candidates_path = os.path.join(BASE, "reactivation_candidates.json")
+        reactivation_candidates = []
+        if os.path.exists(reactivation_candidates_path):
+            with open(reactivation_candidates_path) as f:
+                reactivation_candidates = json.load(f)
+        reactivation = deposit_reactivation_analytics(mconn, reactivation_candidates, action_center)
         mconn.close()
 
     by_date_records = defaultdict(list)
