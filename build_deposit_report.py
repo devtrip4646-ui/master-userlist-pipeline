@@ -357,16 +357,19 @@ def action_center_reports(mconn, now):
     """Action Center reports, computed from the master userlist snapshot (not
     date-scoped -- these are lifetime/as-of-last-upload figures, not tied to the
     selected date). Two "near upgrade" lists (users whose remaining deposit gap
-    to the next VIP tier is Rs 1-1000 for VIP2-4, Rs 1-50000 for VIP5-15) and two
+    to the next VIP tier is Rs 1-1000 for VIP2-4, Rs 1-50000 for VIP5-15), two
     "inactive" lists (users who haven't been active within a VIP-tier-specific
-    day range). Each list is capped at the top ACTION_CENTER_LIST_CAP rows by
-    relevance (closest to upgrade / most inactive) so the report and its Excel
-    download stay a reasonable size."""
+    day range), and two "active" lists (the inverse -- active within a
+    VIP-tier-specific day range). Each list is capped at the top
+    ACTION_CENTER_LIST_CAP rows by relevance (closest to upgrade / most or
+    least inactive) so the report and its Excel download stay a reasonable
+    size."""
     rows = mconn.execute(
         "SELECT user_id, vip_level, total_recharge, user_balance, last_active_time FROM users"
     ).fetchall()
 
     near_low, near_high, inactive_high, inactive_low = [], [], [], []
+    active_low, active_high = [], []
     for user_id, vip_level, total_recharge, user_balance, last_active_time in rows:
         if vip_level is None:
             continue
@@ -405,10 +408,24 @@ def action_center_reports(mconn, now):
             if 2 <= vip_level <= 4 and 10 <= inactive_days <= 180:
                 inactive_low.append(inactive_row)
 
+            active_row = {
+                "user_id": user_id,
+                "vip_level": vip_level,
+                "total_deposit": round(total_recharge, 2),
+                "wallet_balance": round(user_balance or 0.0, 2),
+                "inactive_days": inactive_days,
+            }
+            if 5 <= vip_level <= 15 and inactive_days <= 15:
+                active_high.append(active_row)
+            if 2 <= vip_level <= 4 and inactive_days <= 10:
+                active_low.append(active_row)
+
     near_low.sort(key=lambda r: r["amount_to_next"])
     near_high.sort(key=lambda r: r["amount_to_next"])
     inactive_high.sort(key=lambda r: -r["inactive_days"])
     inactive_low.sort(key=lambda r: -r["inactive_days"])
+    active_high.sort(key=lambda r: r["inactive_days"])
+    active_low.sort(key=lambda r: r["inactive_days"])
 
     return {
         "near_upgrade_low": {
@@ -430,6 +447,16 @@ def action_center_reports(mconn, now):
             "note": "VIP 2 to VIP 4, inactive 10-180 days",
             "total_matching": len(inactive_low),
             "rows": inactive_low[:ACTION_CENTER_LIST_CAP],
+        },
+        "active_low": {
+            "note": "VIP 2 to VIP 4, active within last 10 days",
+            "total_matching": len(active_low),
+            "rows": active_low[:ACTION_CENTER_LIST_CAP],
+        },
+        "active_high": {
+            "note": "VIP 5 to VIP 15, active within last 15 days",
+            "total_matching": len(active_high),
+            "rows": active_high[:ACTION_CENTER_LIST_CAP],
         },
     }
 
