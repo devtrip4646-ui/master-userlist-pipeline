@@ -536,15 +536,17 @@ DEPOSIT_CHALLENGE_RULES = {
 
 
 def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today):
-    """Users flagged by the source system's own is_first_deposit column
-    (column S: 1 = first deposit) with FD in the last 4 days, and which of
-    the 4 challenge rules they've earned so far (only rules whose award day
-    has already passed are evaluated -- a rule isn't shown as "not earned"
-    while its window is still open, it's just not shown yet). FD is taken
-    from the is_first_deposit flag, not inferred from MIN(create_time) -- the
-    flag is authoritative and isn't affected by the deposits table's 33-day
-    retention window."""
-    window_start = today - timedelta(days=3)
+    """Bonuses payable TODAY only -- a daily payout worksheet, not a rolling
+    history of everything earned in the last few days. Each rule has a fixed
+    FD offset that determines which FD cohort is relevant for today's payout:
+      Rule 1 (+Rs10, auto):                  FD = today - 1
+      Rule 2 (+Rs20, if deposited on FD+1):  FD = today - 2
+      Rule 3 (+Rs30, if deposited on FD+2):  FD = today - 3
+      Rule 4 (+Rs60, if deposited FD+1&+2):  FD = today - 3
+    FD is taken from the source system's own is_first_deposit column (column S
+    in the water/export sheet: 1 = first deposit), not inferred from
+    MIN(create_time) -- the flag is authoritative and isn't affected by the
+    deposits table's 33-day retention window."""
     fd_by_user = {}
     for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None or is_first_deposit != 1:
@@ -556,8 +558,6 @@ def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today):
 
     rows = []
     for user_id, fd in fd_by_user.items():
-        if not (window_start <= fd <= today):
-            continue
         day_map = deposit_day_stats.get(user_id, {})
         deposited_fd1 = (fd + timedelta(days=1)) in day_map
         deposited_fd2 = (fd + timedelta(days=2)) in day_map
@@ -566,19 +566,19 @@ def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today):
             label, amount = DEPOSIT_CHALLENGE_RULES[rule_no]
             rows.append({"user_id": user_id, "rule": label, "bonus_amount": amount, "fd_date": fd.isoformat()})
 
-        if today >= fd + timedelta(days=1):
+        if fd == today - timedelta(days=1):
             add(1)
-        if today >= fd + timedelta(days=2) and deposited_fd1:
+        if fd == today - timedelta(days=2) and deposited_fd1:
             add(2)
-        if today >= fd + timedelta(days=3) and deposited_fd2:
-            add(3)
-        if today >= fd + timedelta(days=3) and deposited_fd1 and deposited_fd2:
-            add(4)
+        if fd == today - timedelta(days=3):
+            if deposited_fd2:
+                add(3)
+            if deposited_fd1 and deposited_fd2:
+                add(4)
 
-    # Highest bonus first within each FD date -- otherwise Rule 1 (auto,
-    # awarded to nearly everyone) buries the more meaningful Rule 2/3/4
-    # entries (users who actually kept depositing) on later pages.
-    rows.sort(key=lambda r: (r["fd_date"], -r["bonus_amount"], r["user_id"]))
+    # Highest bonus first -- surfaces the more meaningful Rule 2/3/4 winners
+    # (users who actually kept depositing) ahead of the many Rule 1 auto-awards.
+    rows.sort(key=lambda r: (-r["bonus_amount"], r["user_id"]))
     return rows
 
 
