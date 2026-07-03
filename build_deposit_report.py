@@ -589,17 +589,32 @@ def withdrawal_waiting_hours(r):
     return round(max((end_dt - r["create_dt"]).total_seconds() / 3600.0, 0), 2)
 
 
-def withdrawal_orders_export(withdrawal_full_records, vip_by_user):
+def withdrawal_orders_export(withdrawal_full_records, vip_by_user, now):
     """Raw order-level rows for the withdrawal Excel export: order number, channel,
-    amount, status, waiting time, user id and VIP level."""
+    amount, status, waiting time, user id and VIP level. For orders still open
+    (status 0 In-Review / 1 Processing), also computes hours_in_review /
+    hours_processing as (now - create_time) -- how long the order has actually
+    been sitting in that state as of report generation. waiting_hours (which
+    uses review_time/update_time) is near-zero for these still-open orders
+    since they haven't been reviewed/updated yet, so it can't answer "how long
+    has this been pending" -- these two fields exist specifically for that."""
     rows = []
     for r in withdrawal_full_records:
+        hours_in_review = hours_processing = None
+        if r["status"] in (0, 1) and r["create_dt"]:
+            pending_hours = round(max((now - r["create_dt"]).total_seconds() / 3600.0, 0), 2)
+            if r["status"] == 0:
+                hours_in_review = pending_hours
+            else:
+                hours_processing = pending_hours
         rows.append({
             "order_no": r["order_no"],
             "channel": r["channel"],
             "amount": r["amount"],
             "status": STATUS_LABELS.get(r["status"], r["status"]),
             "waiting_hours": withdrawal_waiting_hours(r),
+            "hours_in_review": hours_in_review,
+            "hours_processing": hours_processing,
             "user_id": r["user_id"],
             "vip_level": vip_by_user.get(r["user_id"]),
         })
@@ -738,7 +753,7 @@ def main():
             ),
             "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full.get(date, [])),
-            "withdrawal_orders": withdrawal_orders_export(by_date_withdrawal_full.get(date, []), vip_by_user),
+            "withdrawal_orders": withdrawal_orders_export(by_date_withdrawal_full.get(date, []), vip_by_user, now),
         }
         for date in all_dates
     }
