@@ -1062,6 +1062,13 @@ def main():
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        # The exact IST calendar date used as "today" for Reactivation, VIP
+        # Upgrade, and Retention -- those three sections are always scoped to
+        # this date (never affected by the Region/VIP chart's date-switch,
+        # which only re-renders that chart), refreshed on the next pipeline
+        # run after midnight IST. Exposed so the frontend can label it
+        # explicitly rather than leaving it implicit.
+        "report_today": now.date().isoformat(),
         "latest_record_time": latest_record_time.isoformat() if latest_record_time else None,
         "total_registered_users": total_registered_users,
         "status_filter": "COMPLETE (success-rate sections include all statuses)",
