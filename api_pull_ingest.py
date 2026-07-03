@@ -63,6 +63,106 @@ def vip_level_for_total(total_recharge):
     return level
 
 
+# Windows for the "conversion funnel" -- of users who were near-upgrade/
+# inactive N days ago, how many have since converted (by today)? Kept short
+# on purpose: this pipeline started collecting daily_snapshot history on
+# 2026-07-02, so a 7-day window has no real data until 7 days of history
+# have actually accumulated -- see compute_conversion_funnels' "insufficient
+# history" handling below.
+FUNNEL_WINDOWS = [3, 7]
+FUNNEL_HISTORY_DAYS = max(FUNNEL_WINDOWS) + 3  # a little slack past the longest window
+
+
+def compute_conversion_funnels(cur, today):
+    """For each of FUNNEL_WINDOWS, and each of the 4 cohorts (VIP-upgrade
+    Low/High, Reactivation Low/High), look up who qualified for that cohort
+    in the daily_snapshot row from exactly N days ago, then check -- using
+    each user's CURRENT vip_level/last_active_time already sitting in the
+    users table -- how many have since converted. Runs once per calendar
+    day (called only when the day-start snapshot is (re)created), not every
+    hourly run: a single run over one day's ~334k-row snapshot per window is
+    already comparable in cost to the existing per-run recompute pass, and
+    cohort membership is day-granular anyway so there's nothing to gain from
+    recomputing it hourly.
+
+    Returns {window: {"low": {...}, "high": {...}}} for both "vip_upgrade"
+    and "reactivation", or None for a window where the required historical
+    snapshot doesn't exist yet (not enough days of history collected so
+    far)."""
+    result = {"vip_upgrade": {}, "reactivation": {}}
+    # Fetched once, reused across every window -- "current state" doesn't
+    # depend on which historical window we're comparing against.
+    current = {uid: (vl, lat) for uid, vl, lat in cur.execute(
+        "SELECT user_id, vip_level, last_active_time FROM users"
+    ).fetchall()}
+    for window in FUNNEL_WINDOWS:
+        cohort_date = (today - datetime.timedelta(days=window)).isoformat()
+        rows = cur.execute(
+            "SELECT user_id, vip_level, total_recharge, last_active_time "
+            "FROM daily_snapshot WHERE snapshot_date = ?", (cohort_date,)
+        ).fetchall()
+        if not rows:
+            result["vip_upgrade"][window] = None
+            result["reactivation"][window] = None
+            continue
+
+        vip_cohort_low = vip_conv_low = vip_cohort_high = vip_conv_high = 0
+        react_cohort_low = react_conv_low = react_cohort_high = react_conv_high = 0
+        for user_id, vip_level, total_recharge, last_active_time in rows:
+            cur_state = current.get(user_id)
+            if cur_state is None or vip_level is None:
+                continue
+            cur_vip, cur_last_active = cur_state
+            total_recharge = total_recharge or 0.0
+
+            if vip_level < 15 and (vip_level + 1) in VIP_THRESHOLDS:
+                gap = VIP_THRESHOLDS[vip_level + 1] - total_recharge
+                if 2 <= vip_level <= 4 and 1 <= gap <= 1000:
+                    vip_cohort_low += 1
+                    if cur_vip is not None and cur_vip > vip_level:
+                        vip_conv_low += 1
+                elif 5 <= vip_level <= 15 and 1 <= gap <= 50000:
+                    vip_cohort_high += 1
+                    if cur_vip is not None and cur_vip > vip_level:
+                        vip_conv_high += 1
+
+            if last_active_time:
+                try:
+                    la_date = datetime.datetime.fromisoformat(str(last_active_time).replace(" ", "T")).date()
+                except ValueError:
+                    la_date = None
+                if la_date is not None:
+                    inactive_days = (datetime.date.fromisoformat(cohort_date) - la_date).days
+                    reactivated = False
+                    if cur_last_active:
+                        try:
+                            cur_la_date = datetime.datetime.fromisoformat(str(cur_last_active).replace(" ", "T")).date()
+                            reactivated = cur_la_date > la_date
+                        except ValueError:
+                            pass
+                    if 2 <= vip_level <= 4 and 10 <= inactive_days <= 180:
+                        react_cohort_low += 1
+                        if reactivated:
+                            react_conv_low += 1
+                    elif 5 <= vip_level <= 15 and 15 <= inactive_days <= 240:
+                        react_cohort_high += 1
+                        if reactivated:
+                            react_conv_high += 1
+
+        def pct(n, d):
+            return round(n / d * 100, 2) if d else 0.0
+
+        result["vip_upgrade"][window] = {
+            "low": {"cohort_size": vip_cohort_low, "converted": vip_conv_low, "pct": pct(vip_conv_low, vip_cohort_low)},
+            "high": {"cohort_size": vip_cohort_high, "converted": vip_conv_high, "pct": pct(vip_conv_high, vip_cohort_high)},
+        }
+        result["reactivation"][window] = {
+            "low": {"cohort_size": react_cohort_low, "converted": react_conv_low, "pct": pct(react_conv_low, react_cohort_low)},
+            "high": {"cohort_size": react_cohort_high, "converted": react_conv_high, "pct": pct(react_conv_high, react_cohort_high)},
+        }
+    return result
+
+
 def put_token_status(s3, bucket, ok, message=None):
     s3.put_object(
         Bucket=bucket, Key=TOKEN_STATUS_KEY,
@@ -197,28 +297,25 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
     therefore its runtime/GitHub Actions billed minutes, proportional to
     what actually changed rather than to the full user table every time.
 
-    Also detects "reactivation candidates": existing users active TODAY
-    (via any of the three sources), using their last_active_time as it stood
-    BEFORE this run updates it. This is the only place that can compute this
-    reliably -- daily_records.db's deposits/withdrawals/wallet tables are
-    purged to a rolling 33-day window, so trying to derive "how long were
-    they inactive" from that history alone (as the report originally did)
-    silently drops every comeback after a gap longer than that, which is
-    most of the 10-180/15-240 day range the Reactivation report needs to
-    cover.
-
-    Also detects "VIP upgrade candidates": users who were in the near-upgrade
-    cohort (gap Rs 1-1000 for VIP2-4, Rs 1-50000 for VIP5-15) as of the START
-    of today and have since crossed into the next tier. This can't just
-    compare "before this run" vs "after this run" -- the pipeline runs
-    hourly, so a user could cross a tier in one run and cross again in a
-    later run the same day, and each run's report is freshly regenerated
-    (not cumulative), so a naive per-run diff would silently lose earlier
-    upgrades from earlier today. Instead, a (vip_level, total_recharge)
-    snapshot is taken once, on the first run of each calendar day (into the
-    vip_day_start table, before any of today's updates are applied), and
-    every run for the rest of the day compares current state against that
-    same stable snapshot.
+    Also detects "reactivation candidates" and "VIP upgrade candidates":
+    users active/upgraded TODAY compared against a stable snapshot of their
+    state as of the START of today. This can't just compare "before this
+    run" vs "after this run" -- the pipeline runs hourly, and each run's
+    report is freshly regenerated (not cumulative), so a naive per-run diff
+    would silently lose an event from an earlier run the same day (e.g. a
+    user who reactivates at 10am would show in the 10am report, but by 2pm
+    their last_active_time already says "today" so they'd wrongly disappear
+    from the 2pm report). Instead, a (vip_level, total_recharge,
+    last_active_time) snapshot is taken once, on the first run of each
+    calendar day, into the daily_snapshot table, BEFORE any of today's
+    updates are applied -- every run for the rest of the day compares
+    current state against that same stable snapshot. daily_snapshot also
+    keeps FUNNEL_HISTORY_DAYS of rolling history (not just today) so
+    build_deposit_report.py can compute N-day conversion funnels ("of users
+    who were near-upgrade/inactive N days ago, how many have since
+    converted") -- daily_records.db's own deposits/withdrawals/wallet
+    tables are purged to a rolling 33-day window and don't carry enough
+    signal for that on their own.
 
     Returns (changed, reactivation_candidates, vip_upgrade_candidates) --
     changed is True iff at least one row was actually inserted or updated
@@ -231,12 +328,14 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
         pass  # column already exists from a previous run
 
     cur.execute(
-        "CREATE TABLE IF NOT EXISTS vip_day_start "
-        "(user_id INTEGER PRIMARY KEY, vip_level INTEGER, total_recharge REAL)"
+        "CREATE TABLE IF NOT EXISTS daily_snapshot ("
+        "user_id INTEGER, snapshot_date TEXT, vip_level INTEGER, total_recharge REAL, "
+        "last_active_time TEXT, PRIMARY KEY (user_id, snapshot_date))"
     )
-    cur.execute("CREATE TABLE IF NOT EXISTS vip_day_start_meta (snapshot_date TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS daily_snapshot_meta (last_snapshot_date TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS funnel_stats (stat_date TEXT, data TEXT)")
     today_str = today.isoformat()
-    meta_row = cur.execute("SELECT snapshot_date FROM vip_day_start_meta").fetchone()
+    meta_row = cur.execute("SELECT last_snapshot_date FROM daily_snapshot_meta").fetchone()
     snapshot_created = not meta_row or meta_row[0] != today_str
     if snapshot_created:
         # New day (or first run ever) -- snapshot BEFORE any of today's
@@ -246,13 +345,19 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
         # (see `changed` at the bottom) -- otherwise this snapshot never
         # reaches R2, and the next run would re-snapshot from ITS
         # already-partway-through-the-day state instead of true day-start.
-        cur.execute("DELETE FROM vip_day_start")
         cur.execute(
-            "INSERT INTO vip_day_start (user_id, vip_level, total_recharge) "
-            "SELECT user_id, vip_level, total_recharge FROM users"
+            "INSERT OR REPLACE INTO daily_snapshot (user_id, snapshot_date, vip_level, total_recharge, last_active_time) "
+            "SELECT user_id, ?, vip_level, total_recharge, last_active_time FROM users",
+            (today_str,),
         )
-        cur.execute("DELETE FROM vip_day_start_meta")
-        cur.execute("INSERT INTO vip_day_start_meta (snapshot_date) VALUES (?)", (today_str,))
+        prune_before = (today - datetime.timedelta(days=FUNNEL_HISTORY_DAYS)).isoformat()
+        cur.execute("DELETE FROM daily_snapshot WHERE snapshot_date < ?", (prune_before,))
+        cur.execute("DELETE FROM daily_snapshot_meta")
+        cur.execute("INSERT INTO daily_snapshot_meta (last_snapshot_date) VALUES (?)", (today_str,))
+        conn.commit()
+        funnel_stats = compute_conversion_funnels(cur, today)
+        cur.execute("DELETE FROM funnel_stats")
+        cur.execute("INSERT INTO funnel_stats (stat_date, data) VALUES (?, ?)", (today_str, json.dumps(funnel_stats)))
         conn.commit()
 
     existing_rows = cur.execute(
@@ -296,9 +401,24 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
         if ts and str(ts).startswith(today_str):
             today_active.add(user_id)
 
+    # Day-start snapshot (today's row -- guaranteed to exist by now, either
+    # written by this run above or an earlier run today) is the correct
+    # "before today" baseline for both reactivation and VIP-upgrade
+    # detection below. Using `existing` (pre-THIS-run state) instead would
+    # make a user who already reactivated/upgraded in an earlier run today
+    # silently vanish from this run's report, since their `existing` value
+    # already reflects that earlier update.
+    day_start = {
+        uid: {"vip_level": vl, "total_recharge": tr, "last_active_time": lat}
+        for uid, vl, tr, lat in cur.execute(
+            "SELECT user_id, vip_level, total_recharge, last_active_time FROM daily_snapshot WHERE snapshot_date = ?",
+            (today_str,),
+        ).fetchall()
+    }
+
     reactivation_candidates = []
     for user_id in today_active:
-        prior = existing.get(user_id)
+        prior = day_start.get(user_id)
         if not prior or not prior["last_active_time"]:
             continue  # brand-new / never-active user, not a "reactivation"
         try:
@@ -307,7 +427,7 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
             continue
         gap_days = (today - prior_dt.date()).days
         if gap_days <= 0:
-            continue  # already active as of today/yesterday going into this run
+            continue  # already active as of the start of today
         reactivation_candidates.append({
             "user_id": user_id,
             "inactive_days": gap_days,
@@ -365,14 +485,10 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_activity, wall
 
     # VIP upgrade candidates: compare each user's CURRENT vip_level (as of
     # right now, after everything above) against the stable day-start
-    # snapshot. Only counts users who were actually in the near-upgrade
-    # cohort at day start -- a user who jumped several tiers from far away
-    # (a huge lump-sum deposit) doesn't belong in a "near upgrade converted"
-    # report.
-    day_start = {
-        uid: {"vip_level": vl, "total_recharge": tr}
-        for uid, vl, tr in cur.execute("SELECT user_id, vip_level, total_recharge FROM vip_day_start").fetchall()
-    }
+    # snapshot (fetched earlier as `day_start`). Only counts users who were
+    # actually in the near-upgrade cohort at day start -- a user who jumped
+    # several tiers from far away (a huge lump-sum deposit) doesn't belong
+    # in a "near upgrade converted" report.
     vip_upgrade_low, vip_upgrade_high = [], []
     for user_id, ds in day_start.items():
         cur_info = existing.get(user_id)

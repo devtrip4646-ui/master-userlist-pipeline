@@ -696,6 +696,91 @@ def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today):
     return rows
 
 
+def _today_deposit_activity(deposit_rows, today):
+    """user_id -> {"count", "amount"} for COMPLETE deposits dated TODAY.
+    Shared by both retention reports below."""
+    activity = defaultdict(lambda: {"count": 0, "amount": 0.0})
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if not dt or dt.date() != today:
+            continue
+        entry = activity[user_id]
+        entry["count"] += 1
+        entry["amount"] += order_amount or 0.0
+    return activity
+
+
+def _retention_report(cohort, today_activity, city_by_user, note):
+    """Shared shape for both retention reports: cohort_size, converted_count,
+    pct_converted, avg_deposit_amount (of converters -- a headcount-only
+    conversion rate treats a Rs200 top-up and a Rs20,000 deposit as
+    identical; this flags whether the retained users are actually
+    meaningful deposits or just token amounts to stay counted), and the
+    per-user row list."""
+    rows = []
+    for user_id in cohort:
+        activity = today_activity.get(user_id)
+        if not activity:
+            continue
+        rows.append({
+            "user_id": user_id,
+            "total_deposit": round(activity["amount"], 2),
+            "deposit_count": activity["count"],
+            "region": city_by_user.get(user_id) or "Unknown",
+        })
+    rows.sort(key=lambda r: -r["total_deposit"])
+    cohort_size = len(cohort)
+    converted = len(rows)
+    avg_deposit = round(sum(r["total_deposit"] for r in rows) / converted, 2) if converted else 0.0
+    return {
+        "note": note,
+        "cohort_size": cohort_size,
+        "converted_count": converted,
+        "pct_converted": round(converted / cohort_size * 100, 2) if cohort_size else 0.0,
+        "avg_deposit_amount": avg_deposit,
+        "rows": rows[:ACTION_CENTER_LIST_CAP],
+    }
+
+
+def first_deposit_retention(deposit_rows, city_by_user, today):
+    """Of users whose first-ever deposit (the source system's own
+    is_first_deposit flag) was YESTERDAY, how many made another COMPLETE
+    deposit TODAY -- a basic Day-1 retention signal. Computed directly from
+    deposit_rows (not a day-start snapshot, unlike Reactivation/VIP Upgrade)
+    since "yesterday" and "today" are both fully derivable from timestamps
+    already sitting in every row, so it's naturally correct regardless of
+    which hourly run computes it."""
+    yesterday = today - timedelta(days=1)
+    fd_yesterday = set()
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None or is_first_deposit != 1:
+            continue
+        dt = parse_dt(create_time)
+        if dt and dt.date() == yesterday:
+            fd_yesterday.add(user_id)
+    return _retention_report(
+        fd_yesterday, _today_deposit_activity(deposit_rows, today), city_by_user,
+        "Yesterday's first-deposit users who deposited again today",
+    )
+
+
+def bonus_claimer_retention(bonus_rows, deposit_rows, city_by_user, today):
+    """Of users who claimed the 3-Day Deposit Challenge Bonus's Rule 3
+    (+Rs30, deposited FD+2) or Rule 4 (+Rs60, deposited FD+1 and FD+2) TODAY,
+    how many ALSO made a COMPLETE deposit TODAY. The bonus-qualifying
+    deposits are from FD+1/FD+2 (1-2 days ago), never today, so this is a
+    genuinely separate signal -- not circular with the bonus itself: are the
+    bigger-bonus earners still actively depositing, or was claiming the
+    bonus their last action?"""
+    claimers = {r["user_id"] for r in bonus_rows if r["bonus_amount"] in (30, 60)}
+    return _retention_report(
+        claimers, _today_deposit_activity(deposit_rows, today), city_by_user,
+        "Rule 3 (Rs30) / Rule 4 (Rs60) bonus claimers today who deposited again today",
+    )
+
+
 STATUS_LABELS = {0: "In-Review", 1: "Processing", 2: "Complete", 3: "Rejected", 4: "Failed"}
 
 
@@ -862,6 +947,20 @@ def main():
             with open(vip_upgrade_path) as f:
                 vip_upgrade_candidates = json.load(f)
         vip_upgrade = vip_upgrade_analytics(vip_upgrade_candidates, action_center)
+
+        # Conversion funnels (3-day/7-day: of users near-upgrade/inactive N
+        # days ago, how many have since converted) -- computed once/day by
+        # api_pull_ingest.py's sync_master_userlist and persisted directly in
+        # master_userlist.db, so this is just a cheap read, not a recompute.
+        try:
+            funnel_row = mconn.execute("SELECT data FROM funnel_stats").fetchone()
+        except sqlite3.OperationalError:
+            funnel_row = None  # table doesn't exist yet -- pre-dates this feature
+        if funnel_row:
+            funnel_data = json.loads(funnel_row[0])
+            reactivation["funnel"] = funnel_data.get("reactivation")
+            vip_upgrade["funnel"] = funnel_data.get("vip_upgrade")
+
         mconn.close()
 
     by_date_records = defaultdict(list)
@@ -950,9 +1049,15 @@ def main():
         "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
     }
 
+    deposit_challenge_bonus_rows = deposit_challenge_bonus(deposit_rows, build_deposit_day_stats(deposit_rows), now.date())
     action_center_extra = {
         "yesterday_first_deposit_users": yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, now.date()),
-        "deposit_challenge_bonus": deposit_challenge_bonus(deposit_rows, build_deposit_day_stats(deposit_rows), now.date()),
+        "deposit_challenge_bonus": deposit_challenge_bonus_rows,
+    }
+
+    retention = {
+        "first_deposit": first_deposit_retention(deposit_rows, city_by_user, now.date()),
+        "bonus_claimer": bonus_claimer_retention(deposit_challenge_bonus_rows, deposit_rows, city_by_user, now.date()),
     }
 
     report = {
@@ -975,6 +1080,7 @@ def main():
         "region_vip_analytics": region_vip_deposit_analytics(by_date_records, city_by_user, vip_by_user, all_dates),
         "reactivation": reactivation,
         "vip_upgrade": vip_upgrade,
+        "retention": retention,
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
