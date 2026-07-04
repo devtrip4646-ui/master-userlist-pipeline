@@ -1406,6 +1406,38 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
+    # TEMP DIAGNOSTIC (remove once confirmed)
+    print("=== DIAGNOSTIC: blank game_name source_id patterns ===")
+    rows = cur.execute(
+        "SELECT source_id, source, COUNT(*) FROM wallet_transactions "
+        "WHERE (game_name IS NULL OR game_name = '') "
+        "GROUP BY source_id, source ORDER BY COUNT(*) DESC LIMIT 40"
+    ).fetchall()
+    for source_id, source, n in rows:
+        print(repr(source_id), "| source=", repr(source), "| n=", n)
+    print("=== DIAGNOSTIC: Daily Active Bonus prefix counts ===")
+    for prefix in ("Daily Active Bonus Low", "Daily Active Bonus"):
+        n = cur.execute(
+            "SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE ?", (prefix + "%",)
+        ).fetchone()[0]
+        print(prefix, "->", n)
+    print("=== DIAGNOSTIC: Elle Import Excel Add rows ===")
+    rows = cur.execute(
+        "SELECT source_id, source, COUNT(*) FROM wallet_transactions "
+        "WHERE game_name = 'Elle Import Excel Add' GROUP BY source_id, source ORDER BY COUNT(*) DESC LIMIT 40"
+    ).fetchall()
+    for source_id, source, n in rows:
+        print(repr(source_id), "| source=", repr(source), "| n=", n)
+    print("=== DIAGNOSTIC: any other game_name with 'bonus' in source_id ===")
+    rows = cur.execute(
+        "SELECT game_name, source_id, COUNT(*) FROM wallet_transactions "
+        "WHERE source_id LIKE '%onus%' AND (game_name IS NOT NULL AND game_name != '') "
+        "GROUP BY game_name, source_id ORDER BY COUNT(*) DESC LIMIT 40"
+    ).fetchall()
+    for game_name, source_id, n in rows:
+        print(repr(game_name), "|", repr(source_id), "| n=", n)
+    print("=== END DIAGNOSTIC ===")
+
     deposit_rows = cur.execute(
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"
     ).fetchall()
