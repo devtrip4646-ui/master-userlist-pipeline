@@ -1151,15 +1151,22 @@ def build_recent_activity_by_user(daily_conn, today):
 
     games_start = (today - timedelta(days=1)).isoformat()
     games_by_user = defaultdict(list)
-    for user_id, game_name, change_value, create_time in daily_conn.execute(
-        "SELECT user_id, game_name, change_value, create_time FROM wallet_transactions "
+    for user_id, game_name, change_value, create_time, direction in daily_conn.execute(
+        "SELECT user_id, game_name, change_value, create_time, direction FROM wallet_transactions "
         "WHERE game_name IS NOT NULL AND game_name != '' AND create_time >= ? "
         "AND id NOT IN (SELECT id FROM bonuses)",
         (games_start,),
     ).fetchall():
         if user_id is None:
             continue
-        games_by_user[user_id].append({"game_name": game_name, "change_value": change_value, "date": create_time})
+        # direction=1 = bet (debit), direction=0 = win payout (credit) --
+        # change_value itself is always a positive magnitude in this data,
+        # confirmed via an earlier diagnostic; direction carries the actual
+        # sign, not change_value.
+        games_by_user[user_id].append({
+            "game_name": game_name, "amount": change_value,
+            "type": "Win" if direction == 0 else "Bet", "date": create_time,
+        })
 
     for d in deposits_by_user.values():
         d.sort(key=lambda r: r["date"], reverse=True)
@@ -1184,14 +1191,15 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds):
     deposits/withdrawals/games are only present for users who have any."""
     deposits_by_user, withdrawals_by_user, games_by_user = recent_activity
     shards = [dict() for _ in range(USER_SEARCH_SHARDS)]
+    # Phone is deliberately not selected/exposed here -- not displayed
+    # anywhere on the dashboard.
     rows = mconn.execute(
-        "SELECT user_id, phone, city, channel, total_recharge, total_withdrawal, vip_level, "
+        "SELECT user_id, city, channel, total_recharge, total_withdrawal, vip_level, "
         "user_balance, last_active_time, create_time FROM users"
     ).fetchall()
-    for user_id, phone, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time in rows:
+    for user_id, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time in rows:
         profile = {
             "user_id": user_id,
-            "phone": phone,
             "region": city,
             "acquisition_channel": channel,
             "vip_level": vip_level,
