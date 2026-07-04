@@ -1477,6 +1477,14 @@ WEEKLY_CASHBACK_TIERS = [
 WEEKLY_CASHBACK_MIN_LOSS = 5000.0
 WEEKLY_CASHBACK_MAX_LOSS = 500000.0
 
+# A separate, smaller-loss tier: Rs 500 up to (not including) the Rs 5,000
+# floor above gets a flat 1% cashback -- but only if that loss is ALSO at
+# least 80% of that week's deposit (a stricter bar than the 50% floor used
+# by the 3 tiers above).
+WEEKLY_CASHBACK_SMALL_LOSS_MIN = 500.0
+WEEKLY_CASHBACK_SMALL_LOSS_MIN_PCT = 80.0
+WEEKLY_CASHBACK_SMALL_LOSS_PCT = 0.01
+
 
 def weekly_cashback_week_range(now):
     """Sunday-to-Saturday week window, matching the promo's own "credited
@@ -1501,12 +1509,15 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
     the displayed Sun-Sat week (see weekly_cashback_week_range), verified
     loss = total_deposit - total_withdraw - CURRENT wallet balance -- money
     that came in this week and isn't sitting in their wallet or already
-    paid back out, i.e. spent on betting activity. Eligible only if that
-    loss falls within Rs 5,000-500,000 AND is at least 50% of what they
-    deposited (higher loss-% tiers earn a higher cashback rate -- see
-    WEEKLY_CASHBACK_TIERS). Only lists users who actually qualify this
-    week, same convention as the other bonus/retention sections on this
-    dashboard -- not a full audit of every depositor."""
+    paid back out, i.e. spent on betting activity. Two eligibility paths:
+      - loss Rs 500-4,999.99: flat 1% cashback, but only if that's ALSO at
+        least 80% of what they deposited that week.
+      - loss Rs 5,000-500,000: needs to ALSO be at least 50% of what they
+        deposited that week -- higher loss-% tiers earn a higher cashback
+        rate (see WEEKLY_CASHBACK_TIERS).
+    Only lists users who actually qualify this week, same convention as
+    the other bonus/retention sections on this dashboard -- not a full
+    audit of every depositor."""
     week_start, week_end = weekly_cashback_week_range(now)
 
     deposit_by_user = defaultdict(float)
@@ -1540,11 +1551,17 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
         total_withdraw = withdraw_by_user.get(user_id, 0.0)
         balance = balance_by_user.get(user_id, 0.0)
         verified_loss = total_deposit - total_withdraw - balance
-        if verified_loss < WEEKLY_CASHBACK_MIN_LOSS or verified_loss > WEEKLY_CASHBACK_MAX_LOSS:
-            continue
-        loss_pct = (verified_loss / total_deposit * 100) if total_deposit else 0.0
-        cashback_pct = next((pct for threshold, pct in WEEKLY_CASHBACK_TIERS if loss_pct >= threshold), None)
-        if cashback_pct is None:
+        if WEEKLY_CASHBACK_SMALL_LOSS_MIN <= verified_loss < WEEKLY_CASHBACK_MIN_LOSS:
+            loss_pct = (verified_loss / total_deposit * 100) if total_deposit else 0.0
+            if loss_pct < WEEKLY_CASHBACK_SMALL_LOSS_MIN_PCT:
+                continue
+            cashback_pct = WEEKLY_CASHBACK_SMALL_LOSS_PCT
+        elif WEEKLY_CASHBACK_MIN_LOSS <= verified_loss <= WEEKLY_CASHBACK_MAX_LOSS:
+            loss_pct = (verified_loss / total_deposit * 100) if total_deposit else 0.0
+            cashback_pct = next((pct for threshold, pct in WEEKLY_CASHBACK_TIERS if loss_pct >= threshold), None)
+            if cashback_pct is None:
+                continue
+        else:
             continue
         rows.append({
             "user_id": user_id,
