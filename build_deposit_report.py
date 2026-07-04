@@ -1111,79 +1111,79 @@ def channel_performance_report(daily_conn, today):
     return result
 
 
-def bonus_claim_report(mconn, deposit_challenge_bonus_rows):
-    """Unifies BOTH bonus systems this platform runs, so "which bonus is
-    better/safer" can be answered across all of them, not just one:
-      1. wallet_transactions-sourced bonuses (Welcome Back, Loyalty, ordinal
-         deposit bonuses, VIP tier bonuses, Daily Active, Evolution Live
-         Betting, etc.) -- lifetime totals from the permanent
-         bonus_performance rollup (see compute_and_save_bonus_performance in
-         api_pull_ingest.py), since the source `bonuses` table itself is
-         purged to daily_records.db's rolling 33-day window.
-      2. The 3-Day Deposit Challenge Bonus (Rules 1-4, +Rs10/20/30/60) --
-         today's payable claims, passed in directly since
-         deposit_report.json already computes this fresh every run.
+def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows, today):
+    """All bonuses claimed TODAY -- both wallet-sourced bonuses (Welcome
+    Back, Loyalty, VIP tiers, Daily Active, etc., from daily_records.db's
+    `bonuses` table) and the 3-Day Deposit Challenge Bonus (Rules 1-4).
+    For each: claimed users, total bonus value, how many of those claimers
+    ALSO made a COMPLETE deposit at any point today (a same-day "did the
+    bonus convert into a deposit" signal), and the resulting %.
 
-    Learning about new bonuses: bonus_performance is keyed by whatever
-    category classify_bonus() (in ingest_update.py) tags a game_name with,
-    so any NEW bonus that matches the EXISTING patterns (another "X
-    Deposit", another VIP tier name, anything containing "bonus") gets
-    picked up and its history starts accumulating automatically the first
-    day it appears -- no code change needed. A genuinely novel bonus name
-    that doesn't match any of those patterns would currently be missed
-    entirely (misread as a real game) -- that's a real limitation of the
-    underlying heuristic itself, not something this report can fix on its
-    own. If the platform introduces a bonus whose name doesn't fit "X
-    Deposit" / "X VIP" / doesn't contain "bonus", CANONICAL_BONUSES in
-    ingest_update.py needs a one-line addition to start tracking it."""
+    Scoped to today only. The permanent bonus_performance rollup (see
+    compute_and_save_bonus_performance in api_pull_ingest.py) still tracks
+    lifetime history for each category regardless of what this specific
+    view surfaces.
+
+    Learning about new bonuses: `bonuses` is populated by classify_bonus()
+    (in ingest_update.py) tagging wallet_transactions.game_name values
+    matching known bonus patterns (CANONICAL_BONUSES, ordinal-deposit/
+    VIP-tier/"bonus"-keyword regexes, minus KNOWN_GAME_FALSE_POSITIVES --
+    real games that happen to contain "bonus" in their name, e.g. "Chicken
+    Road Bonus" and "Bonus Hunter", which are NOT bonuses). Any new bonus
+    matching those patterns is picked up automatically; a genuinely novel
+    name needs a one-line addition to CANONICAL_BONUSES, and a real game
+    wrongly matched needs a one-line addition to KNOWN_GAME_FALSE_POSITIVES
+    -- both in ingest_update.py."""
+    today_str = today.isoformat()
+
+    today_depositors = set()
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None or not create_time:
+            continue
+        if str(create_time).startswith(today_str):
+            today_depositors.add(user_id)
+
+    daily_conn = sqlite3.connect(daily_db_path)
     try:
-        rows = mconn.execute(
-            "SELECT bonus_category, SUM(claim_count), SUM(total_value), SUM(unique_users), MIN(date), MAX(date) "
-            "FROM bonus_performance GROUP BY bonus_category"
+        bonus_rows_today = daily_conn.execute(
+            "SELECT matched_category, user_id, change_value, create_time FROM bonuses"
         ).fetchall()
     except sqlite3.OperationalError:
-        rows = []  # pre-dates this feature
+        bonus_rows_today = []  # bonuses table doesn't exist yet
+    daily_conn.close()
 
-    wallet_bonuses = [
-        {
-            "bonus_category": category,
-            "claim_count": claim_count,
-            "total_value": round(total_value or 0.0, 2),
-            "avg_value": round((total_value or 0.0) / claim_count, 2) if claim_count else 0.0,
-            # Sum of each day's unique-claimer count -- a repeat claimer across
-            # multiple days is counted more than once, this is NOT a true
-            # all-time unique-user count (bonus_performance only stores daily
-            # aggregates, not user-level rows, so a true figure isn't available
-            # without a much larger permanent table).
-            "unique_users_daily_sum": unique_users,
-            "first_seen": first_seen,
-            "last_seen": last_seen,
-        }
-        for category, claim_count, total_value, unique_users, first_seen, last_seen in rows
-    ]
-    wallet_bonuses.sort(key=lambda b: -b["total_value"])
+    by_category = defaultdict(lambda: {"users": set(), "value": 0.0})
+    for matched_category, user_id, change_value, create_time in bonus_rows_today:
+        if not matched_category or not create_time or not str(create_time).startswith(today_str):
+            continue
+        b = by_category[matched_category]
+        b["users"].add(user_id)
+        b["value"] += change_value or 0.0
 
-    dcb_totals = defaultdict(lambda: {"claim_count": 0, "total_value": 0.0, "users": set()})
+    def build_rows(groups):
+        rows = []
+        for category, b in groups.items():
+            claimed_users = len(b["users"])
+            converted = len(b["users"] & today_depositors)
+            rows.append({
+                "bonus_category": category,
+                "claimed_users": claimed_users,
+                "total_value": round(b["value"], 2),
+                "deposited_after": converted,
+                "pct_deposited": round(converted / claimed_users * 100, 2) if claimed_users else 0.0,
+            })
+        rows.sort(key=lambda r: -r["total_value"])
+        return rows
+
+    dcb_groups = defaultdict(lambda: {"users": set(), "value": 0.0})
     for r in deposit_challenge_bonus_rows:
-        d = dcb_totals[r["rule"]]
-        d["claim_count"] += 1
-        d["total_value"] += r["bonus_amount"]
+        d = dcb_groups[r["rule"]]
         d["users"].add(r["user_id"])
-    deposit_challenge_bonuses = [
-        {
-            "bonus_category": rule,
-            "claim_count": d["claim_count"],
-            "total_value": round(d["total_value"], 2),
-            "avg_value": round(d["total_value"] / d["claim_count"], 2) if d["claim_count"] else 0.0,
-            "unique_users_today": len(d["users"]),
-        }
-        for rule, d in dcb_totals.items()
-    ]
-    deposit_challenge_bonuses.sort(key=lambda b: -b["total_value"])
+        d["value"] += r["bonus_amount"]
 
     return {
-        "wallet_bonuses": wallet_bonuses,
-        "deposit_challenge_bonuses": deposit_challenge_bonuses,
+        "wallet_bonuses": build_rows(by_category),
+        "deposit_challenge_bonuses": build_rows(dcb_groups),
     }
 
 
@@ -1360,11 +1360,7 @@ def main():
         "bonus_claimer": bonus_claimer_retention(deposit_challenge_bonus_rows, deposit_rows, city_by_user, now.date()),
     }
 
-    bonus_claims = None
-    if os.path.exists(master_db_path):
-        mconn2 = sqlite3.connect(master_db_path)
-        bonus_claims = bonus_claim_report(mconn2, deposit_challenge_bonus_rows)
-        mconn2.close()
+    bonus_claims = bonus_claim_report(DB_PATH, deposit_rows, deposit_challenge_bonus_rows, now.date())
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

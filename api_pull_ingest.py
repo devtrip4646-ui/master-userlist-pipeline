@@ -347,6 +347,15 @@ def compute_and_save_bonus_performance(cur, bonus_rows, today):
         "bonus_category TEXT, date TEXT, claim_count INTEGER, total_value REAL, unique_users INTEGER, "
         "PRIMARY KEY (bonus_category, date))"
     )
+    # One-time cleanup (safe to re-run every time -- a no-op once these are
+    # gone): "Chicken Road Bonus" and "Bonus Hunter" are real games, not
+    # bonuses -- they were misclassified by an earlier version of
+    # classify_bonus()'s generic "contains 'bonus'" fallback before it
+    # excluded them, and this permanent rollup would otherwise keep their
+    # bad entries forever even after the classifier was fixed.
+    cur.execute(
+        "DELETE FROM bonus_performance WHERE bonus_category IN ('Chicken Road Bonus', 'Bonus Hunter')"
+    )
     by_cat_date = defaultdict(lambda: {"count": 0, "value": 0.0, "users": set()})
     for matched_category, user_id, change_value, create_time in bonus_rows:
         if not matched_category or not create_time:

@@ -136,9 +136,19 @@ def normalize(s):
     return re.sub(r"\s+", " ", str(s).strip().lower())
 
 
+# Real games that happen to have "bonus" in their name (a bonus ROUND within
+# the game, not a wallet bonus payout) -- the generic "bonus" keyword
+# fallback below would otherwise misclassify these as bonus payouts.
+# Confirmed false positives: "Chicken Road Bonus" and "Bonus Hunter" are
+# both real games, not bonuses.
+KNOWN_GAME_FALSE_POSITIVES = {"chicken road bonus", "bonus hunter"}
+
+
 def classify_bonus(game_name):
     canon_norm = {normalize(c): c for c in CANONICAL_BONUSES}
     norm = normalize(game_name)
+    if norm in KNOWN_GAME_FALSE_POSITIVES:
+        return None
     deposit_ordinal = re.compile(r"^(first|second|third|fourth|fifth)\s+deposit$", re.I)
     vip_tier = re.compile(r"^(low|mid|high|super)\s*vip$", re.I)
     vip_week_or_level = re.compile(r"vip\s*(week|level)", re.I)
