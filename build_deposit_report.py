@@ -781,6 +781,65 @@ def bonus_claimer_retention(bonus_rows, deposit_rows, city_by_user, today):
     )
 
 
+def premium_active_conversion(mconn, deposit_rows, now):
+    """Of users already on the Active Users list in Action Center (VIP2-4
+    active within 10 days = "low", VIP5-15 active within 15 days = "high"),
+    how many ALSO made a COMPLETE deposit specifically TODAY -- a continued-
+    engagement signal, distinct from Reactivation (which tracks INACTIVE
+    users coming back) and from Active Users itself (which only shows who's
+    active, not who's converting today).
+
+    Recomputes the full active_low/active_high user_id membership directly
+    (duplicating action_center_reports' classification, not reusing its
+    output) because that report caps its `rows` at ACTION_CENTER_LIST_CAP
+    for display size -- an accurate conversion % here needs the TRUE
+    cohort size, not a capped subset."""
+    rows = mconn.execute("SELECT user_id, vip_level, last_active_time FROM users").fetchall()
+    active_low_ids, active_high_ids = set(), set()
+    vip_by_user = {}
+    for user_id, vip_level, last_active_time in rows:
+        if vip_level is None:
+            continue
+        vip_by_user[user_id] = vip_level
+        last_active_dt = parse_dt(last_active_time)
+        if not last_active_dt:
+            continue
+        inactive_days = (now - last_active_dt).days
+        if 2 <= vip_level <= 4 and inactive_days <= 10:
+            active_low_ids.add(user_id)
+        if 5 <= vip_level <= 15 and inactive_days <= 15:
+            active_high_ids.add(user_id)
+
+    today_activity = _today_deposit_activity(deposit_rows, now.date())
+
+    def build(cohort, tier_label):
+        rows_out = []
+        for user_id in cohort:
+            activity = today_activity.get(user_id)
+            if not activity:
+                continue
+            rows_out.append({
+                "user_id": user_id,
+                "vip": vip_by_user.get(user_id),
+                "deposit_amount": round(activity["amount"], 2),
+                "deposit_count": activity["count"],
+            })
+        rows_out.sort(key=lambda r: -r["deposit_amount"])
+        cohort_size = len(cohort)
+        converted = len(rows_out)
+        avg_deposit = round(sum(r["deposit_amount"] for r in rows_out) / converted, 2) if converted else 0.0
+        return {
+            "note": f"{tier_label} Active Users who deposited today",
+            "cohort_size": cohort_size,
+            "converted_count": converted,
+            "pct_converted": round(converted / cohort_size * 100, 2) if cohort_size else 0.0,
+            "avg_deposit_amount": avg_deposit,
+            "rows": rows_out[:ACTION_CENTER_LIST_CAP],
+        }
+
+    return {"low": build(active_low_ids, "Low"), "high": build(active_high_ids, "High")}
+
+
 STATUS_LABELS = {0: "In-Review", 1: "Processing", 2: "Complete", 3: "Rejected", 4: "Failed"}
 
 
@@ -1485,6 +1544,12 @@ def main():
         "bonus_claimer": bonus_claimer_retention(deposit_challenge_bonus_rows, deposit_rows, city_by_user, now.date()),
     }
 
+    premium_active = None
+    if os.path.exists(master_db_path):
+        mconn3 = sqlite3.connect(master_db_path)
+        premium_active = premium_active_conversion(mconn3, deposit_rows, now)
+        mconn3.close()
+
     bonus_claims = bonus_claim_report(DB_PATH, deposit_rows, deposit_challenge_bonus_rows, now.date())
 
     report = {
@@ -1515,6 +1580,7 @@ def main():
         "reactivation": reactivation,
         "vip_upgrade": vip_upgrade,
         "retention": retention,
+        "premium_active": premium_active,
         "performance_history": performance,
         "profit_users": profit_users,
         "channel_performance": channel_performance,
