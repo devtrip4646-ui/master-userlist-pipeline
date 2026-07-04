@@ -1652,6 +1652,91 @@ def compute_agent_performance_rows(agent_list, reactivation, vip_upgrade, retent
     return rows
 
 
+def slugify(name):
+    """Turns an agent name into a clean R2 object key / URL segment,
+    e.g. "Sathya (WFH)" -> "sathya-wfh". The dashboard's per-agent URLs use
+    the real name (URL-encoded, reversible with decodeURIComponent) rather
+    than this slug -- this is only for the R2 filename, so parens/spaces in
+    agent names don't end up in object keys."""
+    s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return s or "agent"
+
+
+def build_agent_home_report(
+    agent_name, all_records, by_date_records, all_withdrawals, by_date_withdrawals,
+    all_withdrawal_full, by_date_withdrawal_full, all_bet_users, by_date_bet_users,
+    all_dates, city_by_user, vip_by_user, agent_by_user, now,
+):
+    """Small supplementary per-agent JSON, uploaded alongside (not instead
+    of) the main deposit_report.json -- reports/agent/<slugify(name)>.json.
+
+    Only the Home page's aggregate charts (amount-range/channel/hourly/
+    success-rate breakdowns) and the Analytics page's Region/VIP chart
+    genuinely need this: they're derived from raw per-transaction records
+    that are never shipped to the browser (only pre-aggregated summaries
+    are), so there's no way to scope them to one agent client-side. Every
+    OTHER per-user section (Action Center, Retention, VIP Upgrade,
+    Reactivation, Premium Active, Weekly Cashback Shield, withdrawal
+    orders) already carries an "agent" field per row in the main report and
+    is scoped entirely client-side instead -- no duplication needed there.
+
+    Reuses the exact same aggregate()/summarize()/withdrawal_*() functions
+    the main report uses, just called again on this agent's own subset of
+    records -- same math, smaller input, not a separate pipeline."""
+    def flt(records):
+        return [r for r in records if r["agent"] == agent_name]
+
+    agent_all_records = flt(all_records)
+    agent_all_withdrawals = flt(all_withdrawals)
+    agent_all_withdrawal_full = flt(all_withdrawal_full)
+    # all_bet_users/by_date_bet_users are plain sets of user_ids (from wallet
+    # activity, no per-row "agent" field of their own) -- scope via
+    # agent_by_user directly instead of the flt() row-filter above.
+    agent_bet_users_all = {uid for uid in all_bet_users if agent_for(agent_by_user, uid) == agent_name}
+
+    by_date_records_agent = {d: flt(rows) for d, rows in by_date_records.items()}
+    by_date_withdrawals_agent = {d: flt(rows) for d, rows in by_date_withdrawals.items()}
+    by_date_withdrawal_full_agent = {d: flt(rows) for d, rows in by_date_withdrawal_full.items()}
+
+    by_date_out = {
+        date: {
+            **aggregate(by_date_records_agent.get(date, [])),
+            "summary": summarize(
+                by_date_records_agent.get(date, []), by_date_withdrawals_agent.get(date, []),
+                by_date_bet_users.get(date, set()) & agent_bet_users_all,
+            ),
+            "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full_agent.get(date, [])),
+            "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full_agent.get(date, [])),
+        }
+        for date in all_dates
+    }
+
+    withdrawal_analysis_out = {
+        "processing_time_buckets": PROCESSING_TIME_BUCKETS,
+        "processing_backlog_buckets": PROCESSING_BACKLOG_BUCKETS,
+        "inreview_backlog_buckets": INREVIEW_BACKLOG_BUCKETS,
+        "processing_backlog": withdrawal_backlog(agent_all_withdrawal_full, now, 1, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS),
+        "inreview_backlog": withdrawal_backlog(agent_all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
+        "backlog_as_of": now.isoformat(),
+        "last4days_completion": last4days_completion(by_date_withdrawal_full_agent, all_dates),
+    }
+
+    return {
+        "agent_name": agent_name,
+        "all_time": {
+            **aggregate(agent_all_records),
+            "summary": summarize(agent_all_records, agent_all_withdrawals, agent_bet_users_all),
+            "withdrawal_review_by_channel": withdrawal_review_by_channel(agent_all_withdrawal_full),
+            "withdrawal_completion_by_channel": withdrawal_completion_by_channel(agent_all_withdrawal_full),
+        },
+        "by_date": by_date_out,
+        "withdrawal_analysis": withdrawal_analysis_out,
+        "region_vip_analytics": region_vip_deposit_analytics(
+            by_date_records_agent, by_date_withdrawals_agent, city_by_user, vip_by_user, all_dates
+        ),
+    }
+
+
 def main():
     # Source timestamps (create_time, last_active_time, etc.) are IST, but this
     # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
@@ -1766,6 +1851,7 @@ def main():
             "status": status,
             "completion_minutes": completion_minutes,
             "user_id": user_id,
+            "agent": agent_for(agent_by_user, user_id),
         }
         all_records.append(record)
         if date_str:
@@ -1780,7 +1866,7 @@ def main():
         date_str = create_dt.strftime("%Y-%m-%d") if create_dt else None
         if create_dt and (latest_record_time is None or create_dt > latest_record_time):
             latest_record_time = create_dt
-        record = {"amount": amount, "status": status, "user_id": user_id}
+        record = {"amount": amount, "status": status, "user_id": user_id, "agent": agent_for(agent_by_user, user_id)}
         all_withdrawals.append(record)
         if date_str:
             by_date_withdrawals[date_str].append(record)
@@ -1795,6 +1881,7 @@ def main():
             "payment_center_order_id": payment_center_order_id,
             "user_id": user_id,
             "amount": amount,
+            "agent": agent_for(agent_by_user, user_id),
         }
         all_withdrawal_full.append(full_record)
         if date_str:
@@ -1946,6 +2033,25 @@ def main():
     )
     s3.upload_file(out_path, creds["R2_BUCKET"], "reports/deposit_report.json")
     print(f"Uploaded reports/deposit_report.json -> r2://{creds['R2_BUCKET']}/reports/deposit_report.json")
+
+    # Per-agent dashboards: small supplementary JSON per real agent (never
+    # "Un-Assigned"), for the Home page's aggregate charts and the Analytics
+    # Region/VIP chart -- see build_agent_home_report for why only those
+    # need a separate file. Everything else on an agent's dashboard filters
+    # the SAME main deposit_report.json client-side using its existing
+    # per-row "agent" field.
+    for agent_name in agent_list:
+        agent_report = build_agent_home_report(
+            agent_name, all_records, by_date_records, all_withdrawals, by_date_withdrawals,
+            all_withdrawal_full, by_date_withdrawal_full, all_bet_users, by_date_bet_users,
+            all_dates, city_by_user, vip_by_user, agent_by_user, now,
+        )
+        agent_out_path = os.path.join(BASE, "agent_report.json")
+        with open(agent_out_path, "w") as f:
+            json.dump(agent_report, f)
+        agent_key = f"reports/agent/{slugify(agent_name)}.json"
+        s3.upload_file(agent_out_path, creds["R2_BUCKET"], agent_key)
+    print(f"Uploaded {len(agent_list)} per-agent home reports to reports/agent/*.json")
 
     # Per-date snapshot of Analytics' Reactivation/VIP Upgrade/Retention/
     # Premium Active sections -- these are single "as of today" computations,
