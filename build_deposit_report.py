@@ -1581,7 +1581,11 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
         "week_end": week_end.isoformat(),
         "eligible_count": len(rows),
         "total_bonus": round(sum(r["bonus_amount"] for r in rows), 2),
-        "rows": rows[:ACTION_CENTER_LIST_CAP],
+        # Unlike the other Action Center sections (which cap at
+        # ACTION_CENTER_LIST_CAP since they're exploratory "top N" views),
+        # this is a definitive payout list -- every eligible user needs to
+        # be visible and exportable, not just the top 500 by bonus amount.
+        "rows": rows,
     }
 
 
