@@ -1448,8 +1448,8 @@ def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows
 #     cohort size varies day to day. That weighted rate is then compared
 #     against the flat target here to get "% of target achieved".
 AGENT_PERF_TARGETS = {
-    "Reactivation Low": {"type": "count", "target": 15},
-    "Reactivation High": {"type": "count", "target": 5},
+    "Reactivation Low": {"type": "count", "target": 20},
+    "Reactivation High": {"type": "count", "target": 10},
     "Retention": {"type": "rate", "target": 30},
     "Low VIP Upgrade": {"type": "count", "target": 10},
     "High VIP Upgrade": {"type": "count", "target": 5},
