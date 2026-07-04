@@ -327,9 +327,12 @@ def compute_and_save_daily_performance(cur, deposit_rows, withdrawal_rows, today
 def compute_and_save_bonus_performance(cur, bonus_rows, today):
     """Permanent per-day, per-bonus-category rollup -- daily_records.db's
     `bonuses` table (populated by ingest_update.py's classify_bonus(), which
-    tags a wallet_transactions row as a bonus credit when game_name is set
-    and source is blank -- confirmed against real data as the actual
-    discriminator between a bonus payout and real gameplay) is ALSO purged
+    tags a wallet_transactions row as a bonus credit under three confirmed
+    rules: a real bonus name in game_name with blank source; game_name
+    literally "Elle Import Excel Add", using source_id for the real bonus
+    identity; or blank game_name with "bonus" in source_id, rolled up into
+    combined "Daily Active Bonus"/"Daily Active Bonus Low" categories) is
+    ALSO purged
     to the rolling 33-day window, same as everything else in
     daily_records.db. Without this table, "which bonus performed well last
     month" would already be unanswerable by the time you asked.

@@ -1331,14 +1331,15 @@ def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows
     view surfaces.
 
     Learning about new bonuses: `bonuses` is populated by classify_bonus()
-    (in ingest_update.py), which tags a wallet_transactions row as a bonus
-    the moment game_name is set and source is blank -- confirmed against
-    real data as the actual discriminator (every known bonus category has
-    100% blank source; every real game, including two whose names contain
-    "Bonus", has 100% non-blank source, populated with the game's
-    provider). Using game_name itself as the category means ANY new bonus
-    is picked up automatically the first day it appears -- no maintained
-    name list, no code change needed."""
+    (in ingest_update.py) under three confirmed rules -- a real bonus name
+    in game_name with blank source (category = game_name); game_name
+    literally "Elle Import Excel Add", using source_id for the real bonus
+    identity (e.g. "Daily Active Low VIP"); or blank game_name with "bonus"
+    in source_id, rolled up into combined "Daily Active Bonus"/"Daily
+    Active Bonus Low" categories (stripping the random per-instance
+    suffix). Any bonus matching one of these rules is picked up
+    automatically the first day it appears -- no maintained name list, no
+    code change needed."""
     today_str = today.isoformat()
 
     today_deposit_amount = defaultdict(float)
@@ -1405,67 +1406,6 @@ def main():
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-
-    # TEMP DIAGNOSTIC (remove once confirmed)
-    print("=== DIAGNOSTIC: distinct source_id LIKE 'Daily Active Bonus Low%' (raw) ===")
-    rows = cur.execute(
-        "SELECT DISTINCT source_id FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus Low%' LIMIT 15"
-    ).fetchall()
-    for (source_id,) in rows:
-        print(repr(source_id))
-    print("=== DIAGNOSTIC: sample full rows for Daily Active Bonus Low% ===")
-    rows = cur.execute(
-        "SELECT id, game_name, source_id, source, change_value FROM wallet_transactions "
-        "WHERE source_id LIKE 'Daily Active Bonus Low%' LIMIT 10"
-    ).fetchall()
-    for r in rows:
-        print(r)
-    print("=== DIAGNOSTIC: does 'Daily Active Bonus%' (non-Low) include any Low rows? cross-check counts ===")
-    n_total = cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus%'").fetchone()[0]
-    n_low = cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus Low%'").fetchone()[0]
-    n_plain = cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus-%'").fetchone()[0]
-    print("total 'Daily Active Bonus%' =", n_total, "| 'Daily Active Bonus Low%' =", n_low, "| 'Daily Active Bonus-%' =", n_plain)
-    print("=== DIAGNOSTIC: distinct source_id LIKE 'Daily Active Bonus%' (raw, unaggregated) ===")
-    rows = cur.execute(
-        "SELECT DISTINCT source_id FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus%' LIMIT 30"
-    ).fetchall()
-    for (source_id,) in rows:
-        print(repr(source_id), "len=", len(source_id or ""))
-    print("=== DIAGNOSTIC: sample full rows for Daily Active Bonus% ===")
-    rows = cur.execute(
-        "SELECT id, game_name, source_id, source, change_value FROM wallet_transactions "
-        "WHERE source_id LIKE 'Daily Active Bonus%' LIMIT 10"
-    ).fetchall()
-    for r in rows:
-        print(r)
-    print("=== DIAGNOSTIC: 'Elle Import Excel Add' -- raw distinct source_id + lengths ===")
-    rows = cur.execute(
-        "SELECT DISTINCT source_id FROM wallet_transactions WHERE game_name = 'Elle Import Excel Add' LIMIT 30"
-    ).fetchall()
-    for (source_id,) in rows:
-        print(repr(source_id), "len=", len(source_id or ""))
-    print("=== DIAGNOSTIC: sample full rows for Elle Import Excel Add ===")
-    rows = cur.execute(
-        "SELECT id, game_name, source_id, source, change_value FROM wallet_transactions "
-        "WHERE game_name = 'Elle Import Excel Add' LIMIT 10"
-    ).fetchall()
-    for r in rows:
-        print(r)
-    print("=== DIAGNOSTIC: all distinct source_id values NOT looking like order numbers (no leading digit after 2 letters), sampled ===")
-    rows = cur.execute(
-        "SELECT source_id, COUNT(*) c FROM wallet_transactions "
-        "WHERE (game_name IS NULL OR game_name = '') AND source_id NOT LIKE 'DI2%' "
-        "GROUP BY source_id ORDER BY c DESC LIMIT 40"
-    ).fetchall()
-    for source_id, n in rows:
-        print(repr(source_id), "| n=", n)
-    print("=== DIAGNOSTIC: distinct game_name values containing 'Elle' or 'Import' ===")
-    rows = cur.execute(
-        "SELECT DISTINCT game_name FROM wallet_transactions WHERE game_name LIKE '%Elle%' OR game_name LIKE '%Import%' LIMIT 20"
-    ).fetchall()
-    for (g,) in rows:
-        print(repr(g))
-    print("=== END DIAGNOSTIC ===")
 
     deposit_rows = cur.execute(
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"

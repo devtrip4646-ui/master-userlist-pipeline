@@ -185,24 +185,51 @@ def normalize(s):
     return re.sub(r"\s+", " ", str(s).strip().lower())
 
 
-def classify_bonus(game_name, source):
-    """A wallet_transactions row is a bonus credit iff game_name is set AND
-    source is BLANK -- confirmed against real data: every one of 21 known
-    bonus categories (Welcome Back Bonus, VIP Level: 1-7, First/Second/
-    Third/Fourth deposit, SPIN FREE, BankruptcyActivity, etc.) has 100%
-    blank source, while every real game checked (Aviator, Chicken Road
-    Bonus, Bonus Hunter, Fortune Gems 3 -- including two names that
-    contain "Bonus" but are real games, not bonuses) has 100% non-blank
-    source (populated with the game's provider/aggregator, e.g. Evolution,
-    JDB, KoolBet). This replaced an earlier name-matching heuristic
-    (CANONICAL_BONUSES + regexes + a manually maintained false-positive
-    exclusion list) that needed a one-line addition every time a new bonus
-    name appeared and still risked misclassifying real games. Using
-    game_name itself as the category means any NEW bonus type is picked up
-    automatically the first day it appears, with no maintenance."""
-    if not game_name or (source and str(source).strip()):
-        return None
-    return str(game_name).strip()
+def classify_bonus(game_name, source, source_id):
+    """A wallet_transactions row is a bonus credit under any of three rules,
+    all confirmed against real data:
+
+    1. game_name is a real bonus name (e.g. "Welcome Back Bonus", "VIP
+       Level: 3") AND source is BLANK -- every real game has a populated
+       source (its provider, e.g. Evolution/JDB/KoolBet), every actual bonus
+       category has 100% blank source. Category = game_name itself, so any
+       NEW bonus name is picked up automatically with no maintenance.
+
+    2. game_name is literally "Elle Import Excel Add" -- a generic wrapper
+       label used for a second bonus family. Checked BEFORE rule 1 (which
+       would otherwise match it too, but lump every row under the
+       meaningless label "Elle Import Excel Add"): the real bonus identity
+       lives in source_id instead (confirmed values: "Daily Active Low",
+       "Daily Active Low VIP"), always with a blank source too.
+
+    3. game_name is BLANK and source_id contains the word "bonus" -- a third
+       family ("Daily Active Bonus-<random hex>", "Daily Active Bonus
+       Low-<random hex>") confirmed distinct from the other blank-game_name
+       rows, which carry deposit/withdrawal order-number references in
+       source_id instead (e.g. "DI2026070101110003"), not bonus text. The
+       per-instance random suffix is stripped so every instance rolls up
+       into one combined category each, rather than ~900 near-duplicate
+       ones (confirmed: 911 total split exactly 617 "Daily Active Bonus" +
+       294 "Daily Active Bonus Low", no overlap)."""
+    game_name = str(game_name).strip() if game_name else ""
+    source = str(source).strip() if source else ""
+    source_id = str(source_id).strip() if source_id else ""
+
+    if game_name == "Elle Import Excel Add":
+        return source_id or game_name
+
+    if game_name and not source:
+        return game_name
+
+    if not game_name and "bonus" in source_id.lower():
+        lowered = source_id.lower()
+        if lowered.startswith("daily active bonus low"):
+            return "Daily Active Bonus Low"
+        if lowered.startswith("daily active bonus"):
+            return "Daily Active Bonus"
+        return source_id
+
+    return None
 
 
 def ingest_wallet(files):
@@ -248,7 +275,8 @@ def ingest_wallet(files):
                 _id, game_name, user_id = row[0], row[1], row[2]
                 change_value, change_after = row[5], row[6]
                 create_time, source = row[17], row[12]
-                matched = classify_bonus(game_name, source)
+                source_id = row[8]
+                matched = classify_bonus(game_name, source, source_id)
                 if matched:
                     new_bonus_rows.append((_id, user_id, game_name, matched, change_value, change_after, create_time, source))
         mark_ingested(conn, f)
@@ -260,6 +288,30 @@ def ingest_wallet(files):
         )
         conn.commit()
     print(f"Wallet transactions: {added} rows added, {len(new_bonus_rows)} classified as bonuses")
+
+    # Backfill: rows from files ingested in earlier runs (before classify_bonus()
+    # recognized "Daily Active Bonus" / "Daily Active Bonus Low" / "Elle Import
+    # Excel Add" as bonuses) never got a bonuses row, since the loop above only
+    # classifies newly-inserted rows per run. Re-scan the whole table (bounded
+    # to the 33-day retention window, so this stays cheap) for any row still
+    # missing from `bonuses` -- INSERT OR IGNORE on the shared id makes this a
+    # no-op once every row has been backfilled, so it's safe to run every time.
+    backfill_rows = cur.execute(
+        "SELECT id, game_name, user_id, change_value, change_after, create_time, source, source_id "
+        "FROM wallet_transactions WHERE id NOT IN (SELECT id FROM bonuses)"
+    ).fetchall()
+    backfilled = []
+    for _id, game_name, user_id, change_value, change_after, create_time, source, source_id in backfill_rows:
+        matched = classify_bonus(game_name, source, source_id)
+        if matched:
+            backfilled.append((_id, user_id, game_name, matched, change_value, change_after, create_time, source))
+    if backfilled:
+        cur.executemany(
+            "INSERT OR IGNORE INTO bonuses (id, user_id, bonus_name, matched_category, change_value, change_after, create_time, source) VALUES (?,?,?,?,?,?,?,?)",
+            backfilled,
+        )
+        conn.commit()
+    print(f"Bonus backfill: {len(backfilled)} previously-missed rows classified as bonuses")
     conn.close()
 
 
