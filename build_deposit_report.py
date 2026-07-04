@@ -1407,35 +1407,46 @@ def main():
     cur = conn.cursor()
 
     # TEMP DIAGNOSTIC (remove once confirmed)
-    print("=== DIAGNOSTIC: blank game_name source_id patterns ===")
+    print("=== DIAGNOSTIC: distinct source_id LIKE 'Daily Active Bonus%' (raw, unaggregated) ===")
     rows = cur.execute(
-        "SELECT source_id, source, COUNT(*) FROM wallet_transactions "
-        "WHERE (game_name IS NULL OR game_name = '') "
-        "GROUP BY source_id, source ORDER BY COUNT(*) DESC LIMIT 40"
+        "SELECT DISTINCT source_id FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus%' LIMIT 30"
     ).fetchall()
-    for source_id, source, n in rows:
-        print(repr(source_id), "| source=", repr(source), "| n=", n)
-    print("=== DIAGNOSTIC: Daily Active Bonus prefix counts ===")
-    for prefix in ("Daily Active Bonus Low", "Daily Active Bonus"):
-        n = cur.execute(
-            "SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE ?", (prefix + "%",)
-        ).fetchone()[0]
-        print(prefix, "->", n)
-    print("=== DIAGNOSTIC: Elle Import Excel Add rows ===")
+    for (source_id,) in rows:
+        print(repr(source_id), "len=", len(source_id or ""))
+    print("=== DIAGNOSTIC: sample full rows for Daily Active Bonus% ===")
     rows = cur.execute(
-        "SELECT source_id, source, COUNT(*) FROM wallet_transactions "
-        "WHERE game_name = 'Elle Import Excel Add' GROUP BY source_id, source ORDER BY COUNT(*) DESC LIMIT 40"
+        "SELECT id, game_name, source_id, source, change_value FROM wallet_transactions "
+        "WHERE source_id LIKE 'Daily Active Bonus%' LIMIT 10"
     ).fetchall()
-    for source_id, source, n in rows:
-        print(repr(source_id), "| source=", repr(source), "| n=", n)
-    print("=== DIAGNOSTIC: any other game_name with 'bonus' in source_id ===")
+    for r in rows:
+        print(r)
+    print("=== DIAGNOSTIC: 'Elle Import Excel Add' -- raw distinct source_id + lengths ===")
     rows = cur.execute(
-        "SELECT game_name, source_id, COUNT(*) FROM wallet_transactions "
-        "WHERE source_id LIKE '%onus%' AND (game_name IS NOT NULL AND game_name != '') "
-        "GROUP BY game_name, source_id ORDER BY COUNT(*) DESC LIMIT 40"
+        "SELECT DISTINCT source_id FROM wallet_transactions WHERE game_name = 'Elle Import Excel Add' LIMIT 30"
     ).fetchall()
-    for game_name, source_id, n in rows:
-        print(repr(game_name), "|", repr(source_id), "| n=", n)
+    for (source_id,) in rows:
+        print(repr(source_id), "len=", len(source_id or ""))
+    print("=== DIAGNOSTIC: sample full rows for Elle Import Excel Add ===")
+    rows = cur.execute(
+        "SELECT id, game_name, source_id, source, change_value FROM wallet_transactions "
+        "WHERE game_name = 'Elle Import Excel Add' LIMIT 10"
+    ).fetchall()
+    for r in rows:
+        print(r)
+    print("=== DIAGNOSTIC: all distinct source_id values NOT looking like order numbers (no leading digit after 2 letters), sampled ===")
+    rows = cur.execute(
+        "SELECT source_id, COUNT(*) c FROM wallet_transactions "
+        "WHERE (game_name IS NULL OR game_name = '') AND source_id NOT LIKE 'DI2%' "
+        "GROUP BY source_id ORDER BY c DESC LIMIT 40"
+    ).fetchall()
+    for source_id, n in rows:
+        print(repr(source_id), "| n=", n)
+    print("=== DIAGNOSTIC: distinct game_name values containing 'Elle' or 'Import' ===")
+    rows = cur.execute(
+        "SELECT DISTINCT game_name FROM wallet_transactions WHERE game_name LIKE '%Elle%' OR game_name LIKE '%Import%' LIMIT 20"
+    ).fetchall()
+    for (g,) in rows:
+        print(repr(g))
     print("=== END DIAGNOSTIC ===")
 
     deposit_rows = cur.execute(
