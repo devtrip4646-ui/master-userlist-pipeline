@@ -1407,6 +1407,24 @@ def main():
     cur = conn.cursor()
 
     # TEMP DIAGNOSTIC (remove once confirmed)
+    print("=== DIAGNOSTIC: distinct source_id LIKE 'Daily Active Bonus Low%' (raw) ===")
+    rows = cur.execute(
+        "SELECT DISTINCT source_id FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus Low%' LIMIT 15"
+    ).fetchall()
+    for (source_id,) in rows:
+        print(repr(source_id))
+    print("=== DIAGNOSTIC: sample full rows for Daily Active Bonus Low% ===")
+    rows = cur.execute(
+        "SELECT id, game_name, source_id, source, change_value FROM wallet_transactions "
+        "WHERE source_id LIKE 'Daily Active Bonus Low%' LIMIT 10"
+    ).fetchall()
+    for r in rows:
+        print(r)
+    print("=== DIAGNOSTIC: does 'Daily Active Bonus%' (non-Low) include any Low rows? cross-check counts ===")
+    n_total = cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus%'").fetchone()[0]
+    n_low = cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus Low%'").fetchone()[0]
+    n_plain = cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus-%'").fetchone()[0]
+    print("total 'Daily Active Bonus%' =", n_total, "| 'Daily Active Bonus Low%' =", n_low, "| 'Daily Active Bonus-%' =", n_plain)
     print("=== DIAGNOSTIC: distinct source_id LIKE 'Daily Active Bonus%' (raw, unaggregated) ===")
     rows = cur.execute(
         "SELECT DISTINCT source_id FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus%' LIMIT 30"
