@@ -352,6 +352,12 @@ VIP_THRESHOLDS = {
 }
 ACTION_CENTER_LIST_CAP = 500
 
+AGENT_UNASSIGNED = "Un-Assigned"
+
+
+def agent_for(agent_by_user, user_id):
+    return agent_by_user.get(user_id) or AGENT_UNASSIGNED
+
 
 def action_center_reports(mconn, now, agent_by_user):
     """Action Center reports, computed from the master userlist snapshot (not
@@ -383,7 +389,7 @@ def action_center_reports(mconn, now, agent_by_user):
             gap = VIP_THRESHOLDS[vip_level + 1] - total_recharge
             near_row = {
                 "user_id": user_id,
-                "agent": agent_by_user.get(user_id),
+                "agent": agent_for(agent_by_user, user_id),
                 "current_vip": vip_level,
                 "next_vip": vip_level + 1,
                 "total_deposit": round(total_recharge, 2),
@@ -398,7 +404,7 @@ def action_center_reports(mconn, now, agent_by_user):
         if inactive_days is not None:
             inactive_row = {
                 "user_id": user_id,
-                "agent": agent_by_user.get(user_id),
+                "agent": agent_for(agent_by_user, user_id),
                 "vip_level": vip_level,
                 "total_deposit": round(total_recharge, 2),
                 "wallet_balance": round(user_balance or 0.0, 2),
@@ -412,7 +418,7 @@ def action_center_reports(mconn, now, agent_by_user):
 
             active_row = {
                 "user_id": user_id,
-                "agent": agent_by_user.get(user_id),
+                "agent": agent_for(agent_by_user, user_id),
                 "vip_level": vip_level,
                 "total_deposit": round(total_recharge, 2),
                 "wallet_balance": round(user_balance or 0.0, 2),
@@ -502,7 +508,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             continue
         row = {
             "user_id": user_id,
-            "agent": agent_by_user.get(user_id),
+            "agent": agent_for(agent_by_user, user_id),
             "vip_level": vip_level,
             "total_deposit": cand["total_deposit"],
             "inactive_days": gap_days,
@@ -558,7 +564,7 @@ def vip_upgrade_analytics(vip_upgrade_candidates, action_center, agent_by_user):
     low_rows = sorted(vip_upgrade_candidates.get("low", []), key=lambda r: -r["total_deposit"])
     high_rows = sorted(vip_upgrade_candidates.get("high", []), key=lambda r: -r["total_deposit"])
     for r in low_rows + high_rows:
-        r["agent"] = agent_by_user.get(r["user_id"])
+        r["agent"] = agent_for(agent_by_user, r["user_id"])
 
     still_near_low = action_center["near_upgrade_low"]["total_matching"] if action_center else 0
     still_near_high = action_center["near_upgrade_high"]["total_matching"] if action_center else 0
@@ -636,7 +642,7 @@ def yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user
         total_withdraw = round(withdraw_by_user.get(user_id, 0.0), 2)
         rows.append({
             "user_id": user_id,
-            "agent": agent_by_user.get(user_id),
+            "agent": agent_for(agent_by_user, user_id),
             "vip_level": vip_by_user.get(user_id),
             "deposit_count": entry["count"],
             "total_deposit": total_deposit,
@@ -686,7 +692,7 @@ def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today, agent_by_use
         def add(rule_no):
             label, amount = DEPOSIT_CHALLENGE_RULES[rule_no]
             rows.append({
-                "user_id": user_id, "agent": agent_by_user.get(user_id), "rule": label,
+                "user_id": user_id, "agent": agent_for(agent_by_user, user_id), "rule": label,
                 "bonus_amount": amount, "fd_date": fd.isoformat(),
             })
 
@@ -736,7 +742,7 @@ def _retention_report(cohort, today_activity, city_by_user, note, agent_by_user)
             continue
         rows.append({
             "user_id": user_id,
-            "agent": agent_by_user.get(user_id),
+            "agent": agent_for(agent_by_user, user_id),
             "total_deposit": round(activity["amount"], 2),
             "deposit_count": activity["count"],
             "region": city_by_user.get(user_id) or "Unknown",
@@ -831,7 +837,7 @@ def premium_active_conversion(mconn, deposit_rows, now, agent_by_user):
                 continue
             rows_out.append({
                 "user_id": user_id,
-                "agent": agent_by_user.get(user_id),
+                "agent": agent_for(agent_by_user, user_id),
                 "vip": vip_by_user.get(user_id),
                 "deposit_amount": round(activity["amount"], 2),
                 "deposit_count": activity["count"],
@@ -895,7 +901,7 @@ def withdrawal_orders_export(withdrawal_full_records, vip_by_user, now, agent_by
             "hours_in_review": hours_in_review,
             "hours_processing": hours_processing,
             "user_id": r["user_id"],
-            "agent": agent_by_user.get(r["user_id"]),
+            "agent": agent_for(agent_by_user, r["user_id"]),
             "vip_level": vip_by_user.get(r["user_id"]),
         })
     return rows
@@ -1107,7 +1113,7 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_
         wd_today = round(today_withdraw.get(user_id, 0.0), 2)
         result.append({
             "user_id": user_id,
-            "agent": agent_by_user.get(user_id),
+            "agent": agent_for(agent_by_user, user_id),
             "vip": vip_level,
             "dep_today": dep_today,
             "wallet_bal": round(user_balance or 0.0, 2),
@@ -1279,7 +1285,7 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
     for user_id, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time in rows:
         profile = {
             "user_id": user_id,
-            "agent": agent_by_user.get(user_id),
+            "agent": agent_for(agent_by_user, user_id),
             "region": city,
             "acquisition_channel": channel,
             "vip_level": vip_level,
@@ -1618,6 +1624,9 @@ def main():
         "profit_users": profit_users,
         "channel_performance": channel_performance,
         "bonus_claims": bonus_claims,
+        # Distinct real agent names (never includes AGENT_UNASSIGNED) -- powers
+        # the Reassign Agent dropdown on the Search User page.
+        "agent_list": sorted(set(agent_by_user.values())),
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
