@@ -1111,6 +1111,115 @@ def channel_performance_report(daily_conn, today):
     return result
 
 
+USER_SEARCH_SHARDS = 40
+
+
+def build_recent_activity_by_user(daily_conn, today):
+    """The daily_records.db-dependent half of the user search index: recent
+    deposits (7 days, with order_no -- not in the shared deposit_rows tuple
+    used everywhere else, so this is a dedicated query), recent withdrawals
+    (7 days), and recent games played (2 days, excluding bonus payouts via
+    `id NOT IN (SELECT id FROM bonuses)` -- bonuses.id directly reuses the
+    source wallet_transactions.id, see ingest_wallet() in ingest_update.py,
+    so this is an exact join, not a name-matching heuristic repeated a third
+    time). Called while `conn` is still open, same as channel_performance_report,
+    since daily_records.db's connection is closed early in main()."""
+    dep_start = (today - timedelta(days=6)).isoformat()
+    deposits_by_user = defaultdict(list)
+    for user_id, order_amount, create_time, status, order_no, pay_channel in daily_conn.execute(
+        "SELECT user_id, order_amount, create_time, status, order_no, pay_channel FROM deposits WHERE create_time >= ?",
+        (dep_start,),
+    ).fetchall():
+        if user_id is None:
+            continue
+        deposits_by_user[user_id].append({
+            "date": create_time, "amount": order_amount, "status": status,
+            "order_no": order_no, "channel": pay_channel,
+        })
+
+    withdrawals_by_user = defaultdict(list)
+    for user_id, withdraw_amount, create_time, status, order_no, payment_channel in daily_conn.execute(
+        "SELECT user_id, withdraw_amount, create_time, status, order_no, payment_channel FROM withdrawals WHERE create_time >= ?",
+        (dep_start,),
+    ).fetchall():
+        if user_id is None:
+            continue
+        withdrawals_by_user[user_id].append({
+            "date": create_time, "amount": withdraw_amount, "status": STATUS_LABELS.get(status, status),
+            "order_no": order_no, "channel": payment_channel,
+        })
+
+    games_start = (today - timedelta(days=1)).isoformat()
+    games_by_user = defaultdict(list)
+    for user_id, game_name, change_value, create_time in daily_conn.execute(
+        "SELECT user_id, game_name, change_value, create_time FROM wallet_transactions "
+        "WHERE game_name IS NOT NULL AND game_name != '' AND create_time >= ? "
+        "AND id NOT IN (SELECT id FROM bonuses)",
+        (games_start,),
+    ).fetchall():
+        if user_id is None:
+            continue
+        games_by_user[user_id].append({"game_name": game_name, "change_value": change_value, "date": create_time})
+
+    for d in deposits_by_user.values():
+        d.sort(key=lambda r: r["date"], reverse=True)
+    for d in withdrawals_by_user.values():
+        d.sort(key=lambda r: r["date"], reverse=True)
+    for d in games_by_user.values():
+        d.sort(key=lambda r: r["date"], reverse=True)
+        del d[15:]  # keep only the most recent 15 per user
+
+    return deposits_by_user, withdrawals_by_user, games_by_user
+
+
+def build_and_upload_user_search_index(mconn, recent_activity, creds):
+    """Sharded user-search index, rebuilt from scratch every run (cheap:
+    everything needed is already local to this pipeline run, no extra
+    network calls). Cloudflare Workers can't practically query a 224MB+
+    SQLite file per search request -- 40 small JSON shard files in R2 let
+    the dashboard's Search User page do one cheap R2 GET (shard =
+    user_id % 40) instead. Every user in master_userlist.db gets an entry
+    (even ones with zero activity, so a lookup for any valid ID gives a
+    sensible "no recent activity" result rather than a 404); recent
+    deposits/withdrawals/games are only present for users who have any."""
+    deposits_by_user, withdrawals_by_user, games_by_user = recent_activity
+    shards = [dict() for _ in range(USER_SEARCH_SHARDS)]
+    rows = mconn.execute(
+        "SELECT user_id, phone, city, channel, total_recharge, total_withdrawal, vip_level, "
+        "user_balance, last_active_time, create_time FROM users"
+    ).fetchall()
+    for user_id, phone, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time in rows:
+        profile = {
+            "user_id": user_id,
+            "phone": phone,
+            "region": city,
+            "acquisition_channel": channel,
+            "vip_level": vip_level,
+            "total_deposit": round(total_recharge or 0.0, 2),
+            "total_withdraw": round(total_withdrawal or 0.0, 2),
+            "wallet_balance": round(user_balance or 0.0, 2),
+            "net_lifetime": round((total_recharge or 0.0) - (total_withdrawal or 0.0), 2),
+            "last_active_time": last_active_time,
+            "registered": create_time,
+            "recent_deposits": deposits_by_user.get(user_id, []),
+            "recent_withdrawals": withdrawals_by_user.get(user_id, []),
+            "recent_games": games_by_user.get(user_id, []),
+        }
+        shards[user_id % USER_SEARCH_SHARDS][str(user_id)] = profile
+
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=creds["R2_ENDPOINT_URL"],
+        aws_access_key_id=creds["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=creds["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
+    )
+    for i, shard in enumerate(shards):
+        key = f"user_search/shard_{i:02d}.json"
+        s3.put_object(Bucket=creds["R2_BUCKET"], Key=key, Body=json.dumps(shard), ContentType="application/json")
+    print(f"Uploaded {USER_SEARCH_SHARDS} user search shards covering {len(rows)} users")
+
+
 def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows, today):
     """All bonuses claimed TODAY -- both wallet-sourced bonuses (Welcome
     Back, Loyalty, VIP tiers, Daily Active, etc., from daily_records.db's
@@ -1207,6 +1316,7 @@ def main():
         "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
     ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
+    recent_activity = build_recent_activity_by_user(conn, now.date())
     conn.close()
 
     by_date_bet_users = defaultdict(set)
@@ -1260,6 +1370,7 @@ def main():
 
         performance = performance_history(mconn)
         profit_users = profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now)
+        build_and_upload_user_search_index(mconn, recent_activity, load_creds())
 
         mconn.close()
 
