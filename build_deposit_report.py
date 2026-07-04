@@ -10,7 +10,6 @@ caller) and R2 credentials in env vars or .r2_credentials.
 """
 import json
 import os
-import re
 import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -980,93 +979,65 @@ def performance_history(mconn):
     }
 
 
-# Same heuristic as ingest_update.py's classify_bonus() (duplicated, not
-# imported -- same pattern as VIP_THRESHOLDS being duplicated across
-# api_pull_ingest.py and here, so this script stays runnable standalone).
-# Used to exclude bonus payouts from game engagement/GGR numbers -- without
-# this, "Welcome Back Bonus" would show up as if it were a played game.
-GAME_CANONICAL_BONUSES = [
-    "Welcome Back Bonus", "Loyalty Bonus", "First deposit", "Second Deposit",
-    "Third deposit", "Fourth deposit", "Low VIP", "Mid VIP", "High VIP", "Super VIP",
-    "Evolution Live Betting Bonus", "Daily Active Bonus", "Daily Active Bonus Low",
-]
-_DEPOSIT_ORDINAL_RE = re.compile(r"^(first|second|third|fourth|fifth)\s+deposit$", re.I)
-_VIP_TIER_RE = re.compile(r"^(low|mid|high|super)\s*vip$", re.I)
-_VIP_WEEK_OR_LEVEL_RE = re.compile(r"vip\s*(week|level)", re.I)
-_GAME_CANON_NORM = {re.sub(r"\s+", " ", c.strip().lower()): c for c in GAME_CANONICAL_BONUSES}
+def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now):
+    """Top users by CURRENT wallet balance (user_balance on
+    master_userlist.db, continuously updated by wallet activity) -- "who is
+    sitting on the most money right now", enriched with today's deposit/
+    withdrawal activity and permanent last-deposit/last-withdrawal dates.
 
-
-def _is_bonus_name(game_name):
-    if not game_name:
-        return False
-    norm = re.sub(r"\s+", " ", str(game_name).strip().lower())
-    if norm in _GAME_CANON_NORM:
-        return True
-    s = str(game_name).strip()
-    if _DEPOSIT_ORDINAL_RE.match(s) or _VIP_TIER_RE.match(s) or _VIP_WEEK_OR_LEVEL_RE.search(s):
-        return True
-    if "bonus" in norm and ":" not in s:
-        return True
-    return False
-
-
-def game_engagement_ggr(daily_conn):
-    """Which games get played most, and which make (or lose) the house the
-    most money -- from wallet_transactions.game_name + change_value, which
-    up to now has only ever been used to count "was this user active",
-    never looked at as actual gameplay data despite being the single
-    largest data source this pipeline ingests.
-
-    GGR (Gross Gaming Revenue) per game = SUM(change_value WHERE direction=1)
-    - SUM(change_value WHERE direction=0). change_value in this data is
-    ALWAYS a positive magnitude (confirmed via diagnostic: 0 negative rows
-    among game_name-tagged transactions in either direction group) -- an
-    earlier version of this function wrongly assumed change_value itself was
-    signed (positive=win, negative=bet) and used -SUM(change_value), which
-    produced every single game showing a large negative GGR including the
-    "top GGR" list, an implausible pattern for a real platform. `direction`
-    (0 or 1) is what actually carries debit/credit sign.
-    direction=1 rows are far more numerous with a smaller average amount
-    (~Rs21) and direction=0 rows are fewer with a larger average (~Rs93) --
-    consistent with direction=1 = frequent small bets (debits) and
-    direction=0 = less frequent, larger win payouts (credits), which is the
-    interpretation used here. This is inferred from volume/magnitude
-    patterns, not an explicit field label, since there's no accompanying
-    documentation for this export format -- worth confirming against the
-    platform's own definition if this number drives real decisions.
-
-    Bonus-classified game_name values (see _is_bonus_name) are excluded so
-    bonus payouts never get miscounted as gameplay.
-
-    Uses idx_wt_game (already indexed) for an efficient GROUP BY directly in
-    SQLite rather than fetching wallet_transactions row-by-row into Python
-    -- that table alone can be tens of millions of rows. Scoped to
-    daily_records.db's currently-retained window (up to 33 days) -- unlike
-    Net Revenue, this wasn't identified as needing permanent history, so no
-    rollup table was built for it."""
-    rows = daily_conn.execute(
-        "SELECT game_name, COUNT(*), COUNT(DISTINCT user_id), "
-        "SUM(CASE WHEN direction = 1 THEN change_value ELSE 0 END), "
-        "SUM(CASE WHEN direction = 0 THEN change_value ELSE 0 END) "
-        "FROM wallet_transactions WHERE game_name IS NOT NULL AND game_name != '' "
-        "GROUP BY game_name"
-    ).fetchall()
-    games = []
-    for game_name, play_count, unique_players, bet_total, win_total in rows:
-        if _is_bonus_name(game_name):
+    Last deposit/withdraw use deposit_sync_time/withdrawal_sync_time (see
+    sync_master_userlist in api_pull_ingest.py) rather than deriving from
+    daily_records.db's deposit_rows/withdrawal_rows directly -- those are
+    purged to a rolling 33-day window, so a user who hasn't deposited in
+    longer than that would wrongly show "no deposit" instead of their true
+    last date. deposit_sync_time/withdrawal_sync_time are permanent,
+    continuously advanced every run, and immune to that purge."""
+    today = now.date()
+    today_deposit = defaultdict(float)
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
             continue
-        games.append({
-            "game_name": game_name,
-            "play_count": play_count,
-            "unique_players": unique_players,
-            "ggr": round((bet_total or 0.0) - (win_total or 0.0), 2),
+        dt = parse_dt(create_time)
+        if dt and dt.date() == today:
+            today_deposit[user_id] += order_amount or 0.0
+
+    today_withdraw = defaultdict(float)
+    for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no in withdrawal_rows:
+        if status != 2 or user_id is None:  # 2 = Complete
+            continue
+        dt = parse_dt(create_time)
+        if dt and dt.date() == today:
+            today_withdraw[user_id] += withdraw_amount or 0.0
+
+    def days_ago_label(sync_time):
+        dt = parse_dt(sync_time)
+        if not dt:
+            return None
+        gap = (today - dt.date()).days
+        return "Today" if gap <= 0 else f"{gap}d ago"
+
+    rows = mconn.execute(
+        "SELECT user_id, vip_level, user_balance, deposit_sync_time, withdrawal_sync_time FROM users "
+        "WHERE user_balance IS NOT NULL AND user_balance > 0 "
+        "ORDER BY user_balance DESC LIMIT ?",
+        (ACTION_CENTER_LIST_CAP,),
+    ).fetchall()
+
+    result = []
+    for user_id, vip_level, user_balance, dep_sync, wd_sync in rows:
+        dep_today = round(today_deposit.get(user_id, 0.0), 2)
+        wd_today = round(today_withdraw.get(user_id, 0.0), 2)
+        result.append({
+            "user_id": user_id,
+            "vip": vip_level,
+            "dep_today": dep_today,
+            "wallet_bal": round(user_balance or 0.0, 2),
+            "wd_today": wd_today,
+            "net_dep": round(dep_today - wd_today, 2),
+            "last_dep": days_ago_label(dep_sync),
+            "last_wd": days_ago_label(wd_sync),
         })
-    by_ggr = sorted(games, key=lambda g: -g["ggr"])
-    return {
-        "by_engagement": sorted(games, key=lambda g: -g["play_count"])[:15],
-        "by_ggr_top": by_ggr[:10],
-        "by_ggr_bottom": [g for g in reversed(by_ggr) if g["ggr"] < 0][:10],
-    }
+    return result
 
 
 def acquisition_channel_analytics(mconn, now):
@@ -1202,7 +1173,6 @@ def main():
     wallet_rows = cur.execute(
         "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
     ).fetchall()
-    game_ggr = game_engagement_ggr(conn)
     conn.close()
 
     by_date_bet_users = defaultdict(set)
@@ -1221,6 +1191,7 @@ def main():
     vip_upgrade = None
     performance = None
     acquisition_channel = None
+    profit_users = None
     # Source timestamps (create_time, last_active_time, etc.) are IST, but this
     # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
     # be ~5.5h behind IST, making very recent activity look like it's in the
@@ -1261,6 +1232,7 @@ def main():
 
         performance = performance_history(mconn)
         acquisition_channel = acquisition_channel_analytics(mconn, now)
+        profit_users = profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now)
 
         mconn.close()
 
@@ -1396,7 +1368,7 @@ def main():
         "vip_upgrade": vip_upgrade,
         "retention": retention,
         "performance_history": performance,
-        "game_ggr": game_ggr,
+        "profit_users": profit_users,
         "acquisition_channel": acquisition_channel,
         "bonus_claims": bonus_claims,
     }
