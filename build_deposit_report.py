@@ -1332,25 +1332,6 @@ def main():
     ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
-
-    # TEMP DIAGNOSTIC (remove once confirmed): user confirmed "Chicken Road &
-    # Vortex" / "BankruptcyActivity" appear in column M of the raw wallet
-    # details download. My earlier check only looked at `source` (mapped to
-    # column M) on BLANK-game_name rows and found nothing -- broaden to check
-    # `source` across the WHOLE table regardless of game_name, in case these
-    # values co-occur with a real game_name rather than a blank one.
-    diag = conn.execute(
-        "SELECT source, COUNT(*), COUNT(DISTINCT user_id), SUM(change_value) FROM wallet_transactions "
-        "WHERE source IS NOT NULL AND source != '' GROUP BY source ORDER BY 2 DESC LIMIT 60"
-    ).fetchall()
-    print("SOURCE_FULL_DIAGNOSTIC (source, count, distinct_users, total_change_value), no game_name filter:")
-    for row in diag:
-        print("  ", row)
-    total_with_source = conn.execute(
-        "SELECT COUNT(*) FROM wallet_transactions WHERE source IS NOT NULL AND source != ''"
-    ).fetchone()
-    print("SOURCE_FULL_DIAGNOSTIC total rows with non-empty source:", total_with_source)
-
     conn.close()
 
     by_date_bet_users = defaultdict(set)
