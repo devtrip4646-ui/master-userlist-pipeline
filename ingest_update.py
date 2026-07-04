@@ -177,6 +177,19 @@ def ingest_wallet(files):
         "id INTEGER PRIMARY KEY, user_id INTEGER, bonus_name TEXT, matched_category TEXT, "
         "change_value REAL, change_after REAL, create_time TEXT, source TEXT)"
     )
+    # Retroactive cleanup: rows already classified as "Chicken Road Bonus" /
+    # "Bonus Hunter" (real games, not bonuses -- see KNOWN_GAME_FALSE_POSITIVES
+    # above) before that exclusion existed. Fixing classify_bonus() alone only
+    # stops NEW rows from being misclassified going forward; already-ingested
+    # rows for today and recent days need to be removed explicitly, or reports
+    # reading straight from `bonuses` would keep showing them for weeks until
+    # they age out of the 33-day window on their own. Safe to run every time
+    # (a no-op once these are gone).
+    cur.execute(
+        "DELETE FROM bonuses WHERE bonus_name IN ('Chicken Road Bonus', 'Bonus Hunter') "
+        "OR matched_category IN ('Chicken Road Bonus', 'Bonus Hunter')"
+    )
+    conn.commit()
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_user ON bonuses(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_name ON bonuses(bonus_name)")
     added = 0
