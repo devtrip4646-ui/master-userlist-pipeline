@@ -1325,6 +1325,26 @@ def main():
     ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
+
+    # TEMP DIAGNOSTIC (remove once confirmed): check whether bonus credits are
+    # also recorded with a BLANK game_name and the bonus description in
+    # `source` (spreadsheet column M) instead -- a completely different
+    # pattern from classify_bonus(), which only ever looks at game_name, and
+    # would currently miss these entirely (ingest_wallet only calls
+    # classify_bonus() `if game_name:`, skipping blank ones outright).
+    diag = conn.execute(
+        "SELECT source, COUNT(*), SUM(change_value), COUNT(DISTINCT user_id) FROM wallet_transactions "
+        "WHERE (game_name IS NULL OR game_name = '') AND source IS NOT NULL AND source != '' "
+        "GROUP BY source ORDER BY 2 DESC LIMIT 40"
+    ).fetchall()
+    print("BLANK_GAME_NAME_DIAGNOSTIC (source, count, total_change_value, distinct_users):")
+    for row in diag:
+        print("  ", row)
+    blank_total = conn.execute(
+        "SELECT COUNT(*) FROM wallet_transactions WHERE game_name IS NULL OR game_name = ''"
+    ).fetchone()
+    print("BLANK_GAME_NAME_DIAGNOSTIC total blank-game_name rows:", blank_total)
+
     conn.close()
 
     by_date_bet_users = defaultdict(set)
