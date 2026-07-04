@@ -50,6 +50,62 @@ def mark_ingested(conn, filename):
     conn.execute("INSERT OR IGNORE INTO ingested_files (filename) VALUES (?)", (os.path.basename(filename),))
 
 
+def ingest_agents(files):
+    """Agent-to-user assignment sheet (e.g. "Agent-users.xlsx"). Unlike the
+    other ingest_* functions, the source layout isn't one-row-per-user --
+    each column is an agent name, and every non-blank cell below it is a
+    user_id assigned to that agent. Only the "Mastersheet 04" tab is treated
+    as authoritative (confirmed with the user: other tabs in the same
+    workbook, like "04 (OLD)" or "Sales Team - Mastersheet from 1", are
+    stale/different-team snapshots with heavily overlapping user_ids and
+    conflicting agent names, not something to merge in automatically).
+
+    If a user_id appears in more than one column of the same sheet, the
+    left-most column wins (deterministic, and matches how the one such
+    conflict found during initial import was resolved)."""
+    conn = sqlite3.connect(MASTER_DB)
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS agent_assignments (user_id INTEGER PRIMARY KEY, agent_name TEXT)")
+    total_pairs, total_conflicts = 0, 0
+    for f in files:
+        if already_ingested(conn, f):
+            print(f"  skip (already ingested): {f}")
+            continue
+        wb = openpyxl.load_workbook(f, read_only=True)
+        sheet_name = "Mastersheet 04" if "Mastersheet 04" in wb.sheetnames else wb.sheetnames[0]
+        ws = wb[sheet_name]
+        rows = ws.iter_rows(values_only=True)
+        header = next(rows)
+        col_agents = {i: str(h).strip() for i, h in enumerate(header) if h}
+        mapping = {}
+        for row in rows:
+            for i, agent in col_agents.items():
+                v = row[i] if i < len(row) else None
+                if v is None:
+                    continue
+                try:
+                    uid = int(float(v))
+                except (TypeError, ValueError):
+                    continue
+                if uid in mapping and mapping[uid] != agent:
+                    total_conflicts += 1
+                    continue  # left-most column already claimed this user_id
+                mapping.setdefault(uid, agent)
+        wb.close()
+        cur.executemany(
+            "INSERT OR REPLACE INTO agent_assignments (user_id, agent_name) VALUES (?, ?)",
+            list(mapping.items()),
+        )
+        total_pairs += len(mapping)
+        mark_ingested(conn, f)
+        conn.commit()
+        print(f"  {f}: {len(mapping)} user->agent assignments from sheet '{sheet_name}' ({total_conflicts} same-sheet conflicts resolved left-most-wins)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_agent_name ON agent_assignments(agent_name)")
+    conn.commit()
+    print(f"Agent assignments: {total_pairs} total (user, agent) pairs processed")
+    conn.close()
+
+
 def ingest_userlist(files):
     conn = sqlite3.connect(MASTER_DB)
     cur = conn.cursor()
@@ -230,6 +286,7 @@ def main():
     ap.add_argument("--deposits", nargs="*", default=[])
     ap.add_argument("--withdrawals", nargs="*", default=[])
     ap.add_argument("--wallet", nargs="*", default=[])
+    ap.add_argument("--agents", nargs="*", default=[])
     ap.add_argument("--no-upload", action="store_true")
     ap.add_argument("--no-purge", action="store_true")
     args = ap.parse_args()
@@ -242,6 +299,8 @@ def main():
         ingest_withdrawals(args.withdrawals)
     if args.wallet:
         ingest_wallet(args.wallet)
+    if args.agents:
+        ingest_agents(args.agents)
 
     if not args.no_purge:
         purge_old_daily_records()
@@ -251,7 +310,7 @@ def main():
         # 200MB+ and rarely changes; re-uploading it on every deposits/withdrawals/wallet
         # pull wastes minutes on the scheduled pipeline for no reason.
         touched = []
-        if args.userlist:
+        if args.userlist or args.agents:
             touched.append("master_userlist.db")
         if args.deposits or args.withdrawals or args.wallet:
             touched.append("daily_records.db")
