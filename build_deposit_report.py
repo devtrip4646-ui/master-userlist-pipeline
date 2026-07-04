@@ -1390,6 +1390,18 @@ def main():
     ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
+
+    # TEMP DIAGNOSTIC (remove once confirmed): user wants withdrawal order
+    # number exports to use the "TP"-prefixed order number specifically.
+    # order_no (already used everywhere) looked like "DIZC20260704..." in
+    # earlier searches, not TP-prefixed -- check channel_order_id and
+    # payment_center_order_id, the two other order-number-shaped fields in
+    # the withdrawals schema, to see which one (if either) actually holds
+    # "TP..." values.
+    for col in ["order_no", "channel_order_id", "payment_center_order_id"]:
+        sample = conn.execute(f"SELECT {col} FROM withdrawals WHERE {col} IS NOT NULL AND {col} != '' LIMIT 5").fetchall()
+        print(f"TP_ORDER_DIAGNOSTIC {col} sample:", sample)
+
     conn.close()
 
     by_date_bet_users = defaultdict(set)
