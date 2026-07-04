@@ -353,7 +353,7 @@ VIP_THRESHOLDS = {
 ACTION_CENTER_LIST_CAP = 500
 
 
-def action_center_reports(mconn, now):
+def action_center_reports(mconn, now, agent_by_user):
     """Action Center reports, computed from the master userlist snapshot (not
     date-scoped -- these are lifetime/as-of-last-upload figures, not tied to the
     selected date). Two "near upgrade" lists (users whose remaining deposit gap
@@ -383,6 +383,7 @@ def action_center_reports(mconn, now):
             gap = VIP_THRESHOLDS[vip_level + 1] - total_recharge
             near_row = {
                 "user_id": user_id,
+                "agent": agent_by_user.get(user_id),
                 "current_vip": vip_level,
                 "next_vip": vip_level + 1,
                 "total_deposit": round(total_recharge, 2),
@@ -397,6 +398,7 @@ def action_center_reports(mconn, now):
         if inactive_days is not None:
             inactive_row = {
                 "user_id": user_id,
+                "agent": agent_by_user.get(user_id),
                 "vip_level": vip_level,
                 "total_deposit": round(total_recharge, 2),
                 "wallet_balance": round(user_balance or 0.0, 2),
@@ -410,6 +412,7 @@ def action_center_reports(mconn, now):
 
             active_row = {
                 "user_id": user_id,
+                "agent": agent_by_user.get(user_id),
                 "vip_level": vip_level,
                 "total_deposit": round(total_recharge, 2),
                 "wallet_balance": round(user_balance or 0.0, 2),
@@ -461,7 +464,7 @@ def action_center_reports(mconn, now):
     }
 
 
-def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center):
+def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center, agent_by_user):
     """Users active TODAY (deposit, withdrawal, or wallet/bet activity --
     whichever is most recent) after a qualifying inactive gap since their
     previous activity. Two VIP-tier-scoped cohorts, using the same day ranges
@@ -499,6 +502,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             continue
         row = {
             "user_id": user_id,
+            "agent": agent_by_user.get(user_id),
             "vip_level": vip_level,
             "total_deposit": cand["total_deposit"],
             "inactive_days": gap_days,
@@ -532,7 +536,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
     }
 
 
-def vip_upgrade_analytics(vip_upgrade_candidates, action_center):
+def vip_upgrade_analytics(vip_upgrade_candidates, action_center, agent_by_user):
     """Users who were in the near-upgrade cohort (gap Rs 1-1000 for VIP2-4,
     Rs 1-50000 for VIP5-15) as of the START of today and have since crossed
     into the next VIP tier. vip_upgrade_candidates comes from
@@ -553,6 +557,8 @@ def vip_upgrade_analytics(vip_upgrade_candidates, action_center):
     computed this run), same pattern as the Reactivation report."""
     low_rows = sorted(vip_upgrade_candidates.get("low", []), key=lambda r: -r["total_deposit"])
     high_rows = sorted(vip_upgrade_candidates.get("high", []), key=lambda r: -r["total_deposit"])
+    for r in low_rows + high_rows:
+        r["agent"] = agent_by_user.get(r["user_id"])
 
     still_near_low = action_center["near_upgrade_low"]["total_matching"] if action_center else 0
     still_near_high = action_center["near_upgrade_high"]["total_matching"] if action_center else 0
@@ -596,7 +602,7 @@ def build_deposit_day_stats(deposit_rows):
     return stats
 
 
-def yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, today):
+def yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, today, agent_by_user):
     """Users flagged by the source system's own is_first_deposit column
     (column S in the water/export sheet: 0 = not first deposit, 1 = first
     deposit) as making their first-ever deposit yesterday. This is the
@@ -630,6 +636,7 @@ def yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user
         total_withdraw = round(withdraw_by_user.get(user_id, 0.0), 2)
         rows.append({
             "user_id": user_id,
+            "agent": agent_by_user.get(user_id),
             "vip_level": vip_by_user.get(user_id),
             "deposit_count": entry["count"],
             "total_deposit": total_deposit,
@@ -649,7 +656,7 @@ DEPOSIT_CHALLENGE_RULES = {
 }
 
 
-def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today):
+def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today, agent_by_user):
     """Bonuses payable TODAY only -- a daily payout worksheet, not a rolling
     history of everything earned in the last few days. Each rule has a fixed
     FD offset that determines which FD cohort is relevant for today's payout:
@@ -678,7 +685,10 @@ def deposit_challenge_bonus(deposit_rows, deposit_day_stats, today):
 
         def add(rule_no):
             label, amount = DEPOSIT_CHALLENGE_RULES[rule_no]
-            rows.append({"user_id": user_id, "rule": label, "bonus_amount": amount, "fd_date": fd.isoformat()})
+            rows.append({
+                "user_id": user_id, "agent": agent_by_user.get(user_id), "rule": label,
+                "bonus_amount": amount, "fd_date": fd.isoformat(),
+            })
 
         if fd == today - timedelta(days=1):
             add(1)
@@ -712,7 +722,7 @@ def _today_deposit_activity(deposit_rows, today):
     return activity
 
 
-def _retention_report(cohort, today_activity, city_by_user, note):
+def _retention_report(cohort, today_activity, city_by_user, note, agent_by_user):
     """Shared shape for both retention reports: cohort_size, converted_count,
     pct_converted, avg_deposit_amount (of converters -- a headcount-only
     conversion rate treats a Rs200 top-up and a Rs20,000 deposit as
@@ -726,6 +736,7 @@ def _retention_report(cohort, today_activity, city_by_user, note):
             continue
         rows.append({
             "user_id": user_id,
+            "agent": agent_by_user.get(user_id),
             "total_deposit": round(activity["amount"], 2),
             "deposit_count": activity["count"],
             "region": city_by_user.get(user_id) or "Unknown",
@@ -744,7 +755,7 @@ def _retention_report(cohort, today_activity, city_by_user, note):
     }
 
 
-def first_deposit_retention(deposit_rows, city_by_user, today):
+def first_deposit_retention(deposit_rows, city_by_user, today, agent_by_user):
     """Of users whose first-ever deposit (the source system's own
     is_first_deposit flag) was YESTERDAY, how many made another COMPLETE
     deposit TODAY -- a basic Day-1 retention signal. Computed directly from
@@ -762,11 +773,11 @@ def first_deposit_retention(deposit_rows, city_by_user, today):
             fd_yesterday.add(user_id)
     return _retention_report(
         fd_yesterday, _today_deposit_activity(deposit_rows, today), city_by_user,
-        "Yesterday's first-deposit users who deposited again today",
+        "Yesterday's first-deposit users who deposited again today", agent_by_user,
     )
 
 
-def bonus_claimer_retention(bonus_rows, deposit_rows, city_by_user, today):
+def bonus_claimer_retention(bonus_rows, deposit_rows, city_by_user, today, agent_by_user):
     """Of users who claimed the 3-Day Deposit Challenge Bonus's Rule 3
     (+Rs30, deposited FD+2) or Rule 4 (+Rs60, deposited FD+1 and FD+2) TODAY,
     how many ALSO made a COMPLETE deposit TODAY. The bonus-qualifying
@@ -777,11 +788,11 @@ def bonus_claimer_retention(bonus_rows, deposit_rows, city_by_user, today):
     claimers = {r["user_id"] for r in bonus_rows if r["bonus_amount"] in (30, 60)}
     return _retention_report(
         claimers, _today_deposit_activity(deposit_rows, today), city_by_user,
-        "Rule 3 (Rs30) / Rule 4 (Rs60) bonus claimers today who deposited again today",
+        "Rule 3 (Rs30) / Rule 4 (Rs60) bonus claimers today who deposited again today", agent_by_user,
     )
 
 
-def premium_active_conversion(mconn, deposit_rows, now):
+def premium_active_conversion(mconn, deposit_rows, now, agent_by_user):
     """Of users already on the Active Users list in Action Center (VIP2-4
     active within 10 days = "low", VIP5-15 active within 15 days = "high"),
     how many ALSO made a COMPLETE deposit specifically TODAY -- a continued-
@@ -820,6 +831,7 @@ def premium_active_conversion(mconn, deposit_rows, now):
                 continue
             rows_out.append({
                 "user_id": user_id,
+                "agent": agent_by_user.get(user_id),
                 "vip": vip_by_user.get(user_id),
                 "deposit_amount": round(activity["amount"], 2),
                 "deposit_count": activity["count"],
@@ -850,7 +862,7 @@ def withdrawal_waiting_hours(r):
     return round(max((end_dt - r["create_dt"]).total_seconds() / 3600.0, 0), 2)
 
 
-def withdrawal_orders_export(withdrawal_full_records, vip_by_user, now):
+def withdrawal_orders_export(withdrawal_full_records, vip_by_user, now, agent_by_user):
     """Raw order-level rows for the withdrawal Excel export: order number
     (both order_no and payment_center_order_no -- the latter is the
     "TW..."-prefixed field, the closest match found to a requested
@@ -883,6 +895,7 @@ def withdrawal_orders_export(withdrawal_full_records, vip_by_user, now):
             "hours_in_review": hours_in_review,
             "hours_processing": hours_processing,
             "user_id": r["user_id"],
+            "agent": agent_by_user.get(r["user_id"]),
             "vip_level": vip_by_user.get(r["user_id"]),
         })
     return rows
@@ -1044,7 +1057,7 @@ def performance_history(mconn):
     }
 
 
-def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now):
+def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_user):
     """Top users by CURRENT wallet balance (user_balance on
     master_userlist.db, continuously updated by wallet activity) -- "who is
     sitting on the most money right now", enriched with today's deposit/
@@ -1094,6 +1107,7 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now):
         wd_today = round(today_withdraw.get(user_id, 0.0), 2)
         result.append({
             "user_id": user_id,
+            "agent": agent_by_user.get(user_id),
             "vip": vip_level,
             "dep_today": dep_today,
             "wallet_bal": round(user_balance or 0.0, 2),
@@ -1244,7 +1258,7 @@ def build_recent_activity_by_user(daily_conn, today):
     return deposits_by_user, withdrawals_by_user, games_by_user
 
 
-def build_and_upload_user_search_index(mconn, recent_activity, creds):
+def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_user):
     """Sharded user-search index, rebuilt from scratch every run (cheap:
     everything needed is already local to this pipeline run, no extra
     network calls). Cloudflare Workers can't practically query a 224MB+
@@ -1265,6 +1279,7 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds):
     for user_id, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time in rows:
         profile = {
             "user_id": user_id,
+            "agent": agent_by_user.get(user_id),
             "region": city,
             "acquisition_channel": channel,
             "vip_level": vip_level,
@@ -1410,6 +1425,7 @@ def main():
     total_registered_users = None
     vip_by_user = {}
     city_by_user = {}
+    agent_by_user = {}
     action_center = None
     reactivation = None
     vip_upgrade = None
@@ -1421,19 +1437,23 @@ def main():
         total_registered_users = mconn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
         city_by_user = dict(mconn.execute("SELECT user_id, city FROM users").fetchall())
-        action_center = action_center_reports(mconn, now)
+        try:
+            agent_by_user = dict(mconn.execute("SELECT user_id, agent_name FROM agent_assignments").fetchall())
+        except sqlite3.OperationalError:
+            agent_by_user = {}  # table doesn't exist yet -- pre-dates this feature
+        action_center = action_center_reports(mconn, now, agent_by_user)
         reactivation_candidates_path = os.path.join(BASE, "reactivation_candidates.json")
         reactivation_candidates = []
         if os.path.exists(reactivation_candidates_path):
             with open(reactivation_candidates_path) as f:
                 reactivation_candidates = json.load(f)
-        reactivation = deposit_reactivation_analytics(mconn, reactivation_candidates, action_center)
+        reactivation = deposit_reactivation_analytics(mconn, reactivation_candidates, action_center, agent_by_user)
         vip_upgrade_path = os.path.join(BASE, "vip_upgrade_candidates.json")
         vip_upgrade_candidates = {"low": [], "high": []}
         if os.path.exists(vip_upgrade_path):
             with open(vip_upgrade_path) as f:
                 vip_upgrade_candidates = json.load(f)
-        vip_upgrade = vip_upgrade_analytics(vip_upgrade_candidates, action_center)
+        vip_upgrade = vip_upgrade_analytics(vip_upgrade_candidates, action_center, agent_by_user)
 
         # Conversion funnels (3-day/7-day: of users near-upgrade/inactive N
         # days ago, how many have since converted) -- computed once/day by
@@ -1449,8 +1469,8 @@ def main():
             vip_upgrade["funnel"] = funnel_data.get("vip_upgrade")
 
         performance = performance_history(mconn)
-        profit_users = profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now)
-        build_and_upload_user_search_index(mconn, recent_activity, load_creds())
+        profit_users = profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_user)
+        build_and_upload_user_search_index(mconn, recent_activity, load_creds(), agent_by_user)
 
         mconn.close()
 
@@ -1526,7 +1546,7 @@ def main():
             ),
             "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full.get(date, [])),
-            "withdrawal_orders": withdrawal_orders_export(by_date_withdrawal_full.get(date, []), vip_by_user, now),
+            "withdrawal_orders": withdrawal_orders_export(by_date_withdrawal_full.get(date, []), vip_by_user, now, agent_by_user),
         }
         for date in all_dates
     }
@@ -1541,21 +1561,21 @@ def main():
         "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
     }
 
-    deposit_challenge_bonus_rows = deposit_challenge_bonus(deposit_rows, build_deposit_day_stats(deposit_rows), now.date())
+    deposit_challenge_bonus_rows = deposit_challenge_bonus(deposit_rows, build_deposit_day_stats(deposit_rows), now.date(), agent_by_user)
     action_center_extra = {
-        "yesterday_first_deposit_users": yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, now.date()),
+        "yesterday_first_deposit_users": yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, now.date(), agent_by_user),
         "deposit_challenge_bonus": deposit_challenge_bonus_rows,
     }
 
     retention = {
-        "first_deposit": first_deposit_retention(deposit_rows, city_by_user, now.date()),
-        "bonus_claimer": bonus_claimer_retention(deposit_challenge_bonus_rows, deposit_rows, city_by_user, now.date()),
+        "first_deposit": first_deposit_retention(deposit_rows, city_by_user, now.date(), agent_by_user),
+        "bonus_claimer": bonus_claimer_retention(deposit_challenge_bonus_rows, deposit_rows, city_by_user, now.date(), agent_by_user),
     }
 
     premium_active = None
     if os.path.exists(master_db_path):
         mconn3 = sqlite3.connect(master_db_path)
-        premium_active = premium_active_conversion(mconn3, deposit_rows, now)
+        premium_active = premium_active_conversion(mconn3, deposit_rows, now, agent_by_user)
         mconn3.close()
 
     bonus_claims = bonus_claim_report(DB_PATH, deposit_rows, deposit_challenge_bonus_rows, now.date())
@@ -1586,7 +1606,7 @@ def main():
         # which is scoped to a single selected date) -- needed for the
         # Processing/In-Review aging charts and the Last-4-Days completed
         # chart, which all span the whole retained window, not one day.
-        "withdrawal_orders_full": withdrawal_orders_export(all_withdrawal_full, vip_by_user, now),
+        "withdrawal_orders_full": withdrawal_orders_export(all_withdrawal_full, vip_by_user, now, agent_by_user),
         "action_center": action_center,
         "action_center_extra": action_center_extra,
         "region_vip_analytics": region_vip_deposit_analytics(by_date_records, by_date_withdrawals, city_by_user, vip_by_user, all_dates),
