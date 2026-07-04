@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       file_type:
-        description: "userlist | deposits | withdrawals | wallet | agents"
+        description: "userlist | deposits | withdrawals | wallet | agents | bulk_reassign"
         required: true
       key:
         description: "R2 object key of the uploaded file"

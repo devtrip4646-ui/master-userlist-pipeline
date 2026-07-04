@@ -41,7 +41,7 @@ def download_with_retry(s3, bucket, key, local_path, attempts=3):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--file-type", required=True, choices=["userlist", "deposits", "withdrawals", "wallet", "agents"])
+    ap.add_argument("--file-type", required=True, choices=["userlist", "deposits", "withdrawals", "wallet", "agents", "bulk_reassign"])
     ap.add_argument("--key", required=True, help="R2 object key of the uploaded xlsx file")
     args = ap.parse_args()
 
@@ -81,6 +81,7 @@ def main():
         "withdrawals": "--withdrawals",
         "wallet": "--wallet",
         "agents": "--agents",
+        "bulk_reassign": "--bulk-reassign",
     }
     cmd_flag = flag_map[args.file_type]
     subprocess.run(

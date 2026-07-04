@@ -106,6 +106,90 @@ def ingest_agents(files):
     conn.close()
 
 
+def ingest_bulk_reassign(files):
+    """Bulk agent reassignment: a simple two-column sheet (Column A = User
+    ID, Column B = Agent Name), for correcting/reassigning a specific batch
+    of users at once -- unlike ingest_agents()'s wide one-column-per-agent
+    "Mastersheet 04" layout, which is a full agent-list refresh.
+
+    Every agent name in the file is validated against the names ALREADY in
+    agent_assignments (the exact same list the dashboard's Reassign Agent
+    dropdown is built from) BEFORE anything is written. A single typo'd
+    agent name fails the WHOLE file rather than silently creating a new,
+    slightly-different agent bucket that would never show up correctly
+    anywhere else on the dashboard. "Un-Assigned" (case-insensitive) is
+    always accepted and clears the assignment instead of setting one."""
+    conn = sqlite3.connect(MASTER_DB)
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS agent_assignments (user_id INTEGER PRIMARY KEY, agent_name TEXT)")
+    known_agents = {row[0] for row in cur.execute("SELECT DISTINCT agent_name FROM agent_assignments").fetchall()}
+
+    for f in files:
+        if already_ingested(conn, f):
+            print(f"  skip (already ingested): {f}")
+            continue
+        _, rows = load_sheet(f)
+
+        parsed = []  # (row_num, user_id, agent_name-or-None-for-unassign)
+        invalid = []  # (row_num, user_id, bad_agent_name)
+        for i, row in enumerate(rows, start=2):
+            user_id_raw = row[0] if len(row) > 0 else None
+            agent_raw = row[1] if len(row) > 1 else None
+            if user_id_raw is None:
+                continue
+            try:
+                user_id = int(float(user_id_raw))
+            except (TypeError, ValueError):
+                invalid.append((i, user_id_raw, f"invalid User ID: {user_id_raw!r}"))
+                continue
+            agent_name = str(agent_raw).strip() if agent_raw else ""
+            if agent_name.lower() == "un-assigned":
+                parsed.append((i, user_id, None))
+            elif agent_name in known_agents:
+                parsed.append((i, user_id, agent_name))
+            else:
+                invalid.append((i, user_id, agent_name))
+
+        if invalid:
+            print(f"FATAL: {len(invalid)} row(s) in {f} have an agent name that doesn't match the dashboard:", file=sys.stderr)
+            for row_num, user_id, bad_name in invalid[:50]:
+                print(f"  row {row_num}: user_id={user_id} agent={bad_name!r}", file=sys.stderr)
+            if len(invalid) > 50:
+                print(f"  ... and {len(invalid) - 50} more", file=sys.stderr)
+            print("Valid agent names (must match exactly, including WFH/SL suffix and spacing):", file=sys.stderr)
+            for name in sorted(known_agents):
+                print(f"  - {name}", file=sys.stderr)
+            print("  - Un-Assigned", file=sys.stderr)
+            conn.close()
+            sys.exit(1)
+
+        missing_users = []
+        applied = 0
+        for row_num, user_id, agent_name in parsed:
+            exists = cur.execute("SELECT 1 FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if not exists:
+                missing_users.append(user_id)
+                continue
+            if agent_name:
+                cur.execute(
+                    "INSERT OR REPLACE INTO agent_assignments (user_id, agent_name) VALUES (?, ?)",
+                    (user_id, agent_name),
+                )
+            else:
+                cur.execute("DELETE FROM agent_assignments WHERE user_id = ?", (user_id,))
+            applied += 1
+        mark_ingested(conn, f)
+        conn.commit()
+
+        if missing_users:
+            shown = missing_users[:20]
+            more = f" (+{len(missing_users) - 20} more)" if len(missing_users) > 20 else ""
+            print(f"  Warning: {len(missing_users)} user_id(s) not found in users table, skipped: {shown}{more}")
+        print(f"  {f}: {applied} agent reassignments applied")
+
+    conn.close()
+
+
 def ingest_userlist(files):
     conn = sqlite3.connect(MASTER_DB)
     cur = conn.cursor()
@@ -339,6 +423,7 @@ def main():
     ap.add_argument("--withdrawals", nargs="*", default=[])
     ap.add_argument("--wallet", nargs="*", default=[])
     ap.add_argument("--agents", nargs="*", default=[])
+    ap.add_argument("--bulk-reassign", nargs="*", default=[])
     ap.add_argument("--no-upload", action="store_true")
     ap.add_argument("--no-purge", action="store_true")
     args = ap.parse_args()
@@ -353,6 +438,8 @@ def main():
         ingest_wallet(args.wallet)
     if args.agents:
         ingest_agents(args.agents)
+    if args.bulk_reassign:
+        ingest_bulk_reassign(args.bulk_reassign)
 
     if not args.no_purge:
         purge_old_daily_records()
@@ -362,7 +449,7 @@ def main():
         # 200MB+ and rarely changes; re-uploading it on every deposits/withdrawals/wallet
         # pull wastes minutes on the scheduled pipeline for no reason.
         touched = []
-        if args.userlist or args.agents:
+        if args.userlist or args.agents or args.bulk_reassign:
             touched.append("master_userlist.db")
         if args.deposits or args.withdrawals or args.wallet:
             touched.append("daily_records.db")
