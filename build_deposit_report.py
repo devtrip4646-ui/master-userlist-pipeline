@@ -1723,6 +1723,8 @@ def main():
         for d, a, c, n, den in agent_performance_rows
     ]
 
+    region_vip_analytics_data = region_vip_deposit_analytics(by_date_records, by_date_withdrawals, city_by_user, vip_by_user, all_dates)
+
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         # The exact IST calendar date used as "today" for Reactivation, VIP
@@ -1752,7 +1754,7 @@ def main():
         "withdrawal_orders_full": withdrawal_orders_export(all_withdrawal_full, vip_by_user, now, agent_by_user),
         "action_center": action_center,
         "action_center_extra": action_center_extra,
-        "region_vip_analytics": region_vip_deposit_analytics(by_date_records, by_date_withdrawals, city_by_user, vip_by_user, all_dates),
+        "region_vip_analytics": region_vip_analytics_data,
         "reactivation": reactivation,
         "vip_upgrade": vip_upgrade,
         "retention": retention,
@@ -1788,6 +1790,36 @@ def main():
     )
     s3.upload_file(out_path, creds["R2_BUCKET"], "reports/deposit_report.json")
     print(f"Uploaded reports/deposit_report.json -> r2://{creds['R2_BUCKET']}/reports/deposit_report.json")
+
+    # Per-date snapshot of Analytics' Reactivation/VIP Upgrade/Retention/
+    # Premium Active sections -- these are single "as of today" computations,
+    # overwritten every run, so browsing to a past date on the Analytics page
+    # needs its own copy of that day's numbers. Kept as a SEPARATE small R2
+    # object per day (not embedded in the ~7MB main deposit_report.json)
+    # so switching dates is a small on-demand fetch, matching the same
+    # last-7-dates window region_vip_analytics already uses for consistency.
+    today_str = now.date().isoformat()
+    snapshot = {
+        "date": today_str,
+        "reactivation": reactivation,
+        "vip_upgrade": vip_upgrade,
+        "retention": retention,
+        "premium_active": premium_active,
+    }
+    snapshot_key = f"reports/analytics_history/{today_str}.json"
+    s3.put_object(Bucket=creds["R2_BUCKET"], Key=snapshot_key, Body=json.dumps(snapshot), ContentType="application/json")
+    print(f"Uploaded {snapshot_key}")
+
+    keep_dates = set(all_dates[-7:])
+    listing = s3.list_objects_v2(Bucket=creds["R2_BUCKET"], Prefix="reports/analytics_history/")
+    purged = 0
+    for obj in listing.get("Contents", []):
+        key = obj["Key"]
+        obj_date = key.rsplit("/", 1)[-1].replace(".json", "")
+        if obj_date not in keep_dates:
+            s3.delete_object(Bucket=creds["R2_BUCKET"], Key=key)
+            purged += 1
+    print(f"Purged {purged} analytics_history snapshots outside the last {len(keep_dates)} dates")
 
 
 if __name__ == "__main__":
