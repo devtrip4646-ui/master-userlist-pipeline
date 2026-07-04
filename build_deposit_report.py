@@ -1197,6 +1197,33 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
+    # TEMP DIAGNOSTIC (remove once order-number integrity is confirmed): check
+    # whether any COMPLETE deposits/withdrawals lack a genuine payment-gateway
+    # order number (tripartite_order_no/pay_center_order_no for deposits,
+    # channel_order_id/payment_center_order_id for withdrawals) -- such rows
+    # would indicate manual admin credits/debits recorded in the deposits/
+    # withdrawals tables themselves, not just in wallet_transactions.
+    diag_dep = cur.execute(
+        "SELECT COUNT(*), SUM(CASE WHEN (tripartite_order_no IS NULL OR tripartite_order_no = '') "
+        "AND (pay_center_order_no IS NULL OR pay_center_order_no = '') THEN 1 ELSE 0 END) "
+        "FROM deposits WHERE status = 'COMPLETE'"
+    ).fetchone()
+    print("ORDER_NUMBER_DIAGNOSTIC deposits COMPLETE: total=%s, no_order_no=%s" % diag_dep)
+    diag_wd = cur.execute(
+        "SELECT COUNT(*), SUM(CASE WHEN (channel_order_id IS NULL OR channel_order_id = '') "
+        "AND (payment_center_order_id IS NULL OR payment_center_order_id = '') THEN 1 ELSE 0 END) "
+        "FROM withdrawals WHERE status = 2"
+    ).fetchone()
+    print("ORDER_NUMBER_DIAGNOSTIC withdrawals Complete: total=%s, no_order_no=%s" % diag_wd)
+    sample_no_order = cur.execute(
+        "SELECT id, user_id, order_amount, create_time, tripartite_order_no, pay_center_order_no, source_id, mark "
+        "FROM deposits WHERE status = 'COMPLETE' AND (tripartite_order_no IS NULL OR tripartite_order_no = '') "
+        "AND (pay_center_order_no IS NULL OR pay_center_order_no = '') LIMIT 10"
+    ).fetchall()
+    print("ORDER_NUMBER_DIAGNOSTIC sample no-order-no deposits (id, user_id, order_amount, create_time, tripartite_order_no, pay_center_order_no, source_id, mark):")
+    for row in sample_no_order:
+        print("  ", row)
+
     deposit_rows = cur.execute(
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"
     ).fetchall()
