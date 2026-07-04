@@ -13,6 +13,7 @@ import os
 import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from datetime import time as dtime
 
 import boto3
 
@@ -1464,6 +1465,109 @@ def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows
     }
 
 
+# Weekly Cashback Shield (Action Center): loss amount Rs 5,000-500,000, tiered
+# by what % of the week's deposit was "lost" (verified_loss / total_deposit).
+# Ordered highest-threshold-first so the first match in weekly_cashback_shield
+# below picks the correct (highest-earned) tier for a given loss_pct.
+WEEKLY_CASHBACK_TIERS = [
+    (100.0, 0.08),
+    (75.0, 0.04),
+    (50.0, 0.02),
+]
+WEEKLY_CASHBACK_MIN_LOSS = 5000.0
+WEEKLY_CASHBACK_MAX_LOSS = 500000.0
+
+
+def weekly_cashback_week_range(now):
+    """Sunday-to-Saturday week window, matching the promo's own "credited
+    every Sunday morning" cadence. Normally the Sun-Sat week containing
+    `now`, EXCEPT on the cutover day itself (Sunday) before 22:00 IST --
+    there, the dashboard keeps showing the just-completed week so admins
+    have all Sunday morning/afternoon to review it before the display
+    switches to tracking the new (barely-started) week."""
+    today = now.date()
+    days_since_sunday = (today.weekday() + 1) % 7  # Python: Monday=0 .. Sunday=6
+    this_week_start = today - timedelta(days=days_since_sunday)
+    if today == this_week_start and now.time() < dtime(22, 0):
+        week_start = this_week_start - timedelta(days=7)
+    else:
+        week_start = this_week_start
+    week_end = week_start + timedelta(days=6)
+    return week_start, week_end
+
+
+def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, now):
+    """Weekly loss-protection cashback: for each user who deposited during
+    the displayed Sun-Sat week (see weekly_cashback_week_range), verified
+    loss = total_deposit - total_withdraw - CURRENT wallet balance -- money
+    that came in this week and isn't sitting in their wallet or already
+    paid back out, i.e. spent on betting activity. Eligible only if that
+    loss falls within Rs 5,000-500,000 AND is at least 50% of what they
+    deposited (higher loss-% tiers earn a higher cashback rate -- see
+    WEEKLY_CASHBACK_TIERS). Only lists users who actually qualify this
+    week, same convention as the other bonus/retention sections on this
+    dashboard -- not a full audit of every depositor."""
+    week_start, week_end = weekly_cashback_week_range(now)
+
+    deposit_by_user = defaultdict(float)
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None or not create_time:
+            continue
+        dt = parse_dt(create_time)
+        if dt and week_start <= dt.date() <= week_end:
+            deposit_by_user[user_id] += order_amount or 0.0
+
+    withdraw_by_user = defaultdict(float)
+    for withdraw_amount, create_time, status, user_id, *_rest in withdrawal_rows:
+        if status != 2 or user_id is None or not create_time:
+            continue
+        dt = parse_dt(create_time)
+        if dt and week_start <= dt.date() <= week_end:
+            withdraw_by_user[user_id] += withdraw_amount or 0.0
+
+    user_ids = list(deposit_by_user.keys())
+    vip_by_user, balance_by_user = {}, {}
+    if user_ids:
+        placeholders = ",".join("?" * len(user_ids))
+        for uid, vip, bal in mconn.execute(
+            f"SELECT user_id, vip_level, user_balance FROM users WHERE user_id IN ({placeholders})", user_ids
+        ).fetchall():
+            vip_by_user[uid] = vip
+            balance_by_user[uid] = bal or 0.0
+
+    rows = []
+    for user_id, total_deposit in deposit_by_user.items():
+        total_withdraw = withdraw_by_user.get(user_id, 0.0)
+        balance = balance_by_user.get(user_id, 0.0)
+        verified_loss = total_deposit - total_withdraw - balance
+        if verified_loss < WEEKLY_CASHBACK_MIN_LOSS or verified_loss > WEEKLY_CASHBACK_MAX_LOSS:
+            continue
+        loss_pct = (verified_loss / total_deposit * 100) if total_deposit else 0.0
+        cashback_pct = next((pct for threshold, pct in WEEKLY_CASHBACK_TIERS if loss_pct >= threshold), None)
+        if cashback_pct is None:
+            continue
+        rows.append({
+            "user_id": user_id,
+            "agent": agent_for(agent_by_user, user_id),
+            "vip": vip_by_user.get(user_id),
+            "total_deposit": round(total_deposit, 2),
+            "total_withdraw": round(total_withdraw, 2),
+            "user_balance": round(balance, 2),
+            "verified_loss": round(verified_loss, 2),
+            "eligible_pct": round(cashback_pct * 100, 2),
+            "bonus_amount": round(verified_loss * cashback_pct, 2),
+        })
+    rows.sort(key=lambda r: -r["bonus_amount"])
+
+    return {
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "eligible_count": len(rows),
+        "total_bonus": round(sum(r["bonus_amount"] for r in rows), 2),
+        "rows": rows[:ACTION_CENTER_LIST_CAP],
+    }
+
+
 # Powers the "Performance" leaderboard: for each agent, per criterion, how
 # much they achieved vs a daily target. Two shapes:
 #   "count" -- a flat per-day headcount target (e.g. 7 reactivations/day).
@@ -1564,6 +1668,7 @@ def main():
     city_by_user = {}
     agent_by_user = {}
     action_center = None
+    weekly_cashback = None
     reactivation = None
     vip_upgrade = None
     performance = None
@@ -1579,6 +1684,7 @@ def main():
         except sqlite3.OperationalError:
             agent_by_user = {}  # table doesn't exist yet -- pre-dates this feature
         action_center = action_center_reports(mconn, now, agent_by_user)
+        weekly_cashback = weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, now)
         fallback_creds = load_creds()
         reactivation_candidates_path = os.path.join(BASE, "reactivation_candidates.json")
         reactivation_candidates = load_json_with_r2_fallback(
@@ -1782,6 +1888,7 @@ def main():
         "withdrawal_orders_full": withdrawal_orders_export(all_withdrawal_full, vip_by_user, now, agent_by_user),
         "action_center": action_center,
         "action_center_extra": action_center_extra,
+        "weekly_cashback_shield": weekly_cashback,
         "region_vip_analytics": region_vip_analytics_data,
         "reactivation": reactivation,
         "vip_upgrade": vip_upgrade,
