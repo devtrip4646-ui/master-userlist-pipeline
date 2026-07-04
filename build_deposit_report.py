@@ -1448,6 +1448,23 @@ def main():
     ).fetchall()
     for r in rows:
         print(r)
+    print("--- min/max create_time today for Daily Active Bonus%  (is it a single midnight batch or spread all day?) ---")
+    row = cur.execute(
+        "SELECT MIN(create_time), MAX(create_time), COUNT(*) FROM wallet_transactions "
+        "WHERE source_id LIKE 'Daily Active Bonus%' AND create_time LIKE ?", (today_str_diag + "%",)
+    ).fetchone()
+    print("min=", row[0], "max=", row[1], "count=", row[2])
+    print("--- yesterday's totals for comparison (fully closed day) ---")
+    yesterday_str_diag = (now.date() - timedelta(days=1)).isoformat()
+    for label, like in [("Daily Active Bonus (all)", "Daily Active Bonus%"),
+                        ("Daily Active Bonus Low", "Daily Active Bonus Low%"),
+                        ("Daily Active Bonus (non-Low)", "Daily Active Bonus-%")]:
+        row = cur.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT user_id), SUM(change_value) FROM wallet_transactions "
+            "WHERE source_id LIKE ? AND create_time LIKE ?",
+            (like, yesterday_str_diag + "%"),
+        ).fetchone()
+        print(label, "(yesterday", yesterday_str_diag, ") -> rows=", row[0], "distinct_users=", row[1], "sum=", row[2])
     print("=== END DIAGNOSTIC ===")
 
     deposit_rows = cur.execute(
