@@ -359,6 +359,26 @@ def agent_for(agent_by_user, user_id):
     return agent_by_user.get(user_id) or AGENT_UNASSIGNED
 
 
+def tally_by_agent(user_ids, agent_by_user):
+    """{agent_name: count} for a collection of user_ids -- used for the
+    Performance page's per-agent cohort/target denominators, which need the
+    TRUE uncapped count, not the ACTION_CENTER_LIST_CAP-limited `rows` list
+    used for on-screen display."""
+    counts = defaultdict(int)
+    for uid in user_ids:
+        counts[agent_for(agent_by_user, uid)] += 1
+    return dict(counts)
+
+
+def tally_rows_by_agent(rows):
+    """Same as tally_by_agent, but for a list of row dicts that already carry
+    an "agent" key (cheaper than re-deriving it from user_id)."""
+    counts = defaultdict(int)
+    for r in rows:
+        counts[r["agent"]] += 1
+    return dict(counts)
+
+
 def action_center_reports(mconn, now, agent_by_user):
     """Action Center reports, computed from the master userlist snapshot (not
     date-scoped -- these are lifetime/as-of-last-upload figures, not tied to the
@@ -531,12 +551,18 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             "note": "VIP 2 to VIP 4, reactivated today (was inactive 10-180 days)",
             "reactivated_count": len(low_rows),
             "pct_reactivated": round(len(low_rows) / baseline_low * 100, 2) if baseline_low else 0.0,
+            # Per-agent count of reactivated users, from the FULL (uncapped)
+            # low_rows list -- feeds the Performance page's Reactivation Low
+            # criterion (target: 7/day), which needs the true count even
+            # when the on-screen `rows` list is capped for display size.
+            "agent_breakdown": tally_rows_by_agent(low_rows),
             "rows": low_rows[:ACTION_CENTER_LIST_CAP],
         },
         "high": {
             "note": "VIP 5 to VIP 15, reactivated today (was inactive 15-240 days)",
             "reactivated_count": len(high_rows),
             "pct_reactivated": round(len(high_rows) / baseline_high * 100, 2) if baseline_high else 0.0,
+            "agent_breakdown": tally_rows_by_agent(high_rows),
             "rows": high_rows[:ACTION_CENTER_LIST_CAP],
         },
     }
@@ -576,12 +602,14 @@ def vip_upgrade_analytics(vip_upgrade_candidates, action_center, agent_by_user):
             "note": "VIP 2 to VIP 4, upgraded today from the near-upgrade cohort",
             "upgraded_count": len(low_rows),
             "pct_upgraded": round(len(low_rows) / baseline_low * 100, 2) if baseline_low else 0.0,
+            "agent_breakdown": tally_rows_by_agent(low_rows),
             "rows": low_rows[:ACTION_CENTER_LIST_CAP],
         },
         "high": {
             "note": "VIP 5 to VIP 15, upgraded today from the near-upgrade cohort",
             "upgraded_count": len(high_rows),
             "pct_upgraded": round(len(high_rows) / baseline_high * 100, 2) if baseline_high else 0.0,
+            "agent_breakdown": tally_rows_by_agent(high_rows),
             "rows": high_rows[:ACTION_CENTER_LIST_CAP],
         },
     }
@@ -757,6 +785,11 @@ def _retention_report(cohort, today_activity, city_by_user, note, agent_by_user)
         "converted_count": converted,
         "pct_converted": round(converted / cohort_size * 100, 2) if cohort_size else 0.0,
         "avg_deposit_amount": avg_deposit,
+        # Per-agent cohort/converted counts (full, uncapped) -- feeds the
+        # Performance page's Retention criterion (target: 30%), computed
+        # from First-Deposit retention specifically (see first_deposit_retention).
+        "cohort_by_agent": tally_by_agent(cohort, agent_by_user),
+        "converted_by_agent": tally_rows_by_agent(rows),
         "rows": rows[:ACTION_CENTER_LIST_CAP],
     }
 
@@ -852,6 +885,11 @@ def premium_active_conversion(mconn, deposit_rows, now, agent_by_user):
             "converted_count": converted,
             "pct_converted": round(converted / cohort_size * 100, 2) if cohort_size else 0.0,
             "avg_deposit_amount": avg_deposit,
+            # Per-agent cohort/converted counts (full, uncapped) -- feeds the
+            # Performance page's Low/High Premium Active criteria (targets:
+            # 35%/30% of the agent's own active-user cohort).
+            "cohort_by_agent": tally_by_agent(cohort, agent_by_user),
+            "converted_by_agent": tally_rows_by_agent(rows_out),
             "rows": rows_out[:ACTION_CENTER_LIST_CAP],
         }
 
@@ -1397,6 +1435,69 @@ def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows
     }
 
 
+# Powers the "Performance" leaderboard: for each agent, per criterion, how
+# much they achieved vs a daily target. Two shapes:
+#   "count" -- a flat per-day headcount target (e.g. 7 reactivations/day).
+#     Stored per day as (actual_count, target_count) so a date range just
+#     sums both sides: pct = SUM(actual) / SUM(target) * 100.
+#   "rate"  -- a percentage-of-cohort target (e.g. 30% retention). Stored
+#     per day as (converted_count, cohort_size) -- NEVER the target itself
+#     -- so a date range sums the raw counts and recomputes the TRUE
+#     weighted rate (SUM(converted) / SUM(cohort) * 100), rather than
+#     naively averaging daily percentages, which would be wrong whenever
+#     cohort size varies day to day. That weighted rate is then compared
+#     against the flat target here to get "% of target achieved".
+AGENT_PERF_TARGETS = {
+    "Reactivation Low": {"type": "count", "target": 7},
+    "Reactivation High": {"type": "count", "target": 3},
+    "Retention": {"type": "rate", "target": 30},
+    "Low VIP Upgrade": {"type": "count", "target": 10},
+    "High VIP Upgrade": {"type": "count", "target": 5},
+    "Low Premium Active": {"type": "rate", "target": 35},
+    "High Premium Active": {"type": "rate", "target": 30},
+}
+
+AGENT_PERF_RETENTION_DAYS = 35
+
+
+def compute_agent_performance_rows(agent_list, reactivation, vip_upgrade, retention, premium_active, date_str):
+    """One (date, agent, category, numerator, denominator) row per agent per
+    the 7 Performance-page criteria, for TODAY specifically -- upserted into
+    master_userlist.db's agent_performance table by main(). See
+    AGENT_PERF_TARGETS for what numerator/denominator mean per category.
+
+    `retention` here is specifically first_deposit_retention's result (by
+    user request: the Performance page's single "Retention" criterion is
+    First-Deposit retention only, not combined with Bonus-Claimer retention,
+    which has no Low/High split to begin with)."""
+    rows = []
+
+    count_sources = {
+        "Reactivation Low": reactivation["low"]["agent_breakdown"] if reactivation else {},
+        "Reactivation High": reactivation["high"]["agent_breakdown"] if reactivation else {},
+        "Low VIP Upgrade": vip_upgrade["low"]["agent_breakdown"] if vip_upgrade else {},
+        "High VIP Upgrade": vip_upgrade["high"]["agent_breakdown"] if vip_upgrade else {},
+    }
+    for category, breakdown in count_sources.items():
+        target = AGENT_PERF_TARGETS[category]["target"]
+        for agent in agent_list:
+            rows.append((date_str, agent, category, breakdown.get(agent, 0), target))
+
+    ret_cohort = retention.get("cohort_by_agent", {}) if retention else {}
+    ret_converted = retention.get("converted_by_agent", {}) if retention else {}
+    for agent in agent_list:
+        rows.append((date_str, agent, "Retention", ret_converted.get(agent, 0), ret_cohort.get(agent, 0)))
+
+    for tier_label, category in [("low", "Low Premium Active"), ("high", "High Premium Active")]:
+        tier = premium_active.get(tier_label, {}) if premium_active else {}
+        cohort_by_agent = tier.get("cohort_by_agent", {})
+        converted_by_agent = tier.get("converted_by_agent", {})
+        for agent in agent_list:
+            rows.append((date_str, agent, category, converted_by_agent.get(agent, 0), cohort_by_agent.get(agent, 0)))
+
+    return rows
+
+
 def main():
     # Source timestamps (create_time, last_active_time, etc.) are IST, but this
     # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
@@ -1587,6 +1688,41 @@ def main():
 
     bonus_claims = bonus_claim_report(DB_PATH, deposit_rows, deposit_challenge_bonus_rows, now.date())
 
+    # Persist today's per-agent performance, then read back the full rolling
+    # window for the Performance page -- small enough (agents x 7 categories
+    # x up to 35 days) to ship in full and let the frontend do date-range
+    # filtering/aggregation client-side, same pattern as premium_active etc.
+    agent_list = sorted(set(agent_by_user.values()))
+    agent_performance_rows = []
+    if os.path.exists(master_db_path) and agent_list:
+        mconn4 = sqlite3.connect(master_db_path)
+        mconn4.execute(
+            "CREATE TABLE IF NOT EXISTS agent_performance ("
+            "date TEXT, agent_name TEXT, category TEXT, numerator REAL, denominator REAL, "
+            "PRIMARY KEY (date, agent_name, category))"
+        )
+        upsert_rows = compute_agent_performance_rows(
+            agent_list, reactivation, vip_upgrade, retention["first_deposit"], premium_active, now.date().isoformat()
+        )
+        mconn4.executemany(
+            "INSERT OR REPLACE INTO agent_performance (date, agent_name, category, numerator, denominator) "
+            "VALUES (?, ?, ?, ?, ?)",
+            upsert_rows,
+        )
+        # Rolling 35-day retention -- ISO date strings compare lexicographically,
+        # so a plain string cutoff works without parsing.
+        cutoff = (now.date() - timedelta(days=AGENT_PERF_RETENTION_DAYS)).isoformat()
+        mconn4.execute("DELETE FROM agent_performance WHERE date < ?", (cutoff,))
+        mconn4.commit()
+        agent_performance_rows = mconn4.execute(
+            "SELECT date, agent_name, category, numerator, denominator FROM agent_performance ORDER BY date"
+        ).fetchall()
+        mconn4.close()
+    agent_performance = [
+        {"date": d, "agent": a, "category": c, "numerator": n, "denominator": den}
+        for d, a, c, n, den in agent_performance_rows
+    ]
+
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         # The exact IST calendar date used as "today" for Reactivation, VIP
@@ -1626,8 +1762,14 @@ def main():
         "channel_performance": channel_performance,
         "bonus_claims": bonus_claims,
         # Distinct real agent names (never includes AGENT_UNASSIGNED) -- powers
-        # the Reassign Agent dropdown on the Search User page.
-        "agent_list": sorted(set(agent_by_user.values())),
+        # the Reassign Agent dropdown on the Search User page and the
+        # Performance leaderboard.
+        "agent_list": agent_list,
+        # Rolling 35-day per-agent-per-category numerator/denominator rows --
+        # the Performance page does all date-range filtering/aggregation and
+        # "% of target achieved" math client-side from this.
+        "agent_performance": agent_performance,
+        "agent_performance_targets": AGENT_PERF_TARGETS,
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")
