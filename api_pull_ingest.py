@@ -833,17 +833,25 @@ def main():
         print("Uploaded refreshed master_userlist.db to R2")
 
     # Handed off to build_deposit_report.py (runs next, same job/workspace) via
-    # local files rather than R2 -- these only reflect "as of this exact run",
-    # not something that needs to persist or be re-fetched independently.
+    # local files. ALSO uploaded to R2 (reports/reactivation_candidates.json,
+    # reports/vip_upgrade_candidates.json): ingest.yml -- dispatched by ANY
+    # dashboard file upload (userlist/deposits/withdrawals/wallet/agents/
+    # bulk_reassign), not just this hourly api_pull.yml job -- separately
+    # re-runs build_deposit_report.py in its OWN fresh checkout with no local
+    # copy of these files, which silently zeroed Reactivation/VIP Upgrade on
+    # every such upload until build_deposit_report.py started falling back to
+    # this R2 copy when the local file is missing.
     reactivation_path = os.path.join(ci_ingest.BASE, "reactivation_candidates.json")
     with open(reactivation_path, "w") as f:
         json.dump(reactivation_candidates, f)
     print(f"Wrote {len(reactivation_candidates)} reactivation candidates to {reactivation_path}")
+    s3.upload_file(reactivation_path, bucket, "reports/reactivation_candidates.json")
 
     vip_upgrade_path = os.path.join(ci_ingest.BASE, "vip_upgrade_candidates.json")
     with open(vip_upgrade_path, "w") as f:
         json.dump(vip_upgrade_candidates, f)
     print(f"Wrote {len(vip_upgrade_candidates['low'])} low + {len(vip_upgrade_candidates['high'])} high VIP upgrade candidates to {vip_upgrade_path}")
+    s3.upload_file(vip_upgrade_path, bucket, "reports/vip_upgrade_candidates.json")
 
     # Only mark the wallet target date as covered after a successful ingest
     put_wallet_state(s3, bucket, {"last_run_date": today.isoformat(), "last_wallet_target": wallet_target.isoformat()})

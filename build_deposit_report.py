@@ -52,6 +52,35 @@ def load_creds():
     }
 
 
+def load_json_with_r2_fallback(local_path, r2_key, creds, default):
+    """Load a local JSON artifact if present (handed off same-job from
+    api_pull_ingest.py), otherwise fall back to the copy it also uploads to
+    R2. Needed because ingest.yml -- dispatched by ANY dashboard file
+    upload (userlist/deposits/withdrawals/wallet/agents/bulk_reassign), not
+    just the hourly api_pull.yml job -- re-runs this script in its OWN
+    fresh checkout, with no local copy of reactivation/vip_upgrade
+    candidates from the last api_pull.yml run. Without this fallback,
+    Reactivation/VIP Upgrade silently zero out on every such upload until
+    the next hourly run overwrites them again."""
+    if os.path.exists(local_path):
+        with open(local_path) as f:
+            return json.load(f)
+    try:
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=creds["R2_ENDPOINT_URL"],
+            aws_access_key_id=creds["R2_ACCESS_KEY_ID"],
+            aws_secret_access_key=creds["R2_SECRET_ACCESS_KEY"],
+            region_name="auto",
+        )
+        s3.download_file(creds["R2_BUCKET"], r2_key, local_path)
+        with open(local_path) as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Could not load {r2_key} from R2 (falling back to empty): {e}")
+        return default
+
+
 def parse_dt(s):
     if not s:
         return None
@@ -1550,17 +1579,16 @@ def main():
         except sqlite3.OperationalError:
             agent_by_user = {}  # table doesn't exist yet -- pre-dates this feature
         action_center = action_center_reports(mconn, now, agent_by_user)
+        fallback_creds = load_creds()
         reactivation_candidates_path = os.path.join(BASE, "reactivation_candidates.json")
-        reactivation_candidates = []
-        if os.path.exists(reactivation_candidates_path):
-            with open(reactivation_candidates_path) as f:
-                reactivation_candidates = json.load(f)
+        reactivation_candidates = load_json_with_r2_fallback(
+            reactivation_candidates_path, "reports/reactivation_candidates.json", fallback_creds, []
+        )
         reactivation = deposit_reactivation_analytics(mconn, reactivation_candidates, action_center, agent_by_user)
         vip_upgrade_path = os.path.join(BASE, "vip_upgrade_candidates.json")
-        vip_upgrade_candidates = {"low": [], "high": []}
-        if os.path.exists(vip_upgrade_path):
-            with open(vip_upgrade_path) as f:
-                vip_upgrade_candidates = json.load(f)
+        vip_upgrade_candidates = load_json_with_r2_fallback(
+            vip_upgrade_path, "reports/vip_upgrade_candidates.json", fallback_creds, {"low": [], "high": []}
+        )
         vip_upgrade = vip_upgrade_analytics(vip_upgrade_candidates, action_center, agent_by_user)
 
         # Conversion funnels (3-day/7-day: of users near-upgrade/inactive N
