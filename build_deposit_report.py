@@ -1040,47 +1040,74 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now):
     return result
 
 
-def acquisition_channel_analytics(mconn, now):
-    """Acquisition channel -- deposits' own 'channel' column (spreadsheet
-    column P, index 15; NOT pay_channel, which is the payment METHOD like
-    UPI/bank transfer, already covered by the existing Deposit Channel
-    Analysis section). This is which marketing/agent channel referred the
-    user, captured once at their first deposit and stored permanently on
-    master_userlist.db (see extract_deposit_user_info in
-    api_pull_ingest.py). For each channel: user count, total lifetime
-    deposit (LTV, using total_recharge) and withdrawal (total_withdrawal) --
-    both already permanent and immune to the 33-day purge, so this whole
-    report needs no daily_records.db access at all -- net revenue per
-    channel (this doubles as the "Net Revenue by channel" angle, using the
-    same acquisition-channel dimension rather than payment-method channel,
-    which is a separate, already-covered concept), average LTV per user,
-    and % still active within 30 days as a retention signal."""
-    rows = mconn.execute(
-        "SELECT channel, total_recharge, total_withdrawal, last_active_time FROM users WHERE channel IS NOT NULL AND channel != ''"
+def channel_performance_report(daily_conn, today):
+    """Channel acquisition quality, last 4 days combined. Of users whose
+    FIRST deposit (is_first_deposit=1) landed in the last 4 calendar days,
+    grouped by acquisition channel (deposits' own 'channel' column,
+    spreadsheet column P -- the marketing/agent referral channel, not
+    pay_channel/payment method): FD Users, FD Amount, Avg FD, and how many
+    came back to deposit again on Day 2 (FD+1) and Day 3 (FD+2).
+
+    Quality is a simple heuristic: a high average first-deposit amount
+    marks a valuable acquisition regardless of short-term return rate
+    ("High value"); otherwise it's graded on Day-2 return rate (Good >=25%,
+    Average 15-24%, Weak <15%)."""
+    window_start = today - timedelta(days=3)
+    rows = daily_conn.execute(
+        "SELECT channel, user_id, order_amount, create_time, is_first_deposit FROM deposits "
+        "WHERE status = 'COMPLETE' AND create_time >= ?",
+        (window_start.isoformat(),),
     ).fetchall()
-    by_channel = defaultdict(lambda: {"users": 0, "total_ltv": 0.0, "total_withdrawal": 0.0, "active_count": 0})
-    for channel, total_recharge, total_withdrawal, last_active_time in rows:
+
+    fd_by_user = {}
+    deposit_dates_by_user = defaultdict(set)
+    for channel, user_id, order_amount, create_time, is_first_deposit in rows:
+        if user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        deposit_dates_by_user[user_id].add(dt.date())
+        if is_first_deposit == 1 and dt.date() >= window_start:
+            fd_by_user[user_id] = (channel or "Unknown", dt.date(), order_amount or 0.0)
+
+    by_channel = defaultdict(lambda: {"fd_users": 0, "fd_amount": 0.0, "d2_users": 0, "d3_users": 0})
+    for user_id, (channel, fd_date, fd_amount) in fd_by_user.items():
         b = by_channel[channel]
-        b["users"] += 1
-        b["total_ltv"] += total_recharge or 0.0
-        b["total_withdrawal"] += total_withdrawal or 0.0
-        last_active_dt = parse_dt(last_active_time)
-        if last_active_dt and (now - last_active_dt).days <= 30:
-            b["active_count"] += 1
-    result = [
-        {
+        b["fd_users"] += 1
+        b["fd_amount"] += fd_amount
+        day_map = deposit_dates_by_user.get(user_id, set())
+        if (fd_date + timedelta(days=1)) in day_map:
+            b["d2_users"] += 1
+        if (fd_date + timedelta(days=2)) in day_map:
+            b["d3_users"] += 1
+
+    def quality(avg_fd, d2_pct):
+        if avg_fd >= 800:
+            return "High value"
+        if d2_pct >= 25:
+            return "Good"
+        if d2_pct >= 15:
+            return "Average"
+        return "Weak"
+
+    result = []
+    for channel, b in by_channel.items():
+        avg_fd = round(b["fd_amount"] / b["fd_users"], 2) if b["fd_users"] else 0.0
+        d2_pct = round(b["d2_users"] / b["fd_users"] * 100, 1) if b["fd_users"] else 0.0
+        d3_pct = round(b["d3_users"] / b["fd_users"] * 100, 1) if b["fd_users"] else 0.0
+        result.append({
             "channel": channel,
-            "user_count": b["users"],
-            "total_ltv": round(b["total_ltv"], 2),
-            "avg_ltv": round(b["total_ltv"] / b["users"], 2) if b["users"] else 0.0,
-            "total_withdrawal": round(b["total_withdrawal"], 2),
-            "net_revenue": round(b["total_ltv"] - b["total_withdrawal"], 2),
-            "active_count": b["active_count"],
-            "retention_pct": round(b["active_count"] / b["users"] * 100, 2) if b["users"] else 0.0,
-        }
-        for channel, b in by_channel.items()
-    ]
-    result.sort(key=lambda r: -r["avg_ltv"])
+            "fd_users": b["fd_users"],
+            "fd_amount": round(b["fd_amount"], 2),
+            "avg_fd": avg_fd,
+            "d2_users": b["d2_users"],
+            "d2_pct": d2_pct,
+            "d3_users": b["d3_users"],
+            "d3_pct": d3_pct,
+            "quality": quality(avg_fd, d2_pct),
+        })
+    result.sort(key=lambda r: -r["fd_users"])
     return result
 
 
@@ -1161,6 +1188,12 @@ def bonus_claim_report(mconn, deposit_challenge_bonus_rows):
 
 
 def main():
+    # Source timestamps (create_time, last_active_time, etc.) are IST, but this
+    # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
+    # be ~5.5h behind IST, making very recent activity look like it's in the
+    # future (negative inactive_days/hours). Compute "now" in IST to match.
+    now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
@@ -1173,6 +1206,7 @@ def main():
     wallet_rows = cur.execute(
         "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
     ).fetchall()
+    channel_performance = channel_performance_report(conn, now.date())
     conn.close()
 
     by_date_bet_users = defaultdict(set)
@@ -1190,13 +1224,7 @@ def main():
     reactivation = None
     vip_upgrade = None
     performance = None
-    acquisition_channel = None
     profit_users = None
-    # Source timestamps (create_time, last_active_time, etc.) are IST, but this
-    # script runs on a UTC-clocked GitHub Actions runner -- datetime.now() would
-    # be ~5.5h behind IST, making very recent activity look like it's in the
-    # future (negative inactive_days/hours). Compute "now" in IST to match.
-    now = datetime.utcnow() + timedelta(hours=5, minutes=30)
     master_db_path = os.path.join(BASE, "master_userlist.db")
     if os.path.exists(master_db_path):
         mconn = sqlite3.connect(master_db_path)
@@ -1231,7 +1259,6 @@ def main():
             vip_upgrade["funnel"] = funnel_data.get("vip_upgrade")
 
         performance = performance_history(mconn)
-        acquisition_channel = acquisition_channel_analytics(mconn, now)
         profit_users = profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now)
 
         mconn.close()
@@ -1369,7 +1396,7 @@ def main():
         "retention": retention,
         "performance_history": performance,
         "profit_users": profit_users,
-        "acquisition_channel": acquisition_channel,
+        "channel_performance": channel_performance,
         "bonus_claims": bonus_claims,
     }
 
