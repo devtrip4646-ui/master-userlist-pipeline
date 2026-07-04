@@ -1,0 +1,54 @@
+name: Fix user totals (one-off correction)
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: "User ID to correct"
+        required: true
+      balance:
+        description: "Correct user_balance"
+        required: true
+      total_recharge:
+        description: "Correct total_recharge (lifetime deposit)"
+        required: true
+      total_withdrawal:
+        description: "Correct total_withdrawal (lifetime withdrawal)"
+        required: true
+
+concurrency:
+  group: db-ingest
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Fix user totals
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          python3 fix_user_totals.py --user-id "${{ inputs.user_id }}" --balance "${{ inputs.balance }}" \
+            --total-recharge "${{ inputs.total_recharge }}" --total-withdrawal "${{ inputs.total_withdrawal }}"
+
+      - name: Refresh deposit report
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          python3 build_deposit_report.py
