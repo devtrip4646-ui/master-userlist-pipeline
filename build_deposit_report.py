@@ -851,8 +851,12 @@ def withdrawal_waiting_hours(r):
 
 
 def withdrawal_orders_export(withdrawal_full_records, vip_by_user, now):
-    """Raw order-level rows for the withdrawal Excel export: order number, channel,
-    amount, status, waiting time, user id and VIP level. For orders still open
+    """Raw order-level rows for the withdrawal Excel export: order number
+    (both order_no and payment_center_order_no -- the latter is the
+    "TW..."-prefixed field, the closest match found to a requested
+    "TP"-prefixed order number; order_no itself is "DIZC..."-prefixed and
+    channel_order_id is inconsistent, neither matches), channel, amount,
+    status, date, waiting time, user id and VIP level. For orders still open
     (status 0 In-Review / 1 Processing), also computes hours_in_review /
     hours_processing as (now - create_time) -- how long the order has actually
     been sitting in that state as of report generation. waiting_hours (which
@@ -870,9 +874,11 @@ def withdrawal_orders_export(withdrawal_full_records, vip_by_user, now):
                 hours_processing = pending_hours
         rows.append({
             "order_no": r["order_no"],
+            "payment_center_order_no": r.get("payment_center_order_id"),
             "channel": r["channel"],
             "amount": r["amount"],
             "status": STATUS_LABELS.get(r["status"], r["status"]),
+            "date": r["create_dt"].strftime("%Y-%m-%d") if r["create_dt"] else None,
             "waiting_hours": withdrawal_waiting_hours(r),
             "hours_in_review": hours_in_review,
             "hours_processing": hours_processing,
@@ -1061,7 +1067,7 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now):
             today_deposit[user_id] += order_amount or 0.0
 
     today_withdraw = defaultdict(float)
-    for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no in withdrawal_rows:
+    for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, payment_center_order_id in withdrawal_rows:
         if status != 2 or user_id is None:  # 2 = Complete
             continue
         dt = parse_dt(create_time)
@@ -1383,25 +1389,14 @@ def main():
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"
     ).fetchall()
     withdrawal_rows = cur.execute(
-        "SELECT withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no FROM withdrawals"
+        "SELECT withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, "
+        "payment_center_order_id FROM withdrawals"
     ).fetchall()
     wallet_rows = cur.execute(
         "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
     ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
-
-    # TEMP DIAGNOSTIC (remove once confirmed): user wants withdrawal order
-    # number exports to use the "TP"-prefixed order number specifically.
-    # order_no (already used everywhere) looked like "DIZC20260704..." in
-    # earlier searches, not TP-prefixed -- check channel_order_id and
-    # payment_center_order_id, the two other order-number-shaped fields in
-    # the withdrawals schema, to see which one (if either) actually holds
-    # "TP..." values.
-    for col in ["order_no", "channel_order_id", "payment_center_order_id"]:
-        sample = conn.execute(f"SELECT {col} FROM withdrawals WHERE {col} IS NOT NULL AND {col} != '' LIMIT 5").fetchall()
-        print(f"TP_ORDER_DIAGNOSTIC {col} sample:", sample)
-
     conn.close()
 
     by_date_bet_users = defaultdict(set)
@@ -1496,7 +1491,7 @@ def main():
     by_date_withdrawal_full = defaultdict(list)
     all_withdrawal_full = []
 
-    for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no in withdrawal_rows:
+    for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, payment_center_order_id in withdrawal_rows:
         amount = withdraw_amount or 0.0
         create_dt = parse_dt(create_time)
         date_str = create_dt.strftime("%Y-%m-%d") if create_dt else None
@@ -1514,6 +1509,7 @@ def main():
             "review_dt": parse_dt(review_time),
             "update_dt": parse_dt(update_time),
             "order_no": order_no,
+            "payment_center_order_id": payment_center_order_id,
             "user_id": user_id,
             "amount": amount,
         }
@@ -1586,6 +1582,11 @@ def main():
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(all_withdrawal_full),
         },
         "withdrawal_analysis": withdrawal_analysis,
+        # All-dates raw order rows (unlike by_date[...].withdrawal_orders,
+        # which is scoped to a single selected date) -- needed for the
+        # Processing/In-Review aging charts and the Last-4-Days completed
+        # chart, which all span the whole retained window, not one day.
+        "withdrawal_orders_full": withdrawal_orders_export(all_withdrawal_full, vip_by_user, now),
         "action_center": action_center,
         "action_center_extra": action_center_extra,
         "region_vip_analytics": region_vip_deposit_analytics(by_date_records, by_date_withdrawals, city_by_user, vip_by_user, all_dates),
