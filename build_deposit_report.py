@@ -1234,7 +1234,10 @@ def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows
     `bonuses` table) and the 3-Day Deposit Challenge Bonus (Rules 1-4).
     For each: claimed users, total bonus value, how many of those claimers
     ALSO made a COMPLETE deposit at any point today (a same-day "did the
-    bonus convert into a deposit" signal), and the resulting %.
+    bonus convert into a deposit" signal) plus the actual amount they
+    deposited (not just the headcount -- two converters aren't equally
+    valuable if one deposited Rs200 and the other Rs20,000), and the
+    resulting %.
 
     Scoped to today only. The permanent bonus_performance rollup (see
     compute_and_save_bonus_performance in api_pull_ingest.py) still tracks
@@ -1253,12 +1256,13 @@ def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows
     -- both in ingest_update.py."""
     today_str = today.isoformat()
 
-    today_depositors = set()
+    today_deposit_amount = defaultdict(float)
     for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None or not create_time:
             continue
         if str(create_time).startswith(today_str):
-            today_depositors.add(user_id)
+            today_deposit_amount[user_id] += order_amount or 0.0
+    today_depositors = set(today_deposit_amount.keys())
 
     daily_conn = sqlite3.connect(daily_db_path)
     try:
@@ -1281,12 +1285,15 @@ def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows
         rows = []
         for category, b in groups.items():
             claimed_users = len(b["users"])
-            converted = len(b["users"] & today_depositors)
+            converted_users = b["users"] & today_depositors
+            converted = len(converted_users)
+            deposit_amount = sum(today_deposit_amount[u] for u in converted_users)
             rows.append({
                 "bonus_category": category,
                 "claimed_users": claimed_users,
                 "total_value": round(b["value"], 2),
                 "deposited_after": converted,
+                "deposit_amount": round(deposit_amount, 2),
                 "pct_deposited": round(converted / claimed_users * 100, 2) if claimed_users else 0.0,
             })
         rows.sort(key=lambda r: -r["total_value"])
@@ -1325,30 +1332,6 @@ def main():
     ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
-
-    # TEMP DIAGNOSTIC (remove once confirmed): first pass (checking `source`
-    # for blank-game_name rows) came back nearly empty (only 4 rows, source=
-    # 'withdraw', unrelated to bonuses) -- so `source` isn't where the bonus
-    # description actually lives. Broaden to sample raw values across every
-    # plausible text field for blank-game_name rows, to find which one
-    # actually holds names like "Welcome Back Bonus" / "VIP Level: 3".
-    sample = conn.execute(
-        "SELECT id, user_id, consume_type, change_value, change_desc, source_id, "
-        "table_name, source, tripartite_uniqueness, status FROM wallet_transactions "
-        "WHERE game_name IS NULL OR game_name = '' LIMIT 20"
-    ).fetchall()
-    print("BLANK_GAME_NAME_DIAGNOSTIC sample rows (id, user_id, consume_type, change_value, change_desc, source_id, table_name, source, tripartite_uniqueness, status):")
-    for row in sample:
-        print("  ", row)
-    for col in ["consume_type", "change_desc", "source_id", "table_name", "tripartite_uniqueness"]:
-        diag = conn.execute(
-            f"SELECT {col}, COUNT(*) FROM wallet_transactions WHERE game_name IS NULL OR game_name = '' "
-            f"GROUP BY {col} ORDER BY 2 DESC LIMIT 15"
-        ).fetchall()
-        print(f"BLANK_GAME_NAME_DIAGNOSTIC breakdown by {col}:")
-        for row in diag:
-            print("  ", row)
-
     conn.close()
 
     by_date_bet_users = defaultdict(set)
