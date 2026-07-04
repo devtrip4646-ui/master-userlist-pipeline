@@ -1326,24 +1326,28 @@ def main():
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
 
-    # TEMP DIAGNOSTIC (remove once confirmed): check whether bonus credits are
-    # also recorded with a BLANK game_name and the bonus description in
-    # `source` (spreadsheet column M) instead -- a completely different
-    # pattern from classify_bonus(), which only ever looks at game_name, and
-    # would currently miss these entirely (ingest_wallet only calls
-    # classify_bonus() `if game_name:`, skipping blank ones outright).
-    diag = conn.execute(
-        "SELECT source, COUNT(*), SUM(change_value), COUNT(DISTINCT user_id) FROM wallet_transactions "
-        "WHERE (game_name IS NULL OR game_name = '') AND source IS NOT NULL AND source != '' "
-        "GROUP BY source ORDER BY 2 DESC LIMIT 40"
+    # TEMP DIAGNOSTIC (remove once confirmed): first pass (checking `source`
+    # for blank-game_name rows) came back nearly empty (only 4 rows, source=
+    # 'withdraw', unrelated to bonuses) -- so `source` isn't where the bonus
+    # description actually lives. Broaden to sample raw values across every
+    # plausible text field for blank-game_name rows, to find which one
+    # actually holds names like "Welcome Back Bonus" / "VIP Level: 3".
+    sample = conn.execute(
+        "SELECT id, user_id, consume_type, change_value, change_desc, source_id, "
+        "table_name, source, tripartite_uniqueness, status FROM wallet_transactions "
+        "WHERE game_name IS NULL OR game_name = '' LIMIT 20"
     ).fetchall()
-    print("BLANK_GAME_NAME_DIAGNOSTIC (source, count, total_change_value, distinct_users):")
-    for row in diag:
+    print("BLANK_GAME_NAME_DIAGNOSTIC sample rows (id, user_id, consume_type, change_value, change_desc, source_id, table_name, source, tripartite_uniqueness, status):")
+    for row in sample:
         print("  ", row)
-    blank_total = conn.execute(
-        "SELECT COUNT(*) FROM wallet_transactions WHERE game_name IS NULL OR game_name = ''"
-    ).fetchone()
-    print("BLANK_GAME_NAME_DIAGNOSTIC total blank-game_name rows:", blank_total)
+    for col in ["consume_type", "change_desc", "source_id", "table_name", "tripartite_uniqueness"]:
+        diag = conn.execute(
+            f"SELECT {col}, COUNT(*) FROM wallet_transactions WHERE game_name IS NULL OR game_name = '' "
+            f"GROUP BY {col} ORDER BY 2 DESC LIMIT 15"
+        ).fetchall()
+        print(f"BLANK_GAME_NAME_DIAGNOSTIC breakdown by {col}:")
+        for row in diag:
+            print("  ", row)
 
     conn.close()
 
