@@ -190,12 +190,31 @@ def ingest_bulk_reassign(files):
     conn.close()
 
 
+# Columns WE maintain ourselves via the ongoing hourly sync (never present
+# in the source lotteryUserInfo file, added later via ALTER TABLE). A
+# userlist re-upload must NEVER reset these -- doing so wipes the
+# high-water mark that stops sync_master_userlist() from re-adding
+# deposits/withdrawals already reflected in the file's own total_recharge/
+# total_withdrawal. That is exactly how a one-time historical double-count
+# got baked into every user's lifetime totals the first time these columns
+# were introduced (confirmed for user 1761219: total_recharge was inflated
+# by precisely their full currently-retained deposit sum) -- and using a
+# positional INSERT OR REPLACE here (the previous approach) would silently
+# repeat the exact same bug on every future re-upload, since REPLACE resets
+# any column not present in the VALUES list to its default (NULL).
+OWN_TRACKING_COLUMNS = ("deposit_sync_time", "withdrawal_sync_time")
+
+
 def ingest_userlist(files):
     conn = sqlite3.connect(MASTER_DB)
     cur = conn.cursor()
-    n_cols = len(cur.execute("PRAGMA table_info(users)").fetchall())
+    all_cols = [r[1] for r in cur.execute("PRAGMA table_info(users)").fetchall()]
+    file_cols = [c for c in all_cols if c not in OWN_TRACKING_COLUMNS]
+    n_cols = len(file_cols)
     update_time_idx = n_cols - 2
-    updated, inserted, skipped_files = 0, 0, 0
+    insert_cols_sql = ", ".join(file_cols)
+    update_cols_sql = ", ".join(f"{c} = ?" for c in file_cols[1:])  # skip user_id (WHERE key, not SET)
+    updated, inserted, skipped_files, skipped_rows = 0, 0, 0, 0
     for f in files:
         if already_ingested(conn, f):
             print(f"  skip (already ingested): {f}")
@@ -206,20 +225,28 @@ def ingest_userlist(files):
             if row[0] is None:
                 continue
             row = clean(list(row))
+            if len(row) != n_cols:
+                print(
+                    f"  WARNING: row for user {row[0]!r} has {len(row)} columns, expected {n_cols} "
+                    f"(source file layout changed?) -- skipping this row",
+                    file=sys.stderr,
+                )
+                skipped_rows += 1
+                continue
             row[0] = int(float(row[0]))
             uid = row[0]
             existing = cur.execute("SELECT update_time FROM users WHERE user_id = ?", (uid,)).fetchone()
             if existing is None:
-                cur.execute(f"INSERT INTO users VALUES ({','.join(['?']*n_cols)})", row)
+                cur.execute(f"INSERT INTO users ({insert_cols_sql}) VALUES ({','.join(['?']*n_cols)})", row)
                 inserted += 1
             else:
                 new_ut, old_ut = row[update_time_idx], existing[0]
                 if new_ut is not None and (old_ut is None or str(new_ut) > str(old_ut)):
-                    cur.execute(f"INSERT OR REPLACE INTO users VALUES ({','.join(['?']*n_cols)})", row)
+                    cur.execute(f"UPDATE users SET {update_cols_sql} WHERE user_id = ?", row[1:] + [uid])
                     updated += 1
         mark_ingested(conn, f)
         conn.commit()
-    print(f"Master Userlist: {inserted} new, {updated} updated, {skipped_files} files already ingested")
+    print(f"Master Userlist: {inserted} new, {updated} updated, {skipped_rows} rows skipped (bad shape), {skipped_files} files already ingested")
     conn.close()
 
 
