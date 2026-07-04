@@ -1537,44 +1537,6 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    # TEMP DIAGNOSTIC (remove once confirmed)
-    print("=== DIAGNOSTIC: user 1761219 data integrity investigation ===")
-    master_db_path_diag = os.path.join(BASE, "master_userlist.db")
-    if os.path.exists(master_db_path_diag):
-        mconn_diag = sqlite3.connect(master_db_path_diag)
-        cols = [r[1] for r in mconn_diag.execute("PRAGMA table_info(users)").fetchall()]
-        print("users table column count:", len(cols))
-        print("users table columns:", cols)
-        row = mconn_diag.execute("SELECT * FROM users WHERE user_id = 1761219").fetchone()
-        if row:
-            print("user 1761219 full row:")
-            for col, val in zip(cols, row):
-                print(f"  {col} = {val!r}")
-        else:
-            print("user 1761219 NOT FOUND in users table")
-        print("--- ingested_files: lotteryUserInfo history ---")
-        for f, t in mconn_diag.execute(
-            "SELECT filename, ingested_at FROM ingested_files WHERE filename LIKE 'lotteryUserInfo%' ORDER BY ingested_at"
-        ).fetchall():
-            print(f"  {f} @ {t}")
-        mconn_diag.close()
-    print("--- wallet_transactions latest row for user 1761219 (33-day retained window) ---")
-    row = cur.execute(
-        "SELECT id, game_name, change_value, change_after, direction, source, source_id, create_time "
-        "FROM wallet_transactions WHERE user_id = 1761219 ORDER BY create_time DESC LIMIT 5"
-    ).fetchall()
-    for r in row:
-        print(" ", r)
-    print("--- deposits (COMPLETE) for user 1761219 in retained window: count + sum ---")
-    print(cur.execute(
-        "SELECT COUNT(*), SUM(order_amount) FROM deposits WHERE user_id = 1761219 AND status = 'COMPLETE'"
-    ).fetchone())
-    print("--- withdrawals (status=2 Complete) for user 1761219 in retained window: count + sum ---")
-    print(cur.execute(
-        "SELECT COUNT(*), SUM(withdraw_amount) FROM withdrawals WHERE user_id = 1761219 AND status = 2"
-    ).fetchone())
-    print("=== END DIAGNOSTIC ===")
-
     deposit_rows = cur.execute(
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"
     ).fetchall()
