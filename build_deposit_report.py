@@ -1407,6 +1407,49 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
+    # TEMP DIAGNOSTIC (remove once confirmed)
+    today_str_diag = now.date().isoformat()
+    print("=== DIAGNOSTIC: today_str =", today_str_diag, "===")
+    print("--- ground truth from wallet_transactions directly (today only) ---")
+    for label, like in [("Daily Active Bonus (all)", "Daily Active Bonus%"),
+                        ("Daily Active Bonus Low", "Daily Active Bonus Low%"),
+                        ("Daily Active Bonus (non-Low)", "Daily Active Bonus-%")]:
+        row = cur.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT user_id), SUM(change_value) FROM wallet_transactions "
+            "WHERE source_id LIKE ? AND create_time LIKE ?",
+            (like, today_str_diag + "%"),
+        ).fetchone()
+        print(label, "-> rows=", row[0], "distinct_users=", row[1], "sum=", row[2])
+    print("--- sample create_time raw values for Daily Active Bonus% today ---")
+    rows = cur.execute(
+        "SELECT id, source_id, create_time FROM wallet_transactions WHERE source_id LIKE 'Daily Active Bonus%' "
+        "AND create_time LIKE ? LIMIT 5", (today_str_diag + "%",)
+    ).fetchall()
+    for r in rows:
+        print(r)
+    print("--- what's actually in the `bonuses` table for today ---")
+    for label, cat in [("Daily Active Bonus", "Daily Active Bonus"), ("Daily Active Bonus Low", "Daily Active Bonus Low")]:
+        row = cur.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT user_id), SUM(change_value) FROM bonuses "
+            "WHERE matched_category = ? AND create_time LIKE ?",
+            (cat, today_str_diag + "%"),
+        ).fetchone()
+        print(label, "(bonuses table) -> rows=", row[0], "distinct_users=", row[1], "sum=", row[2])
+    print("--- total bonuses table rows overall for these 2 categories (all-time in 33-day window) ---")
+    for label, cat in [("Daily Active Bonus", "Daily Active Bonus"), ("Daily Active Bonus Low", "Daily Active Bonus Low")]:
+        row = cur.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT user_id), SUM(change_value) FROM bonuses WHERE matched_category = ?",
+            (cat,),
+        ).fetchone()
+        print(label, "(bonuses table, all dates) -> rows=", row[0], "distinct_users=", row[1], "sum=", row[2])
+    print("--- sample create_time raw values in bonuses table for these categories ---")
+    rows = cur.execute(
+        "SELECT matched_category, create_time FROM bonuses WHERE matched_category IN ('Daily Active Bonus', 'Daily Active Bonus Low') LIMIT 10"
+    ).fetchall()
+    for r in rows:
+        print(r)
+    print("=== END DIAGNOSTIC ===")
+
     deposit_rows = cur.execute(
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"
     ).fetchall()
