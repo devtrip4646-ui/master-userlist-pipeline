@@ -1332,6 +1332,42 @@ def main():
     ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
+
+    # TEMP DIAGNOSTIC (remove once confirmed): user clarified the actual rule
+    # is the reverse of what I checked before -- source should be BLANK and
+    # game_name holds the bonus name. Verify: (a) for each bonus name on
+    # their list, is source blank or populated; (b) for known real games
+    # (Aviator, Chicken Road Bonus), is source non-blank, confirming that's
+    # the actual discriminator between a bonus credit and real gameplay.
+    bonus_names = [
+        "BankruptcyActivity", "Chicken Road & Vortex", "Evolution Live Betting Bonus",
+        "First deposit", "Fourth deposit", "Low VIP", "Mid VIP", "Roulette Games",
+        "Second Deposit", "SPIN FREE", "Super Friday - Bonus", "Third deposit",
+        "VIP Level: 1", "VIP Level: 2", "VIP Level: 3", "VIP Level: 4", "VIP Level: 5",
+        "VIP Level: 6", "VIP Level: 7", "VIP Week Card Perks", "VIP Week Reward 26",
+        "Welcome Back Bonus",
+    ]
+    placeholders = ",".join("?" * len(bonus_names))
+    diag = conn.execute(
+        f"SELECT game_name, "
+        f"SUM(CASE WHEN source IS NULL OR source = '' THEN 1 ELSE 0 END) as blank_source, "
+        f"SUM(CASE WHEN source IS NOT NULL AND source != '' THEN 1 ELSE 0 END) as nonblank_source, "
+        f"COUNT(*) as total FROM wallet_transactions "
+        f"WHERE TRIM(game_name) IN ({placeholders}) GROUP BY game_name",
+        bonus_names,
+    ).fetchall()
+    print("BONUS_NAME_SOURCE_DIAGNOSTIC (game_name, blank_source_count, nonblank_source_count, total):")
+    for row in diag:
+        print("  ", row)
+    for real_game in ["Aviator", "Chicken Road Bonus", "Bonus Hunter", "Fortune Gems 3"]:
+        row = conn.execute(
+            "SELECT SUM(CASE WHEN source IS NULL OR source = '' THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN source IS NOT NULL AND source != '' THEN 1 ELSE 0 END), COUNT(*) "
+            "FROM wallet_transactions WHERE game_name = ?",
+            (real_game,),
+        ).fetchone()
+        print(f"BONUS_NAME_SOURCE_DIAGNOSTIC real game '{real_game}' (blank_source, nonblank_source, total):", row)
+
     conn.close()
 
     by_date_bet_users = defaultdict(set)
