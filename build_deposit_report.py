@@ -1502,7 +1502,7 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
 # below picks the correct (highest-earned) tier for a given loss_pct.
 WEEKLY_CASHBACK_TIERS = [
     (100.0, 0.07),
-    (75.0, 0.03),
+    (75.0, 0.04),
     (50.0, 0.02),
 ]
 WEEKLY_CASHBACK_MIN_LOSS = 5000.0

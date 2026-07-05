@@ -702,7 +702,7 @@ if (IS_ACTION_CENTER) {
           <div class="rh-count">\${fmt(wcs.eligible_count)}<small>Eligible Users</small></div>
           <div class="rh-pct">\${money(wcs.total_bonus)}<small>Total Bonus Payable</small></div>
         </div>
-        <div class="ac-note">VIP 2+ only &middot; Loss Rs 500-4,999 (80%+ of week's deposit lost): flat 1% &middot; Loss Rs 5,000-500,000: 50%+ = 2%, 75%+ = 3%, 100% = 7% cashback &middot; credited Sunday morning, no wagering requirement</div>
+        <div class="ac-note">VIP 2+ only &middot; Loss Rs 500-4,999 (80%+ of week's deposit lost): flat 1% &middot; Loss Rs 5,000-500,000: 50%+ = 2%, 75%+ = 4%, 100% = 7% cashback &middot; credited Sunday morning, no wagering requirement</div>
         <div id="cashback-table"></div>
         <div class="ac-pagination" id="cashback-pagination"></div>
       </section>
