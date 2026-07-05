@@ -757,7 +757,7 @@ if (IS_ACTION_CENTER) {
             <div class="sec-title"><div class="badge b-cyan">&#9989;</div><h2>Low - Active Users (V2-V4)</h2></div>
             <button class="download-btn-sm" id="btn-dl-active-low">&#128190; Excel</button>
           </div>
-          <div class="ac-note">\${ac.active_low.note} &middot; showing top \${ac.active_low.total_matching.toLocaleString('en-IN')} matching, most-recently-active-first</div>
+          <div class="ac-note">\${ac.active_low.note} &middot; showing top \${ac.active_low.total_matching.toLocaleString('en-IN')} matching, most-inactive-first</div>
           <div id="active-low-table"></div>
           <div class="ac-pagination" id="active-low-pagination"></div>
         </section>
@@ -766,7 +766,7 @@ if (IS_ACTION_CENTER) {
             <div class="sec-title"><div class="badge b-cyan">&#9989;</div><h2>High - Active Users (V5-V15)</h2></div>
             <button class="download-btn-sm" id="btn-dl-active-high">&#128190; Excel</button>
           </div>
-          <div class="ac-note">\${ac.active_high.note} &middot; showing top \${ac.active_high.total_matching.toLocaleString('en-IN')} matching, most-recently-active-first</div>
+          <div class="ac-note">\${ac.active_high.note} &middot; showing top \${ac.active_high.total_matching.toLocaleString('en-IN')} matching, most-inactive-first</div>
           <div id="active-high-table"></div>
           <div class="ac-pagination" id="active-high-pagination"></div>
         </section>

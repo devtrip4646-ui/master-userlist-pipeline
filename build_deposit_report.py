@@ -488,8 +488,8 @@ def action_center_reports(mconn, now, agent_by_user):
     near_high.sort(key=lambda r: r["amount_to_next"])
     inactive_high.sort(key=lambda r: -r["inactive_days"])
     inactive_low.sort(key=lambda r: -r["inactive_days"])
-    active_high.sort(key=lambda r: r["inactive_days"])
-    active_low.sort(key=lambda r: r["inactive_days"])
+    active_high.sort(key=lambda r: -r["inactive_days"])
+    active_low.sort(key=lambda r: -r["inactive_days"])
 
     # Every list below ships in FULL (no cap) -- these are audit/payout-style
     # reports where the on-screen table paginates client-side and the Excel
