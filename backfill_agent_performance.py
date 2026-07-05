@@ -25,6 +25,7 @@ import build_deposit_report as bdr
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 MASTER_DB = os.path.join(BASE, "master_userlist.db")
+DAILY_DB = os.path.join(BASE, "daily_records.db")
 
 
 def r2_client():
@@ -46,8 +47,12 @@ def main():
     s3 = r2_client()
     try:
         s3.download_file(bucket, "master_userlist.db", MASTER_DB)
+        # Not touched by this script, but build_deposit_report.py (run right
+        # after, in the same job workspace) needs it present locally to
+        # refresh the live report -- same pattern reassign_agent.py uses.
+        s3.download_file(bucket, "daily_records.db", DAILY_DB)
     except Exception as e:
-        print(f"FATAL: could not download master_userlist.db from R2: {e}", file=sys.stderr)
+        print(f"FATAL: could not download DBs from R2: {e}", file=sys.stderr)
         sys.exit(1)
 
     snapshot_key = f"reports/analytics_history/{args.date}.json"
