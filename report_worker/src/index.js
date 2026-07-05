@@ -391,6 +391,21 @@ document.getElementById('analytics-wrap').style.display = IS_ANALYTICS ? '' : 'n
 document.getElementById('platform-analysis-wrap').style.display = IS_PLATFORM_ANALYSIS ? '' : 'none';
 document.getElementById('search-user-wrap').style.display = IS_SEARCH_USER ? '' : 'none';
 
+// Client-side deterrent only (this is a static page, no real auth backend) --
+// gates the Ban User/Reassign Agent actions and the whole Platform Analysis
+// page behind a shared PIN.
+const ACTION_PASSWORD = '3177';
+function checkActionPassword(msgEl, actionLabel) {
+  const entered = prompt('Enter password to ' + actionLabel + ':');
+  if (entered === null) return false; // cancelled
+  if (entered !== ACTION_PASSWORD) {
+    msgEl.textContent = 'Access Denied';
+    msgEl.className = 'su-reassign-msg err';
+    return false;
+  }
+  return true;
+}
+
 if (IS_AGENT_SCOPED) {
   document.getElementById('nav-home').href = agentUrl('');
   document.getElementById('nav-action-center').href = agentUrl('action-center');
@@ -1403,6 +1418,12 @@ if (IS_ANALYTICS) {
 
 if (IS_PLATFORM_ANALYSIS) {
   (async () => {
+    const appEl = document.getElementById('platform-analysis-app');
+    const entered = prompt('Enter password to access Platform Analysis:');
+    if (entered !== ACTION_PASSWORD) {
+      appEl.textContent = 'Access Denied';
+      return;
+    }
     const res = await fetch('/data.json');
     if (!res.ok) {
       document.getElementById('platform-analysis-app').textContent = 'Failed to load report data (' + res.status + ')';
@@ -1661,20 +1682,6 @@ if (IS_PLATFORM_ANALYSIS) {
 
 const REASSIGN_ENDPOINT = 'https://master-userlist-upload.devtrip4646.workers.dev/reassign-agent';
 const BAN_USER_ENDPOINT = 'https://master-userlist-upload.devtrip4646.workers.dev/ban-user';
-// Client-side deterrent only (this is a static page, no real auth backend) --
-// gates the Ban User and Reassign Agent actions behind a shared PIN so a
-// stray click can't trigger either irreversible/high-impact action.
-const ACTION_PASSWORD = '3177';
-function checkActionPassword(msgEl, actionLabel) {
-  const entered = prompt('Enter password to ' + actionLabel + ':');
-  if (entered === null) return false; // cancelled
-  if (entered !== ACTION_PASSWORD) {
-    msgEl.textContent = 'Access Denied';
-    msgEl.className = 'su-reassign-msg err';
-    return false;
-  }
-  return true;
-}
 
 if (IS_SEARCH_USER) {
   const container = document.getElementById('search-user-app');
