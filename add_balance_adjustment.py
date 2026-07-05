@@ -74,14 +74,17 @@ def main():
         print(f"Removed {removed} earlier synthetic manual_deduct ledger row(s) for user {args.user_id} (migrating to balance_adjustments)")
 
     latest = dcur.execute(
-        "SELECT change_after, create_time, id FROM wallet_transactions "
+        "SELECT change_after, change_value, direction, create_time, id FROM wallet_transactions "
         "WHERE user_id = ? ORDER BY create_time DESC, id DESC LIMIT 1",
         (args.user_id,),
     ).fetchone()
     dconn.close()
-    latest_ledger_balance = latest[0] if latest else None
-    if latest:
-        print(f"Latest real ledger row for user {args.user_id}: change_after={latest[0]}, create_time={latest[1]}, id={latest[2]}")
+    # change_after lags by one row -- true balance is this row's own
+    # change_after plus/minus its own change_value (see verify_ledger_lag.py).
+    latest_ledger_balance = None
+    if latest and latest[0] is not None and latest[1] is not None and latest[2] is not None:
+        latest_ledger_balance = latest[0] + latest[1] if latest[2] == 0 else latest[0] - latest[1]
+        print(f"Latest real ledger row for user {args.user_id}: change_after={latest[0]}, change_value={latest[1]}, direction={latest[2]}, create_time={latest[3]} -> true balance={latest_ledger_balance}")
 
     mconn = sqlite3.connect(MASTER_DB)
     mcur = mconn.cursor()

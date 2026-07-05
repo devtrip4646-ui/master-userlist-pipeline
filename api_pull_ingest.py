@@ -850,27 +850,33 @@ def main():
     # local daily_records.db copy is opened AFTER ingest_update.py already
     # re-uploaded it to R2, so a new index built here would just be rebuilt
     # from scratch on every future run instead of paying for itself once.
-    # change_after is the wallet ledger's own running balance AFTER that
-    # specific transaction -- the authoritative "current balance" source,
-    # unlike users.user_balance (only ever set once, at the original
-    # bootstrap import, and never touched again by anything else in this
-    # pipeline). Selecting change_after alongside a bare MAX(create_time)
-    # relies on SQLite's documented "bare column" behavior for a query with
-    # exactly one min()/max() aggregate: every other selected column comes
-    # from the SAME row as that max, not an arbitrary row in the group --
+    # change_after is the wallet ledger's own balance snapshot, but the
+    # source export lags it by exactly one row: row i's change_after is
+    # actually the TRUE balance BEFORE row i's own transaction was applied
+    # (equivalently, the true resulting balance of row i-1), not the result
+    # of row i itself -- confirmed by replaying change_value/direction across
+    # 127,490 consecutive real transaction pairs (verify_ledger_lag.py),
+    # 100% match, zero exceptions. So the true CURRENT balance is the most
+    # recent row's own change_after PLUS (direction 0, credit) or MINUS
+    # (direction 1, debit) that same row's own change_value -- one more step
+    # than just reading change_after directly. Selecting change_value/
+    # direction alongside a bare MAX(create_time) relies on SQLite's
+    # documented "bare column" behavior for a query with exactly one
+    # min()/max() aggregate: every other selected column comes from the SAME
+    # row as that max, not an arbitrary row in the group --
     # https://www.sqlite.org/lang_select.html#bareagg. So this one query
-    # gives both "last active via wallet" AND "balance as of that moment"
-    # per user, in a single pass, no self-join needed.
+    # gives "last active via wallet" AND the ingredients for "balance as of
+    # that moment" per user, in a single pass, no self-join needed.
     wallet_rows_for_sync = daily_conn.execute(
-        "SELECT user_id, change_after, MAX(create_time) FROM wallet_transactions "
+        "SELECT user_id, change_after, change_value, direction, MAX(create_time) FROM wallet_transactions "
         "WHERE user_id IS NOT NULL GROUP BY user_id"
     ).fetchall()
     wallet_activity = {}
     wallet_balance_by_user = {}
-    for user_id, change_after, max_create_time in wallet_rows_for_sync:
+    for user_id, change_after, change_value, direction, max_create_time in wallet_rows_for_sync:
         wallet_activity[user_id] = max_create_time
-        if change_after is not None:
-            wallet_balance_by_user[user_id] = change_after
+        if change_after is not None and change_value is not None and direction is not None:
+            wallet_balance_by_user[user_id] = change_after + change_value if direction == 0 else change_after - change_value
     try:
         bonus_rows_for_sync = daily_conn.execute(
             "SELECT matched_category, user_id, change_value, create_time FROM bonuses"
