@@ -1663,6 +1663,20 @@ if (IS_PLATFORM_ANALYSIS) {
 
 const REASSIGN_ENDPOINT = 'https://master-userlist-upload.devtrip4646.workers.dev/reassign-agent';
 const BAN_USER_ENDPOINT = 'https://master-userlist-upload.devtrip4646.workers.dev/ban-user';
+// Client-side deterrent only (this is a static page, no real auth backend) --
+// gates the Ban User and Reassign Agent actions behind a shared PIN so a
+// stray click can't trigger either irreversible/high-impact action.
+const ACTION_PASSWORD = '3177';
+function checkActionPassword(msgEl, actionLabel) {
+  const entered = prompt('Enter password to ' + actionLabel + ':');
+  if (entered === null) return false; // cancelled
+  if (entered !== ACTION_PASSWORD) {
+    msgEl.textContent = 'Access Denied';
+    msgEl.className = 'su-reassign-msg err';
+    return false;
+  }
+  return true;
+}
 
 if (IS_SEARCH_USER) {
   const container = document.getElementById('search-user-app');
@@ -1733,6 +1747,7 @@ if (IS_SEARCH_USER) {
       msg.className = 'su-reassign-msg err';
       return;
     }
+    if (!checkActionPassword(msg, 'reassign this user')) return;
     btn.disabled = true;
     msg.textContent = 'Saving...';
     msg.className = 'su-reassign-msg';
@@ -1767,6 +1782,7 @@ if (IS_SEARCH_USER) {
     if (!confirm('Ban User #' + userId + ' and PERMANENTLY DELETE all their records? This cannot be undone.')) {
       return;
     }
+    if (!checkActionPassword(msg, 'ban this user')) return;
     btn.disabled = true;
     msg.textContent = 'Banning...';
     msg.className = 'su-reassign-msg';
