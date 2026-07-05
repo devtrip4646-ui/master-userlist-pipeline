@@ -34,6 +34,7 @@ from collections import defaultdict
 import openpyxl
 import requests
 
+import ban_utils
 import ci_ingest
 import ingest_update as iu
 
@@ -643,7 +644,13 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
 
     # Union of every user touched by ANY of the three sources this run --
     # each may need a last_active_time bump even with zero deposit delta.
-    touched_users = set(deltas.keys()) | set(withdrawal_activity.keys()) | set(wallet_activity.keys())
+    # Banned users (see ban_utils.py / the dashboard's Ban User feature) are
+    # excluded here so this sync can never re-insert or update a user we've
+    # deliberately deleted -- ingest_update.py's main() also purges any raw
+    # deposits/withdrawals/wallet_transactions rows for them from
+    # daily_records.db earlier in the same run, so this is belt-and-braces.
+    touched_users = (set(deltas.keys()) | set(withdrawal_activity.keys()) | set(wallet_activity.keys())) \
+        - set(ban_utils.get_banned_user_ids(master_db_path))
 
     new_users = updated = 0
     for user_id in touched_users:

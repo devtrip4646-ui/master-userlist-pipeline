@@ -70,6 +70,13 @@ const PAGE = `<!DOCTYPE html>
   .su-reassign-msg.ok { color: #059669; }
   .su-reassign-msg.err { color: #991b1b; }
 
+  .su-ban-card { border-color: #fecdd3; background: #fff5f5; }
+  .su-ban-card .su-reassign-title .badge { background: #fecdd3; }
+  .su-ban-note { font-size: 12px; color: #9f1239; margin-bottom: 10px; max-width: 480px; }
+  .su-ban-btn { background: #be123c !important; }
+  .su-ban-btn:hover:not(:disabled) { background: #9f1239 !important; }
+  .su-ban-btn:disabled { background: #fca5a5 !important; }
+
   .su-state { padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
   .su-state-error { color: #991b1b; background: #fef2f2; border-radius: 10px; font-weight: 600; }
 
@@ -1655,6 +1662,7 @@ if (IS_PLATFORM_ANALYSIS) {
 }
 
 const REASSIGN_ENDPOINT = 'https://master-userlist-upload.devtrip4646.workers.dev/reassign-agent';
+const BAN_USER_ENDPOINT = 'https://master-userlist-upload.devtrip4646.workers.dev/ban-user';
 
 if (IS_SEARCH_USER) {
   const container = document.getElementById('search-user-app');
@@ -1675,6 +1683,16 @@ if (IS_SEARCH_USER) {
         <button id="reassign-save-btn">&#128190; Save</button>
       </div>
       <div id="reassign-msg" class="su-reassign-msg"></div>
+    </div>
+
+    <div class="su-reassign-card su-ban-card">
+      <div class="su-reassign-title"><span class="badge">&#128683;</span> Ban User</div>
+      <div class="su-ban-note">Permanently deletes ALL of this user's records (deposits, withdrawals, wallet activity, agent assignment) and hides them from the dashboard forever. This cannot be undone.</div>
+      <div class="su-reassign-row">
+        <input type="text" id="ban-user-input" placeholder="User ID" inputmode="numeric">
+        <button id="ban-user-btn" class="su-ban-btn">&#128683; Ban &amp; Delete</button>
+      </div>
+      <div id="ban-user-msg" class="su-reassign-msg"></div>
     </div>
     \`}
 
@@ -1728,6 +1746,41 @@ if (IS_SEARCH_USER) {
       if (!res.ok) throw new Error(resData.error || res.status);
       msg.textContent = 'Saved - ' + (select.value || 'Un-Assigned') + ' will show for User #' + userId + ' within a minute or two.';
       msg.className = 'su-reassign-msg ok';
+    } catch (err) {
+      msg.textContent = 'Error: ' + err.message;
+      msg.className = 'su-reassign-msg err';
+    }
+    btn.disabled = false;
+  });
+
+  document.getElementById('ban-user-btn').addEventListener('click', async () => {
+    const userInput = document.getElementById('ban-user-input');
+    const btn = document.getElementById('ban-user-btn');
+    const msg = document.getElementById('ban-user-msg');
+    const userId = userInput.value.trim();
+    const userIdNum = Number(userId);
+    if (!userId || !Number.isInteger(userIdNum) || userIdNum <= 0) {
+      msg.textContent = 'Enter a valid numeric User ID.';
+      msg.className = 'su-reassign-msg err';
+      return;
+    }
+    if (!confirm('Ban User #' + userId + ' and PERMANENTLY DELETE all their records? This cannot be undone.')) {
+      return;
+    }
+    btn.disabled = true;
+    msg.textContent = 'Banning...';
+    msg.className = 'su-reassign-msg';
+    try {
+      const res = await fetch(BAN_USER_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ user_id: Number(userId) }),
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || res.status);
+      msg.textContent = 'User #' + userId + ' banned. Their records will be deleted from the dashboard within a minute or two.';
+      msg.className = 'su-reassign-msg ok';
+      userInput.value = '';
     } catch (err) {
       msg.textContent = 'Error: ' + err.message;
       msg.className = 'su-reassign-msg err';
