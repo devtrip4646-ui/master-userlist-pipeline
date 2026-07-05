@@ -1633,8 +1633,8 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
 #     cohort size varies day to day. That weighted rate is then compared
 #     against the flat target here to get "% of target achieved".
 AGENT_PERF_TARGETS = {
-    "Reactivation Low": {"type": "count", "target": 20},
-    "Reactivation High": {"type": "count", "target": 10},
+    "Reactivation Low": {"type": "count", "target": 30},
+    "Reactivation High": {"type": "count", "target": 15},
     "Retention": {"type": "rate", "target": 30},
     "Low VIP Upgrade": {"type": "count", "target": 10},
     "High VIP Upgrade": {"type": "count", "target": 5},

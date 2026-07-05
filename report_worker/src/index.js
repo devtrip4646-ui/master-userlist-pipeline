@@ -572,7 +572,7 @@ if (IS_ACTION_CENTER) {
       document.getElementById('action-center-app').textContent = 'Failed to load report data (' + res.status + ')';
       return;
     }
-    const data = await res.json();
+    const data = scopeReportToAgent(await res.json(), AGENT_NAME);
     const ac = data.action_center;
     const acx = data.action_center_extra;
     document.getElementById('updated-badge').innerHTML =
@@ -924,7 +924,7 @@ if (IS_PERFORMANCE) {
         return '<div class="perf-podium-card ' + podiumClasses[i] + '">' +
           '<div class="perf-podium-medal">' + medals[i] + '</div>' +
           '<div class="perf-podium-name">' + r.agent + '</div>' +
-          '<div class="perf-podium-score">' + r.composite.toFixed(1) + '<small>% of target (month)</small></div>' +
+          '<div class="perf-podium-score">' + r.composite.toFixed(2) + '<small>% of target (month)</small></div>' +
           (incentive
             ? '<div class="perf-podium-incentive">Incentive earned<span class="amt">' + fmtMoney(incentive) + '</span></div>'
             : '<div class="perf-podium-none">Below 60% of target -- no incentive yet</div>') +
@@ -958,7 +958,7 @@ if (IS_PERFORMANCE) {
           '<div class="perf-rank' + (rankNum <= 3 ? ' top3' : '') + '">' + rankNum + '</div>' +
           '<div class="perf-agent-name">' + r.agent + '</div>' +
           '<div class="perf-criteria-grid">' + critHtml + '</div>' +
-          '<div class="perf-score-big" style="color:' + (r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#b45309' : '#be123c') + '">' + r.composite.toFixed(0) + '%</div>' +
+          '<div class="perf-score-big" style="color:' + (r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#b45309' : '#be123c') + '">' + r.composite.toFixed(2) + '%</div>' +
           '</div>';
       }).join('');
     }
@@ -1012,7 +1012,20 @@ if (IS_ANALYTICS) {
       document.getElementById('analytics-app').textContent = 'Failed to load report data (' + res.status + ')';
       return;
     }
-    const data = await res.json();
+    const globalData = await res.json();
+    let data = scopeReportToAgent(globalData, AGENT_NAME);
+    if (IS_AGENT_SCOPED) {
+      // region_vip_analytics can't be scoped client-side (derived from raw
+      // per-transaction records never shipped to the browser) -- pull it
+      // from the small per-agent file instead, same pattern the Home page uses.
+      const agentRes = await fetch('/data.json?agent=' + encodeURIComponent(AGENT_NAME));
+      if (!agentRes.ok) {
+        document.getElementById('analytics-app').textContent = 'Failed to load this agent\\'s report (' + agentRes.status + ')';
+        return;
+      }
+      const agentData = await agentRes.json();
+      data = { ...data, region_vip_analytics: agentData.region_vip_analytics };
+    }
     document.getElementById('updated-badge').innerHTML =
       '<span class="dot"></span> Records updated through ' +
       (data.latest_record_time ? new Date(data.latest_record_time).toLocaleString() : 'n/a');
@@ -1305,7 +1318,7 @@ if (IS_ANALYTICS) {
         container.innerHTML = '<div class="no-data">Loading ' + shortDate(date) + '&hellip;</div>';
         try {
           const r = await fetch('/api/analytics-history?date=' + date);
-          snapshotCache[date] = r.ok ? await r.json() : null;
+          snapshotCache[date] = r.ok ? scopeReportToAgent(await r.json(), AGENT_NAME) : null;
         } catch (e) {
           snapshotCache[date] = null;
         }
@@ -1653,6 +1666,7 @@ if (IS_SEARCH_USER) {
       <button id="search-user-btn">Search</button>
     </div>
 
+    \${IS_AGENT_SCOPED ? '' : \`
     <div class="su-reassign-card">
       <div class="su-reassign-title"><span class="badge">&#128100;</span> Reassign Agent</div>
       <div class="su-reassign-row">
@@ -1662,6 +1676,7 @@ if (IS_SEARCH_USER) {
       </div>
       <div id="reassign-msg" class="su-reassign-msg"></div>
     </div>
+    \`}
 
     <div id="search-user-result"></div>
   \`;
@@ -1669,6 +1684,9 @@ if (IS_SEARCH_USER) {
   // Agent dropdown options come from the report's agent_list (distinct real
   // agent names already in agent_assignments) -- fetched lazily so the
   // Search User page doesn't have to wait on /data.json before rendering.
+  // Reassign Agent is hidden entirely for agent-scoped dashboards, so none
+  // of this dropdown/save wiring applies there.
+  if (!IS_AGENT_SCOPED) {
   (async () => {
     try {
       const res = await fetch('/data.json');
@@ -1716,6 +1734,7 @@ if (IS_SEARCH_USER) {
     }
     btn.disabled = false;
   });
+  }
 
   function fmtMoney(v) { return '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
   function daysAgoLabel(iso) {
@@ -1771,6 +1790,10 @@ if (IS_SEARCH_USER) {
       const data = await res.json();
       if (!res.ok) {
         resultEl.innerHTML = '<div class="su-state su-state-error">&#9888;&#65039; ' + (data.error || 'User not found') + '</div>';
+        return;
+      }
+      if (IS_AGENT_SCOPED && data.agent !== AGENT_NAME) {
+        resultEl.innerHTML = '<div class="su-state su-state-error">&#9888;&#65039; User #' + userId + ' is not assigned to your agent account.</div>';
         return;
       }
       const dep7 = sumIf(data.recent_deposits, 'complete');
