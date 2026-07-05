@@ -77,6 +77,22 @@ const PAGE = `<!DOCTYPE html>
   .su-profile-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
   .su-profile-id { font-size: 22px; font-weight: 800; color: #111; letter-spacing: -0.01em; }
   .su-profile-meta { font-size: 13px; color: #6b7280; margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .su-profile-balance { text-align: right; }
+  .su-profile-balance .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; }
+  .su-profile-balance .amt { font-size: 26px; font-weight: 800; color: #0369a1; letter-spacing: -0.01em; }
+
+  .su-fin-panel { background: #fff; border-radius: 14px; padding: 18px 24px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .su-fin-section + .su-fin-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid #eef0f4; }
+  .su-fin-section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-bottom: 12px; }
+  .su-fin-section-title .su-fin-note { font-weight: 500; text-transform: none; letter-spacing: 0; color: #9ca3af; margin-left: 4px; }
+  .su-fin-stats { display: flex; flex-wrap: wrap; gap: 28px; }
+  .su-fin-stat { min-width: 130px; }
+  .su-fin-label { font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+  .su-fin-value { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+  .su-fin-value.c-green { color: #059669; }
+  .su-fin-value.c-red { color: #be123c; }
+  .su-fin-value.c-blue { color: #0369a1; }
+  @media (max-width: 640px) { .su-fin-stats { gap: 18px; } .su-profile-balance { text-align: left; } }
 
   .su-vip-badge { padding: 8px 18px; border-radius: 20px; font-weight: 800; font-size: 13px; white-space: nowrap; }
   .su-vip-standard { background: #e5e7eb; color: #374151; }
@@ -1767,21 +1783,33 @@ if (IS_SEARCH_USER) {
               <div class="su-profile-id">User #\${data.user_id}</div>
               <div class="su-profile-meta">Agent \${data.agent || 'Un-Assigned'} &middot; \${data.region || 'Unknown region'} &middot; Channel \${data.acquisition_channel || '&mdash;'} &middot; Registered \${data.registered ? shortDate(String(data.registered).slice(0,10)) : '&mdash;'} &middot; \${activityPill(daysAgoLabel(data.last_active_time))}</div>
             </div>
+            <div class="su-profile-balance">
+              <div class="lbl">Wallet Balance</div>
+              <div class="amt">\${fmtMoney(data.wallet_balance)}</div>
+            </div>
             \${vipBadge(data.vip_level)}
           </div>
         </div>
 
         <div class="analysis-heading withdrawal"><h2>Financial Overview</h2><div class="line"></div><span class="tag">LOOKUP</span></div>
-        <div class="kpi-grid">
-          <div class="kpi c-green"><div class="dash"></div><div class="value">\${fmtMoney(data.total_deposit)}</div><div class="label">Total Deposit</div><div class="desc">Lifetime</div></div>
-          <div class="kpi c-red"><div class="dash"></div><div class="value">\${fmtMoney(data.total_withdraw)}</div><div class="label">Total Withdraw</div><div class="desc">Lifetime</div></div>
-          <div class="kpi c-sky"><div class="dash"></div><div class="value">\${fmtMoney(data.wallet_balance)}</div><div class="label">Wallet Balance</div><div class="desc">Current</div></div>
-          <div class="kpi \${data.net_lifetime >= 0 ? 'c-purple' : 'c-red'}"><div class="dash"></div><div class="value">\${fmtMoney(data.net_lifetime)}</div><div class="label">Net Lifetime</div><div class="desc">Deposit &minus; Withdraw</div></div>
-        </div>
-        <div class="kpi-grid row2">
-          <div class="kpi c-emerald2"><div class="dash"></div><div class="value">\${fmtMoney(dep7)}</div><div class="label">7-Day Deposits</div><div class="desc">Completed only</div></div>
-          <div class="kpi c-orange"><div class="dash"></div><div class="value">\${fmtMoney(wd7)}</div><div class="label">7-Day Withdrawals</div><div class="desc">Completed only</div></div>
-          <div class="kpi \${(dep7 - wd7) >= 0 ? 'c-purple' : 'c-red'}"><div class="dash"></div><div class="value">\${fmtMoney(dep7 - wd7)}</div><div class="label">7-Day Net</div><div class="desc">Completed only</div></div>
+        <div class="su-fin-panel">
+          <div class="su-fin-section">
+            <div class="su-fin-section-title">Lifetime</div>
+            <div class="su-fin-stats">
+              <div class="su-fin-stat"><div class="su-fin-label">Total Deposit</div><div class="su-fin-value c-green">\${fmtMoney(data.total_deposit)}</div></div>
+              <div class="su-fin-stat"><div class="su-fin-label">Total Withdraw</div><div class="su-fin-value c-red">\${fmtMoney(data.total_withdraw)}</div></div>
+              <div class="su-fin-stat"><div class="su-fin-label">Wallet Balance</div><div class="su-fin-value c-blue">\${fmtMoney(data.wallet_balance)}</div></div>
+              <div class="su-fin-stat"><div class="su-fin-label">Net Lifetime (Deposit &minus; Withdraw)</div><div class="su-fin-value \${data.net_lifetime >= 0 ? 'c-blue' : 'c-red'}">\${fmtMoney(data.net_lifetime)}</div></div>
+            </div>
+          </div>
+          <div class="su-fin-section">
+            <div class="su-fin-section-title">Last 7 Days <span class="su-fin-note">(completed only)</span></div>
+            <div class="su-fin-stats">
+              <div class="su-fin-stat"><div class="su-fin-label">Deposits</div><div class="su-fin-value c-green">\${fmtMoney(dep7)}</div></div>
+              <div class="su-fin-stat"><div class="su-fin-label">Withdrawals</div><div class="su-fin-value c-red">\${fmtMoney(wd7)}</div></div>
+              <div class="su-fin-stat"><div class="su-fin-label">Net</div><div class="su-fin-value \${(dep7 - wd7) >= 0 ? 'c-blue' : 'c-red'}">\${fmtMoney(dep7 - wd7)}</div></div>
+            </div>
+          </div>
         </div>
 
         <div class="analysis-heading deposit"><h2>Last 7 Days Activity</h2><div class="line"></div><span class="tag">LOOKUP</span></div>
@@ -1808,16 +1836,28 @@ if (IS_SEARCH_USER) {
           </section>
         </div>
 
-        <div class="analysis-heading withdrawal"><h2>Recent Games Played</h2><div class="line"></div><span class="tag">LOOKUP</span></div>
-        <section class="acc-orange">
-          <div class="ac-note">Last 2 days &middot; excludes bonus payouts</div>
-          \${recordTable(data.recent_games, [
-            { label: 'Game', render: r => r.game_name },
-            { label: 'Type', render: r => gameTypeBadge(r.type) },
-            { label: 'Amount', render: r => fmtMoney(r.amount), num: true },
-            { label: 'Date', render: r => r.date },
-          ], 'No games played in the last 2 days.')}
-        </section>
+        <div class="analysis-heading withdrawal"><h2>Recent Games &amp; Bonuses</h2><div class="line"></div><span class="tag">LOOKUP</span></div>
+        <div class="row2col">
+          <section class="acc-orange">
+            <div class="sec-title"><div class="badge b-orange">&#127918;</div><h2>Recent Games Played (\${(data.recent_games || []).length})</h2></div>
+            <div class="ac-note">Last 2 days &middot; excludes bonus payouts</div>
+            \${recordTable(data.recent_games, [
+              { label: 'Game', render: r => r.game_name },
+              { label: 'Type', render: r => gameTypeBadge(r.type) },
+              { label: 'Amount', render: r => fmtMoney(r.amount), num: true },
+              { label: 'Date', render: r => r.date },
+            ], 'No games played in the last 2 days.')}
+          </section>
+          <section class="acc-purple">
+            <div class="sec-title"><div class="badge b-purple">&#127873;</div><h2>Bonuses Claimed (\${(data.recent_bonuses || []).length})</h2></div>
+            <div class="ac-note">Last 7 days</div>
+            \${recordTable(data.recent_bonuses, [
+              { label: 'Bonus', render: r => r.category },
+              { label: 'Amount', render: r => fmtMoney(r.amount), num: true },
+              { label: 'Date', render: r => r.date },
+            ], 'No bonuses claimed in the last 7 days.')}
+          </section>
+        </div>
       \`;
     } catch (e) {
       resultEl.innerHTML = '<div class="su-state su-state-error">Search failed: ' + e.message + '</div>';

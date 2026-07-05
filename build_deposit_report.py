@@ -1336,6 +1336,23 @@ def build_recent_activity_by_user(daily_conn, today):
             "type": "Win" if direction == 0 else "Bet", "date": create_time,
         })
 
+    bonus_start = (today - timedelta(days=6)).isoformat()
+    bonuses_by_user = defaultdict(list)
+    try:
+        bonus_rows = daily_conn.execute(
+            "SELECT user_id, matched_category, change_value, create_time FROM bonuses "
+            "WHERE create_time >= ?",
+            (bonus_start,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        bonus_rows = []
+    for user_id, matched_category, change_value, create_time in bonus_rows:
+        if user_id is None:
+            continue
+        bonuses_by_user[user_id].append({
+            "category": matched_category, "amount": change_value, "date": create_time,
+        })
+
     for d in deposits_by_user.values():
         d.sort(key=lambda r: r["date"], reverse=True)
     for d in withdrawals_by_user.values():
@@ -1343,8 +1360,10 @@ def build_recent_activity_by_user(daily_conn, today):
     for d in games_by_user.values():
         d.sort(key=lambda r: r["date"], reverse=True)
         del d[15:]  # keep only the most recent 15 per user
+    for d in bonuses_by_user.values():
+        d.sort(key=lambda r: r["date"], reverse=True)
 
-    return deposits_by_user, withdrawals_by_user, games_by_user
+    return deposits_by_user, withdrawals_by_user, games_by_user, bonuses_by_user
 
 
 def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_user):
@@ -1357,7 +1376,7 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
     (even ones with zero activity, so a lookup for any valid ID gives a
     sensible "no recent activity" result rather than a 404); recent
     deposits/withdrawals/games are only present for users who have any."""
-    deposits_by_user, withdrawals_by_user, games_by_user = recent_activity
+    deposits_by_user, withdrawals_by_user, games_by_user, bonuses_by_user = recent_activity
     shards = [dict() for _ in range(USER_SEARCH_SHARDS)]
     # Phone is deliberately not selected/exposed here -- not displayed
     # anywhere on the dashboard.
@@ -1381,6 +1400,7 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
             "recent_deposits": deposits_by_user.get(user_id, []),
             "recent_withdrawals": withdrawals_by_user.get(user_id, []),
             "recent_games": games_by_user.get(user_id, []),
+            "recent_bonuses": bonuses_by_user.get(user_id, []),
         }
         shards[user_id % USER_SEARCH_SHARDS][str(user_id)] = profile
 
