@@ -1451,29 +1451,27 @@ if (IS_PLATFORM_ANALYSIS) {
       </div>
 
       <div class="analysis-heading withdrawal"><h2>Acquisition &amp; Bonus Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
-      <div class="row2col">
-        <section class="acc-blue">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-blue">&#128202;</div><h2>Channel performance &mdash; 4-day combined</h2></div>
-            <button class="download-btn-sm" id="btn-dl-acq-channel">&#128190; Excel</button>
-          </div>
-          <div id="acq-channel-table"></div>
-          <div class="ac-pagination" id="acq-channel-pagination"></div>
-        </section>
-        <section class="acc-purple">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
-            <button class="download-btn-sm" id="btn-dl-bonus-claims">&#128190; Excel</button>
-          </div>
-          <div class="ac-note">All bonuses claimed on the selected date, and % who deposited afterward.</div>
-          <div class="date-switch" id="bonus-claims-date-switch"></div>
-          <div class="date-switch" id="bonus-claims-switch">
-            <button data-view="wallet" class="active">Wallet Bonuses</button>
-            <button data-view="dcb">Deposit Challenge Bonus</button>
-          </div>
-          <div id="bonus-claims-table"></div>
-        </section>
-      </div>
+      <section class="acc-blue">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-blue">&#128202;</div><h2>Channel performance &mdash; 4-day combined</h2></div>
+          <button class="download-btn-sm" id="btn-dl-acq-channel">&#128190; Excel</button>
+        </div>
+        <div id="acq-channel-table"></div>
+        <div class="ac-pagination" id="acq-channel-pagination"></div>
+      </section>
+      <section class="acc-purple">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
+          <button class="download-btn-sm" id="btn-dl-bonus-claims">&#128190; Excel</button>
+        </div>
+        <div class="ac-note">All bonuses claimed on the selected date, and % who deposited afterward.</div>
+        <div class="date-switch" id="bonus-claims-date-switch"></div>
+        <div class="date-switch" id="bonus-claims-switch">
+          <button data-view="wallet" class="active">Wallet Bonuses</button>
+          <button data-view="dcb">Deposit Challenge Bonus</button>
+        </div>
+        <div id="bonus-claims-table"></div>
+      </section>
     \`;
 
     // --- Profit Users of the Day ---
