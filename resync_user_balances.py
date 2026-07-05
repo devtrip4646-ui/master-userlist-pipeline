@@ -50,6 +50,15 @@ def main():
     dconn = sqlite3.connect(DAILY_DB)
     dcur = dconn.cursor()
 
+    print("=== DIAGNOSTIC: wallet_transactions rows per calendar day (retained window) ===")
+    per_day = dcur.execute(
+        "SELECT substr(create_time, 1, 10) AS d, COUNT(*), COUNT(DISTINCT user_id), "
+        "MIN(create_time), MAX(create_time) FROM wallet_transactions "
+        "WHERE create_time IS NOT NULL GROUP BY d ORDER BY d"
+    ).fetchall()
+    for d, n, users, mn, mx in per_day:
+        print(f"  {d}: {n:>8} rows, {users:>6} users, first={mn}, last={mx}")
+
     if args.diagnose_user is not None:
         uid = args.diagnose_user
         print(f"=== DIAGNOSTIC: user {uid} -- ALL retained wallet_transactions rows, ordered by id ===")
