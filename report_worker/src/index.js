@@ -16,6 +16,7 @@ const PAGE = `<!DOCTYPE html>
   .hero .wrap { padding: 0 24px; }
   .hero h1 { font-size: 24px; margin: 0 0 6px; font-weight: 700; letter-spacing: -0.01em; }
   .hero .updated { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.14); padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; }
+  .hero .agent-scope-badge { display: inline-flex; align-items: center; gap: 8px; background: #fbbf24; color: #1a1a1a; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; margin-left: 10px; }
   .hero .updated .dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,0.3); }
 
   .date-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
@@ -239,6 +240,7 @@ const PAGE = `<!DOCTYPE html>
   <div class="wrap">
     <h1>Project 04 &mdash; Performance &amp; Analysis</h1>
     <div class="updated" id="updated-badge"><span class="dot"></span> Loading&hellip;</div>
+    <div class="agent-scope-badge" id="agent-scope-badge" style="display:none"></div>
   </div>
 </div>
 <div class="layout">
@@ -341,11 +343,23 @@ function todayLocalISO() {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
 
-const IS_ACTION_CENTER = location.pathname.indexOf('/action-center') === 0;
-const IS_PERFORMANCE = location.pathname.indexOf('/performance') === 0;
-const IS_ANALYTICS = location.pathname.indexOf('/analytics') === 0;
-const IS_PLATFORM_ANALYSIS = location.pathname.indexOf('/platform-analysis') === 0;
-const IS_SEARCH_USER = location.pathname.indexOf('/search-user') === 0;
+// Per-agent dashboards live under /agent/<encoded-name>(/<page>)? -- the
+// name is URL-decoded directly from the path (no lookup table/file needed)
+// and must match an agent_assignments value exactly, since that's the key
+// build_deposit_report.py slugified when uploading reports/agent/*.json.
+const AGENT_URL_MATCH = location.pathname.match(/^\\/agent\\/([^/]+)(\\/(action-center|analytics|search-user))?\\/?$/);
+const AGENT_NAME = AGENT_URL_MATCH ? decodeURIComponent(AGENT_URL_MATCH[1]) : null;
+const IS_AGENT_SCOPED = !!AGENT_NAME;
+const AGENT_SUBPAGE = AGENT_URL_MATCH ? (AGENT_URL_MATCH[3] || '') : '';
+function agentUrl(page) {
+  return '/agent/' + encodeURIComponent(AGENT_NAME) + (page ? '/' + page : '');
+}
+
+const IS_ACTION_CENTER = IS_AGENT_SCOPED ? AGENT_SUBPAGE === 'action-center' : location.pathname.indexOf('/action-center') === 0;
+const IS_PERFORMANCE = !IS_AGENT_SCOPED && location.pathname.indexOf('/performance') === 0;
+const IS_ANALYTICS = IS_AGENT_SCOPED ? AGENT_SUBPAGE === 'analytics' : location.pathname.indexOf('/analytics') === 0;
+const IS_PLATFORM_ANALYSIS = !IS_AGENT_SCOPED && location.pathname.indexOf('/platform-analysis') === 0;
+const IS_SEARCH_USER = IS_AGENT_SCOPED ? AGENT_SUBPAGE === 'search-user' : location.pathname.indexOf('/search-user') === 0;
 document.getElementById(IS_SEARCH_USER ? 'nav-search-user' : (IS_PLATFORM_ANALYSIS ? 'nav-platform-analysis' : (IS_ANALYTICS ? 'nav-analytics' : (IS_PERFORMANCE ? 'nav-performance' : (IS_ACTION_CENTER ? 'nav-action-center' : 'nav-home'))))).classList.add('active');
 document.getElementById('home-wrap').style.display = (IS_ACTION_CENTER || IS_PERFORMANCE || IS_ANALYTICS || IS_PLATFORM_ANALYSIS || IS_SEARCH_USER) ? 'none' : '';
 document.getElementById('action-center-wrap').style.display = IS_ACTION_CENTER ? '' : 'none';
@@ -353,6 +367,109 @@ document.getElementById('performance-wrap').style.display = IS_PERFORMANCE ? '' 
 document.getElementById('analytics-wrap').style.display = IS_ANALYTICS ? '' : 'none';
 document.getElementById('platform-analysis-wrap').style.display = IS_PLATFORM_ANALYSIS ? '' : 'none';
 document.getElementById('search-user-wrap').style.display = IS_SEARCH_USER ? '' : 'none';
+
+if (IS_AGENT_SCOPED) {
+  document.getElementById('nav-home').href = agentUrl('');
+  document.getElementById('nav-action-center').href = agentUrl('action-center');
+  document.getElementById('nav-analytics').href = agentUrl('analytics');
+  document.getElementById('nav-search-user').href = agentUrl('search-user');
+  // Performance stays a global, unscoped link (full cross-agent leaderboard,
+  // by design) -- Platform Analysis is hidden entirely for agent dashboards.
+  document.getElementById('nav-platform-analysis').style.display = 'none';
+  const badge = document.getElementById('agent-scope-badge');
+  badge.textContent = 'Agent: ' + AGENT_NAME;
+  badge.style.display = '';
+}
+
+// Filters every per-row "agent"-tagged section of the (already-fetched,
+// global) report down to one agent's own users -- reused across Action
+// Center, Analytics, and Weekly Cashback Shield, all of which already ship
+// an "agent" field per row and need no separate per-agent backend file.
+// cohort_size/pct_converted/pct_reactivated/pct_upgraded are intentionally
+// left as the GLOBAL platform-wide rate: the true agent-specific cohort
+// (including non-converted members) isn't shipped to the browser at all,
+// so recomputing them here would either be wrong or require guessing.
+function scopeReportToAgent(data, agentName) {
+  if (!agentName) return data;
+  const filterRows = rows => (rows || []).filter(r => r.agent === agentName);
+  const scoped = { ...data };
+
+  if (scoped.action_center) {
+    const ac = scoped.action_center;
+    const acOut = {};
+    for (const key of ['near_upgrade_low', 'near_upgrade_high', 'inactive_high', 'inactive_low', 'active_low', 'active_high']) {
+      if (!ac[key]) continue;
+      const rows = filterRows(ac[key].rows);
+      acOut[key] = { ...ac[key], rows, total_matching: rows.length };
+    }
+    scoped.action_center = acOut;
+  }
+
+  if (scoped.action_center_extra) {
+    scoped.action_center_extra = {
+      ...scoped.action_center_extra,
+      yesterday_first_deposit_users: filterRows(scoped.action_center_extra.yesterday_first_deposit_users),
+      deposit_challenge_bonus: filterRows(scoped.action_center_extra.deposit_challenge_bonus),
+    };
+  }
+
+  if (scoped.weekly_cashback_shield) {
+    const rows = filterRows(scoped.weekly_cashback_shield.rows);
+    scoped.weekly_cashback_shield = {
+      ...scoped.weekly_cashback_shield,
+      rows,
+      eligible_count: rows.length,
+      total_bonus: Math.round(rows.reduce((s, r) => s + r.bonus_amount, 0) * 100) / 100,
+    };
+  }
+
+  for (const key of ['reactivation', 'vip_upgrade']) {
+    if (!scoped[key]) continue;
+    const out = { ...scoped[key] };
+    for (const tier of ['low', 'high']) {
+      if (!scoped[key][tier]) continue;
+      const rows = filterRows(scoped[key][tier].rows);
+      out[tier] = { ...scoped[key][tier], rows };
+      if (key === 'reactivation') out[tier].reactivated_count = rows.length;
+      if (key === 'vip_upgrade') out[tier].upgraded_count = rows.length;
+    }
+    scoped[key] = out;
+  }
+
+  if (scoped.retention) {
+    const out = { ...scoped.retention };
+    for (const sub of ['first_deposit', 'bonus_claimer']) {
+      if (!scoped.retention[sub]) continue;
+      const rows = filterRows(scoped.retention[sub].rows);
+      out[sub] = { ...scoped.retention[sub], rows, converted_count: rows.length };
+    }
+    scoped.retention = out;
+  }
+
+  if (scoped.premium_active) {
+    const out = { ...scoped.premium_active };
+    for (const tier of ['low', 'high']) {
+      if (!scoped.premium_active[tier]) continue;
+      const rows = filterRows(scoped.premium_active[tier].rows);
+      out[tier] = { ...scoped.premium_active[tier], rows, converted_count: rows.length };
+    }
+    scoped.premium_active = out;
+  }
+
+  if (scoped.withdrawal_orders_full) {
+    scoped.withdrawal_orders_full = filterRows(scoped.withdrawal_orders_full);
+  }
+
+  if (scoped.by_date) {
+    const byDateOut = {};
+    for (const [date, dayData] of Object.entries(scoped.by_date)) {
+      byDateOut[date] = { ...dayData, withdrawal_orders: filterRows(dayData.withdrawal_orders) };
+    }
+    scoped.by_date = byDateOut;
+  }
+
+  return scoped;
+}
 
 function paginatedTable(containerId, paginationId, rows, columns, pageSize) {
   let page = 0;
@@ -1266,7 +1383,10 @@ if (IS_PLATFORM_ANALYSIS) {
     const netRevDates = Object.keys(netRevRegionVip).sort();
     const netRevLatest = netRevDates.length ? netRevRegionVip[netRevDates[netRevDates.length - 1]] : null;
     const acqChannel = data.channel_performance;
-    const bonusClaims = data.bonus_claims;
+    const bonusClaimsByDate = data.bonus_claims_by_date || {};
+    const bonusDates = Object.keys(bonusClaimsByDate).sort();
+    let selectedBonusDate = data.report_today && bonusClaimsByDate[data.report_today] ? data.report_today : bonusDates[bonusDates.length - 1];
+    let bonusClaims = bonusClaimsByDate[selectedBonusDate] || data.bonus_claims;
 
     document.getElementById('platform-analysis-app').innerHTML = \`
       <div class="analysis-heading deposit"><h2>Game &amp; Revenue Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
@@ -1309,7 +1429,8 @@ if (IS_PLATFORM_ANALYSIS) {
             <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
             <button class="download-btn-sm" id="btn-dl-bonus-claims">&#128190; Excel</button>
           </div>
-          <div class="ac-note">All bonuses claimed today, and % who deposited afterward.</div>
+          <div class="ac-note">All bonuses claimed on the selected date, and % who deposited afterward.</div>
+          <div class="date-switch" id="bonus-claims-date-switch"></div>
           <div class="date-switch" id="bonus-claims-switch">
             <button data-view="wallet" class="active">Wallet Bonuses</button>
             <button data-view="dcb">Deposit Challenge Bonus</button>
@@ -1472,7 +1593,22 @@ if (IS_PLATFORM_ANALYSIS) {
       const tbody = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => '<td class="' + (c.num ? 'num' : '') + '">' + c.render(r) + '</td>').join('') + '</tr>').join('') + '</tbody>';
       container.innerHTML = '<div class="table-wrap"><table>' + thead + tbody + '</table></div>';
     }
-    if (bonusClaims) {
+    function renderBonusDateSwitch() {
+      const el = document.getElementById('bonus-claims-date-switch');
+      el.innerHTML = bonusDates.map(d =>
+        '<button data-date="' + d + '" class="' + (d === selectedBonusDate ? 'active' : '') + '">' + shortDate(d) + '</button>'
+      ).join('');
+      el.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectedBonusDate = btn.dataset.date;
+          bonusClaims = bonusClaimsByDate[selectedBonusDate] || { wallet_bonuses: [], deposit_challenge_bonuses: [] };
+          renderBonusDateSwitch();
+          renderBonusClaims();
+        });
+      });
+    }
+    if (bonusDates.length) {
+      renderBonusDateSwitch();
       document.querySelectorAll('#bonus-claims-switch button').forEach(btn => {
         btn.addEventListener('click', () => {
           bonusView = btn.dataset.view;
@@ -1482,7 +1618,7 @@ if (IS_PLATFORM_ANALYSIS) {
       });
       renderBonusClaims();
       document.getElementById('btn-dl-bonus-claims').addEventListener('click', () =>
-        downloadExcel(bonusRows(), bonusCols(), 'Bonus Claims', 'bonus-claims-' + bonusView + '.xlsx'));
+        downloadExcel(bonusRows(), bonusCols(), 'Bonus Claims', 'bonus-claims-' + bonusView + '-' + selectedBonusDate + '.xlsx'));
     } else {
       document.getElementById('bonus-claims-table').innerHTML = '<div class="no-data">No bonus claims recorded yet.</div>';
     }
@@ -1701,7 +1837,26 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     document.getElementById('app').textContent = 'Failed to load report data (' + res.status + ')';
     return;
   }
-  const data = await res.json();
+  const globalData = await res.json();
+  let data = globalData;
+  if (IS_AGENT_SCOPED) {
+    // The per-agent file only has all_time/by_date/withdrawal_analysis/
+    // region_vip_analytics (the aggregates that genuinely can't be scoped
+    // client-side) -- everything else (dates, amount_ranges, metadata, and
+    // withdrawal_orders_full, which already carries an "agent" field per
+    // row) comes from the global report, so the two are merged here.
+    const agentRes = await fetch('/data.json?agent=' + encodeURIComponent(AGENT_NAME));
+    if (!agentRes.ok) {
+      document.getElementById('app').textContent = 'Failed to load this agent\\'s report (' + agentRes.status + ')';
+      return;
+    }
+    const agentData = await agentRes.json();
+    data = {
+      ...globalData,
+      ...agentData,
+      withdrawal_orders_full: (globalData.withdrawal_orders_full || []).filter(o => o.agent === AGENT_NAME),
+    };
+  }
   const rangeOrder = data.amount_ranges.concat(['Other']);
 
   document.getElementById('updated-badge').innerHTML =
@@ -2199,18 +2354,35 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
 </body>
 </html>`;
 
+// Must match slugify() in build_deposit_report.py exactly -- this is how
+// the Worker maps a decoded agent name from the URL to the R2 object key
+// build_deposit_report.py uploaded it under.
+function slugifyAgentName(name) {
+  const s = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return s || "agent";
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/action-center" || url.pathname === "/performance" || url.pathname === "/analytics" || url.pathname === "/platform-analysis" || url.pathname === "/search-user")) {
+    // Per-agent dashboards: /agent/<name>(/action-center|analytics|search-user)?
+    // -- the name is URL-encoded so decodeURIComponent recovers the exact
+    // agent_assignments value client-side, with no lookup table needed.
+    // Performance and Platform Analysis are never agent-scoped (no
+    // /agent/<name>/performance or /agent/<name>/platform-analysis route).
+    const agentPageMatch = url.pathname.match(/^\/agent\/([^/]+)(\/(action-center|analytics|search-user))?\/?$/);
+
+    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/action-center" || url.pathname === "/performance" || url.pathname === "/analytics" || url.pathname === "/platform-analysis" || url.pathname === "/search-user" || agentPageMatch)) {
       return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
 
     if (request.method === "GET" && url.pathname === "/data.json") {
-      const obj = await env.USERLIST_BUCKET.get("reports/deposit_report.json");
+      const agentParam = url.searchParams.get("agent");
+      const key = agentParam ? `reports/agent/${slugifyAgentName(agentParam)}.json` : "reports/deposit_report.json";
+      const obj = await env.USERLIST_BUCKET.get(key);
       if (!obj) {
-        return new Response(JSON.stringify({ error: "Report not generated yet" }), {
+        return new Response(JSON.stringify({ error: agentParam ? "Agent report not generated yet" : "Report not generated yet" }), {
           status: 404,
           headers: { "content-type": "application/json" },
         });

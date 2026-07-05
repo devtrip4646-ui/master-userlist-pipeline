@@ -1383,18 +1383,22 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
     print(f"Uploaded {USER_SEARCH_SHARDS} user search shards covering {len(rows)} users")
 
 
-def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows, today):
-    """All bonuses claimed TODAY -- both wallet-sourced bonuses (Welcome
-    Back, Loyalty, VIP tiers, Daily Active, etc., from daily_records.db's
-    `bonuses` table) and the 3-Day Deposit Challenge Bonus (Rules 1-4).
-    For each: claimed users, total bonus value, how many of those claimers
-    ALSO made a COMPLETE deposit at any point today (a same-day "did the
-    bonus convert into a deposit" signal) plus the actual amount they
-    deposited (not just the headcount -- two converters aren't equally
-    valuable if one deposited Rs200 and the other Rs20,000), and the
-    resulting %.
+def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_rows, target_date):
+    """All bonuses claimed on target_date -- both wallet-sourced bonuses
+    (Welcome Back, Loyalty, VIP tiers, Daily Active, etc., from
+    daily_records.db's `bonuses` table) and the 3-Day Deposit Challenge
+    Bonus (Rules 1-4). For each: claimed users, total bonus value, how many
+    of those claimers ALSO made a COMPLETE deposit at any point that same
+    day (a same-day "did the bonus convert into a deposit" signal) plus the
+    actual amount they deposited (not just the headcount -- two converters
+    aren't equally valuable if one deposited Rs200 and the other
+    Rs20,000), and the resulting %.
 
-    Scoped to today only. The permanent bonus_performance rollup (see
+    Called once per retained date (see main()'s bonus_claims_by_date loop)
+    so the dashboard's date filter can browse any day in the retention
+    window, not just today -- bonus_rows_all is fetched ONCE by the caller
+    and reused across every call, rather than re-querying daily_records.db
+    per date. The permanent bonus_performance rollup (see
     compute_and_save_bonus_performance in api_pull_ingest.py) still tracks
     lifetime history for each category regardless of what this specific
     view surfaces.
@@ -1409,7 +1413,7 @@ def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows
     suffix). Any bonus matching one of these rules is picked up
     automatically the first day it appears -- no maintained name list, no
     code change needed."""
-    today_str = today.isoformat()
+    today_str = target_date.isoformat()
 
     today_deposit_amount = defaultdict(float)
     for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
@@ -1419,17 +1423,9 @@ def bonus_claim_report(daily_db_path, deposit_rows, deposit_challenge_bonus_rows
             today_deposit_amount[user_id] += order_amount or 0.0
     today_depositors = set(today_deposit_amount.keys())
 
-    daily_conn = sqlite3.connect(daily_db_path)
-    try:
-        bonus_rows_today = daily_conn.execute(
-            "SELECT matched_category, user_id, change_value, create_time FROM bonuses"
-        ).fetchall()
-    except sqlite3.OperationalError:
-        bonus_rows_today = []  # bonuses table doesn't exist yet
-    daily_conn.close()
 
     by_category = defaultdict(lambda: {"users": set(), "value": 0.0})
-    for matched_category, user_id, change_value, create_time in bonus_rows_today:
+    for matched_category, user_id, change_value, create_time in bonus_rows_all:
         if not matched_category or not create_time or not str(create_time).startswith(today_str):
             continue
         b = by_category[matched_category]
@@ -1929,7 +1925,29 @@ def main():
         premium_active = premium_active_conversion(mconn3, deposit_rows, now, agent_by_user)
         mconn3.close()
 
-    bonus_claims = bonus_claim_report(DB_PATH, deposit_rows, deposit_challenge_bonus_rows, now.date())
+    # Bonus Claim Report date filter: bonus_rows_all is fetched ONCE and
+    # reused across every retained date (cheap -- `bonuses` is a small
+    # table, a subset of wallet_transactions), and deposit_challenge_bonus()
+    # is recomputed per date since it's a same-day payout calculation, not
+    # a stored table. Both feed bonus_claim_report() once per date in
+    # all_dates, same "compute per date, ship the whole rolling window"
+    # pattern already used for agent_performance/premium_active.
+    bonus_daily_conn = sqlite3.connect(DB_PATH)
+    try:
+        bonus_rows_all = bonus_daily_conn.execute(
+            "SELECT matched_category, user_id, change_value, create_time FROM bonuses"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        bonus_rows_all = []  # bonuses table doesn't exist yet
+    bonus_daily_conn.close()
+
+    deposit_day_stats = build_deposit_day_stats(deposit_rows)
+    bonus_claims_by_date = {}
+    for date_str in all_dates:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        dcb_rows_for_date = deposit_challenge_bonus_rows if d == now.date() else deposit_challenge_bonus(deposit_rows, deposit_day_stats, d, agent_by_user)
+        bonus_claims_by_date[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, d)
+    bonus_claims = bonus_claims_by_date.get(now.date().isoformat(), {"wallet_bonuses": [], "deposit_challenge_bonuses": []})
 
     # Persist today's per-agent performance, then read back the full rolling
     # window for the Performance page -- small enough (agents x 7 categories
@@ -2007,6 +2025,7 @@ def main():
         "profit_users": profit_users,
         "channel_performance": channel_performance,
         "bonus_claims": bonus_claims,
+        "bonus_claims_by_date": bonus_claims_by_date,
         # Distinct real agent names (never includes AGENT_UNASSIGNED) -- powers
         # the Reassign Agent dropdown on the Search User page and the
         # Performance leaderboard.
