@@ -2018,6 +2018,26 @@ def main():
             "SELECT date, agent_name, category, numerator, denominator FROM agent_performance ORDER BY date"
         ).fetchall()
         mconn4.close()
+        # CRITICAL: this function never uploads master_userlist.db anywhere
+        # else (every other write to it happens in api_pull_ingest.py /
+        # ingest_update.py, which upload it themselves right after) -- so
+        # without this upload, every agent_performance write above only ever
+        # lands on this job's throwaway local copy. R2 itself never gains the
+        # table, meaning the NEXT run downloads a copy with no history at
+        # all, re-derives only TODAY's row from scratch, and "Yesterday"
+        # forever falls back to today. Confirmed via check_agent_performance.py:
+        # the live master_userlist.db had no agent_performance table at all,
+        # despite the JSON report showing a populated array every run.
+        upload_creds = load_creds()
+        upload_s3 = boto3.client(
+            "s3",
+            endpoint_url=upload_creds["R2_ENDPOINT_URL"],
+            aws_access_key_id=upload_creds["R2_ACCESS_KEY_ID"],
+            aws_secret_access_key=upload_creds["R2_SECRET_ACCESS_KEY"],
+            region_name="auto",
+        )
+        upload_s3.upload_file(master_db_path, upload_creds["R2_BUCKET"], "master_userlist.db")
+        print("Uploaded master_userlist.db (agent_performance rows persisted)")
     agent_performance = [
         {"date": d, "agent": a, "category": c, "numerator": n, "denominator": den}
         for d, a, c, n, den in agent_performance_rows
