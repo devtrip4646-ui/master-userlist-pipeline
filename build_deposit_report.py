@@ -10,6 +10,7 @@ caller) and R2 credentials in env vars or .r2_credentials.
 """
 import json
 import os
+import re
 import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
