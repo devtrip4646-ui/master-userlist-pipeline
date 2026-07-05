@@ -1501,12 +1501,13 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
 # Ordered highest-threshold-first so the first match in weekly_cashback_shield
 # below picks the correct (highest-earned) tier for a given loss_pct.
 WEEKLY_CASHBACK_TIERS = [
-    (100.0, 0.08),
-    (75.0, 0.04),
+    (100.0, 0.07),
+    (75.0, 0.03),
     (50.0, 0.02),
 ]
 WEEKLY_CASHBACK_MIN_LOSS = 5000.0
 WEEKLY_CASHBACK_MAX_LOSS = 500000.0
+WEEKLY_CASHBACK_MIN_VIP = 2
 
 # A separate, smaller-loss tier: Rs 500 up to (not including) the Rs 5,000
 # floor above gets a flat 1% cashback -- but only if that loss is ALSO at
@@ -1540,7 +1541,8 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
     the displayed Sun-Sat week (see weekly_cashback_week_range), verified
     loss = total_deposit - total_withdraw - CURRENT wallet balance -- money
     that came in this week and isn't sitting in their wallet or already
-    paid back out, i.e. spent on betting activity. Two eligibility paths:
+    paid back out, i.e. spent on betting activity. Only VIP level 2 and
+    above are eligible (WEEKLY_CASHBACK_MIN_VIP). Two eligibility paths:
       - loss Rs 500-4,999.99: flat 1% cashback, but only if that's ALSO at
         least 80% of what they deposited that week.
       - loss Rs 5,000-500,000: needs to ALSO be at least 50% of what they
@@ -1579,6 +1581,9 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
 
     rows = []
     for user_id, total_deposit in deposit_by_user.items():
+        vip = vip_by_user.get(user_id)
+        if vip is None or vip < WEEKLY_CASHBACK_MIN_VIP:
+            continue
         total_withdraw = withdraw_by_user.get(user_id, 0.0)
         balance = balance_by_user.get(user_id, 0.0)
         verified_loss = total_deposit - total_withdraw - balance
