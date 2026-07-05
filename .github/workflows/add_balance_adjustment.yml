@@ -1,25 +1,25 @@
-name: Manual wallet deduct (one-off, recorded as a ledger transaction)
+name: Add balance adjustment (permanent, one-off correction)
 
 on:
   workflow_dispatch:
     inputs:
       user_id:
-        description: "User ID to deduct from"
+        description: "User ID to adjust"
         required: true
       amount:
-        description: "Positive amount to deduct"
+        description: "Signed amount; negative to deduct, positive to add"
         required: true
       reason:
-        description: "Reason (stored in source_id column)"
+        description: "Reason (stored in balance_adjustments.last_reason)"
         required: false
-        default: "Manual deduct"
+        default: "Manual adjustment"
 
 concurrency:
   group: db-ingest
   cancel-in-progress: false
 
 jobs:
-  deduct:
+  adjust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Record manual deduction
+      - name: Add balance adjustment
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -38,7 +38,7 @@ jobs:
           R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          python3 manual_wallet_deduct.py --user-id "${{ inputs.user_id }}" --amount "${{ inputs.amount }}" \
+          python3 add_balance_adjustment.py --user-id "${{ inputs.user_id }}" --amount "${{ inputs.amount }}" \
             --reason "${{ inputs.reason }}"
 
       - name: Refresh deposit report

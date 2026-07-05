@@ -405,7 +405,14 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
          original bootstrap import, so it was silently going stale for
          every user the longer this ran without a fresh full userlist
          re-upload. Now it heals itself the next time each user has any
-         wallet activity, no re-upload needed.
+         wallet activity, no re-upload needed. Any row in
+         balance_adjustments (see add_balance_adjustment.py) is added on
+         top of that ledger-derived value every time -- a manual
+         correction can't be recorded as a wallet_transactions row and
+         expect it to stick, since change_after is an absolute balance set
+         by the source platform on every real row, not a delta we control,
+         so the next real transaction would just overwrite it regardless
+         of where in time it's placed.
       2. Adds newly-seen COMPLETE deposits to each user's total_recharge, and
          newly-seen Complete (status 2) withdrawals to their total_withdrawal
          -- both lifetime, permanent totals on master_userlist.db, never
@@ -483,6 +490,22 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
     )
     cur.execute("CREATE TABLE IF NOT EXISTS daily_snapshot_meta (last_snapshot_date TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS funnel_stats (stat_date TEXT, data TEXT)")
+    # Manual balance corrections (see manual_wallet_deduct.py) can't be
+    # recorded as a wallet_transactions row and expect it to survive -- every
+    # row's change_after is an ABSOLUTE balance reported by the source
+    # platform itself, not a delta we control, so the very next real
+    # transaction's change_after (computed upstream, oblivious to our
+    # correction) simply overwrites it regardless of where in time the
+    # synthetic row is placed. This table holds a permanent running total per
+    # user that's added on TOP of the ledger-derived balance below instead --
+    # survives every future sync, no matter how much new wallet activity
+    # comes in.
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS balance_adjustments ("
+        "user_id INTEGER PRIMARY KEY, total_adjustment REAL NOT NULL, "
+        "last_reason TEXT, updated_at TEXT)"
+    )
+    adjustments = dict(cur.execute("SELECT user_id, total_adjustment FROM balance_adjustments").fetchall())
     today_str = today.isoformat()
     meta_row = cur.execute("SELECT last_snapshot_date FROM daily_snapshot_meta").fetchone()
     snapshot_created = not meta_row or meta_row[0] != today_str
@@ -639,6 +662,8 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
 
         prior = existing.get(user_id)
         fresh_balance = wallet_balance_by_user.get(user_id)
+        if fresh_balance is not None and user_id in adjustments:
+            fresh_balance = round(fresh_balance + adjustments[user_id], 2)
         if prior is None:
             deposit_amount = round(d["amount"], 2) if d else 0.0
             withdrawal_amount = round(wd["amount"], 2) if wd else 0.0
