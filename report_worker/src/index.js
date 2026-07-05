@@ -509,20 +509,46 @@ function scopeReportToAgent(data, agentName) {
   return scoped;
 }
 
+// columns: {label, render, raw, num} -- raw (already used for Excel exports)
+// doubles as the sort key when present, since it's the plain underlying
+// value rather than rendered HTML (badges/pills). Falls back to the
+// rendered string for columns with no raw().
 function paginatedTable(containerId, paginationId, rows, columns, pageSize) {
   let page = 0;
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  let sortCol = null, sortDir = 1;
+  function sortedRows() {
+    if (sortCol === null) return rows;
+    const col = columns[sortCol];
+    const keyOf = r => col.raw ? col.raw(r) : col.render(r);
+    return rows.slice().sort((a, b) => {
+      const av = keyOf(a), bv = keyOf(b);
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sortDir;
+      return String(av).localeCompare(String(bv)) * sortDir;
+    });
+  }
   function render() {
+    const data = sortedRows();
+    const totalPages = Math.max(1, Math.ceil(data.length / pageSize));
+    if (page >= totalPages) page = totalPages - 1;
     const container = document.getElementById(containerId);
-    const pageRows = rows.slice(page * pageSize, page * pageSize + pageSize);
+    const pageRows = data.slice(page * pageSize, page * pageSize + pageSize);
     if (!pageRows.length) {
       container.innerHTML = '<div class="no-data">No matching users.</div>';
     } else {
-      const thead = '<thead><tr>' + columns.map(c => '<th' + (c.num ? ' class="num"' : '') + '>' + c.label + '</th>').join('') + '</tr></thead>';
+      const thead = '<thead><tr>' + columns.map((c, i) => '<th class="th-sortable' + (c.num ? ' num' : '') + '" data-i="' + i + '">' +
+        c.label + (sortCol === i ? (sortDir === 1 ? ' &#9650;' : ' &#9660;') : '') + '</th>').join('') + '</tr></thead>';
       const tbody = '<tbody>' + pageRows.map(r => '<tr>' + columns.map(c =>
         '<td class="' + (c.num ? 'num' : '') + '">' + c.render(r) + '</td>'
       ).join('') + '</tr>').join('') + '</tbody>';
       container.innerHTML = '<div class="table-wrap"><table>' + thead + tbody + '</table></div>';
+      container.querySelectorAll('th').forEach(th => {
+        th.addEventListener('click', () => {
+          const i = Number(th.dataset.i);
+          if (sortCol === i) sortDir *= -1; else { sortCol = i; sortDir = 1; }
+          page = 0;
+          render();
+        });
+      });
     }
     const pag = document.getElementById(paginationId);
     pag.innerHTML = 'Page ' + (page + 1) + ' of ' + totalPages +
