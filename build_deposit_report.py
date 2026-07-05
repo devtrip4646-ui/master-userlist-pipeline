@@ -382,6 +382,10 @@ VIP_THRESHOLDS = {
     13: 44795600, 14: 69795600, 15: 119795600,
 }
 ACTION_CENTER_LIST_CAP = 500
+# See profit_users_of_the_day: a ranked leaderboard over the whole user
+# base, not a bounded cohort, so it needs a (much larger) cap of its own
+# rather than shipping in full like the other Action Center/Analytics lists.
+PROFIT_USERS_CAP = 5000
 
 AGENT_UNASSIGNED = "Un-Assigned"
 
@@ -487,36 +491,39 @@ def action_center_reports(mconn, now, agent_by_user):
     active_high.sort(key=lambda r: r["inactive_days"])
     active_low.sort(key=lambda r: r["inactive_days"])
 
+    # Every list below ships in FULL (no cap) -- these are audit/payout-style
+    # reports where the on-screen table paginates client-side and the Excel
+    # export must contain every matching user, not just a "top N" sample.
     return {
         "near_upgrade_low": {
             "note": "VIP 2 to VIP 4, gap to next level Rs 1-1000",
             "total_matching": len(near_low),
-            "rows": near_low[:ACTION_CENTER_LIST_CAP],
+            "rows": near_low,
         },
         "near_upgrade_high": {
             "note": "VIP 5 to VIP 15, gap to next level Rs 1-50000",
             "total_matching": len(near_high),
-            "rows": near_high[:ACTION_CENTER_LIST_CAP],
+            "rows": near_high,
         },
         "inactive_high": {
             "note": "VIP 5 to VIP 15, inactive 15-240 days",
             "total_matching": len(inactive_high),
-            "rows": inactive_high[:ACTION_CENTER_LIST_CAP],
+            "rows": inactive_high,
         },
         "inactive_low": {
             "note": "VIP 2 to VIP 4, inactive 10-180 days",
             "total_matching": len(inactive_low),
-            "rows": inactive_low[:ACTION_CENTER_LIST_CAP],
+            "rows": inactive_low,
         },
         "active_low": {
             "note": "VIP 2 to VIP 4, active within last 10 days",
             "total_matching": len(active_low),
-            "rows": active_low[:ACTION_CENTER_LIST_CAP],
+            "rows": active_low,
         },
         "active_high": {
             "note": "VIP 5 to VIP 15, active within last 15 days",
             "total_matching": len(active_high),
-            "rows": active_high[:ACTION_CENTER_LIST_CAP],
+            "rows": active_high,
         },
     }
 
@@ -587,14 +594,14 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             # criterion (target: 7/day), which needs the true count even
             # when the on-screen `rows` list is capped for display size.
             "agent_breakdown": tally_rows_by_agent(low_rows),
-            "rows": low_rows[:ACTION_CENTER_LIST_CAP],
+            "rows": low_rows,
         },
         "high": {
             "note": "VIP 5 to VIP 15, reactivated today (was inactive 15-240 days)",
             "reactivated_count": len(high_rows),
             "pct_reactivated": round(len(high_rows) / baseline_high * 100, 2) if baseline_high else 0.0,
             "agent_breakdown": tally_rows_by_agent(high_rows),
-            "rows": high_rows[:ACTION_CENTER_LIST_CAP],
+            "rows": high_rows,
         },
     }
 
@@ -634,14 +641,14 @@ def vip_upgrade_analytics(vip_upgrade_candidates, action_center, agent_by_user):
             "upgraded_count": len(low_rows),
             "pct_upgraded": round(len(low_rows) / baseline_low * 100, 2) if baseline_low else 0.0,
             "agent_breakdown": tally_rows_by_agent(low_rows),
-            "rows": low_rows[:ACTION_CENTER_LIST_CAP],
+            "rows": low_rows,
         },
         "high": {
             "note": "VIP 5 to VIP 15, upgraded today from the near-upgrade cohort",
             "upgraded_count": len(high_rows),
             "pct_upgraded": round(len(high_rows) / baseline_high * 100, 2) if baseline_high else 0.0,
             "agent_breakdown": tally_rows_by_agent(high_rows),
-            "rows": high_rows[:ACTION_CENTER_LIST_CAP],
+            "rows": high_rows,
         },
     }
 
@@ -821,7 +828,7 @@ def _retention_report(cohort, today_activity, city_by_user, note, agent_by_user)
         # from First-Deposit retention specifically (see first_deposit_retention).
         "cohort_by_agent": tally_by_agent(cohort, agent_by_user),
         "converted_by_agent": tally_rows_by_agent(rows),
-        "rows": rows[:ACTION_CENTER_LIST_CAP],
+        "rows": rows,
     }
 
 
@@ -872,9 +879,9 @@ def premium_active_conversion(mconn, deposit_rows, now, agent_by_user):
 
     Recomputes the full active_low/active_high user_id membership directly
     (duplicating action_center_reports' classification, not reusing its
-    output) because that report caps its `rows` at ACTION_CENTER_LIST_CAP
-    for display size -- an accurate conversion % here needs the TRUE
-    cohort size, not a capped subset."""
+    output) rather than adding a dependency between the two reports --
+    keeps this self-contained even though action_center_reports' own rows
+    are no longer capped either."""
     rows = mconn.execute("SELECT user_id, vip_level, last_active_time FROM users").fetchall()
     active_low_ids, active_high_ids = set(), set()
     vip_by_user = {}
@@ -921,7 +928,7 @@ def premium_active_conversion(mconn, deposit_rows, now, agent_by_user):
             # 35%/30% of the agent's own active-user cohort).
             "cohort_by_agent": tally_by_agent(cohort, agent_by_user),
             "converted_by_agent": tally_rows_by_agent(rows_out),
-            "rows": rows_out[:ACTION_CENTER_LIST_CAP],
+            "rows": rows_out,
         }
 
     return {"low": build(active_low_ids, "Low"), "high": build(active_high_ids, "High")}
@@ -1169,11 +1176,18 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_
         gap = (today - dt.date()).days
         return "Today" if gap <= 0 else f"{gap}d ago"
 
+    # Unlike the Action Center/Analytics audit lists (bounded cohorts, now
+    # shipped in full -- see ACTION_CENTER_LIST_CAP usage elsewhere), this is
+    # a ranked "top by balance" leaderboard over the ENTIRE 334K+ user base,
+    # not a fixed-size cohort -- uncapping it entirely could mean tens of
+    # thousands of near-zero-balance rows nobody asked for. Kept at a much
+    # larger but still bounded cap so both the on-screen view and the Excel
+    # export cover every user who plausibly matters here.
     rows = mconn.execute(
         "SELECT user_id, vip_level, user_balance, deposit_sync_time, withdrawal_sync_time FROM users "
         "WHERE user_balance IS NOT NULL AND user_balance > 0 "
         "ORDER BY user_balance DESC LIMIT ?",
-        (ACTION_CENTER_LIST_CAP,),
+        (PROFIT_USERS_CAP,),
     ).fetchall()
 
     result = []
