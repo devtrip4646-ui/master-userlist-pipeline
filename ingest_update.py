@@ -32,10 +32,29 @@ def clean(row):
 
 
 def load_sheet(path):
+    """Reads EVERY sheet in the workbook whose header row matches the
+    first sheet's header exactly, concatenating their rows -- confirmed
+    that at least the wallet detail export can split transaction rows
+    across multiple sheets/pages instead of one, and reading only
+    wb.active (the previous behavior) silently dropped every sheet after
+    the first. A sheet whose header doesn't match (e.g. a summary/pivot
+    tab) is skipped with a warning rather than blindly appended, since its
+    columns wouldn't line up with the data rows anyway."""
     wb = openpyxl.load_workbook(path, read_only=True)
-    ws = wb.active
-    rows = list(ws.iter_rows(min_row=2, values_only=True))
-    header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+    sheet_names = wb.sheetnames
+    first_ws = wb[sheet_names[0]]
+    header = next(first_ws.iter_rows(min_row=1, max_row=1, values_only=True))
+    rows = list(first_ws.iter_rows(min_row=2, values_only=True))
+    for name in sheet_names[1:]:
+        ws = wb[name]
+        sheet_header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+        if sheet_header != header:
+            print(f"  WARNING: {path}: sheet '{name}' has a different header, skipping (not transaction rows?)")
+            continue
+        extra_rows = list(ws.iter_rows(min_row=2, values_only=True))
+        if extra_rows:
+            print(f"  {path}: sheet '{name}' contributed {len(extra_rows)} additional rows")
+        rows.extend(extra_rows)
     wb.close()
     return header, rows
 

@@ -385,7 +385,7 @@ def compute_and_save_bonus_performance(cur, bonus_rows, today):
     return n
 
 
-def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_activity, bonus_rows, deposit_info, today):
+def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_activity, wallet_balance_by_user, bonus_rows, deposit_info, today):
     """VIP level and total_recharge are purely a function of cumulative
     deposits (the platform's own VIP table -- level N requires
     total_recharge >= VIP_THRESHOLDS[N]), never withdrawal or wallet
@@ -397,6 +397,15 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
       1. Recomputes vip_level for every existing user from their stored
          total_recharge, correcting any previously-wrong value -- but only
          WRITES when it actually changed.
+      1b. Sets user_balance to wallet_balance_by_user[user_id] -- the wallet
+         ledger's own change_after value on the user's most recent wallet
+         transaction, i.e. their true current balance -- for every user
+         touched by wallet activity this run. Self-correcting: nothing
+         else in this pipeline ever updates user_balance after the
+         original bootstrap import, so it was silently going stale for
+         every user the longer this ran without a fresh full userlist
+         re-upload. Now it heals itself the next time each user has any
+         wallet activity, no re-upload needed.
       2. Adds newly-seen COMPLETE deposits to each user's total_recharge, and
          newly-seen Complete (status 2) withdrawals to their total_withdrawal
          -- both lifetime, permanent totals on master_userlist.db, never
@@ -629,6 +638,7 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
         latest_activity = max(candidate_times)
 
         prior = existing.get(user_id)
+        fresh_balance = wallet_balance_by_user.get(user_id)
         if prior is None:
             deposit_amount = round(d["amount"], 2) if d else 0.0
             withdrawal_amount = round(wd["amount"], 2) if wd else 0.0
@@ -638,11 +648,11 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
             withdrawal_sync_time = str(wd["max_create_time"]) if wd and wd["max_create_time"] else None
             cur.execute(
                 "INSERT INTO users (user_id, phone, city, channel, total_recharge, vip_level, "
-                "last_active_time, deposit_sync_time, create_time, total_withdrawal, withdrawal_sync_time) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "last_active_time, deposit_sync_time, create_time, total_withdrawal, withdrawal_sync_time, user_balance) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (user_id, dep.get("phone"), dep.get("city"), dep.get("channel"), deposit_amount, vip,
                  latest_activity, deposit_sync_time, str(dep.get("register_time") or latest_activity),
-                 withdrawal_amount, withdrawal_sync_time),
+                 withdrawal_amount, withdrawal_sync_time, fresh_balance),
             )
             new_users += 1
         else:
@@ -659,6 +669,9 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
                 sets += ["total_withdrawal = ?", "withdrawal_sync_time = ?"]
                 params += [new_total_withdrawal, str(wd["max_create_time"])]
                 prior["total_withdrawal"] = new_total_withdrawal
+            if fresh_balance is not None:
+                sets.append("user_balance = ?")
+                params.append(fresh_balance)
             current_last_active = prior["last_active_time"]
             if not current_last_active or latest_activity > str(current_last_active):
                 sets.append("last_active_time = ?")
@@ -702,6 +715,7 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
     conn.close()
     print(f"Master userlist VIP recompute: {fixed} users' vip_level actually changed")
     print(f"Master userlist sync: {new_users} new users inserted, {updated} users updated from deposit/withdrawal/wallet activity")
+    print(f"user_balance refreshed from wallet ledger for {len(wallet_balance_by_user)} users with wallet activity in the retained window")
     print(f"Reactivation candidates today: {len(reactivation_candidates)}")
     print(f"VIP upgrade candidates today: {len(vip_upgrade_low)} low, {len(vip_upgrade_high)} high")
     changed = fixed > 0 or new_users > 0 or updated > 0 or snapshot_created
@@ -811,9 +825,27 @@ def main():
     # local daily_records.db copy is opened AFTER ingest_update.py already
     # re-uploaded it to R2, so a new index built here would just be rebuilt
     # from scratch on every future run instead of paying for itself once.
-    wallet_activity = dict(daily_conn.execute(
-        "SELECT user_id, MAX(create_time) FROM wallet_transactions WHERE user_id IS NOT NULL GROUP BY user_id"
-    ).fetchall())
+    # change_after is the wallet ledger's own running balance AFTER that
+    # specific transaction -- the authoritative "current balance" source,
+    # unlike users.user_balance (only ever set once, at the original
+    # bootstrap import, and never touched again by anything else in this
+    # pipeline). Selecting change_after alongside a bare MAX(create_time)
+    # relies on SQLite's documented "bare column" behavior for a query with
+    # exactly one min()/max() aggregate: every other selected column comes
+    # from the SAME row as that max, not an arbitrary row in the group --
+    # https://www.sqlite.org/lang_select.html#bareagg. So this one query
+    # gives both "last active via wallet" AND "balance as of that moment"
+    # per user, in a single pass, no self-join needed.
+    wallet_rows_for_sync = daily_conn.execute(
+        "SELECT user_id, change_after, MAX(create_time) FROM wallet_transactions "
+        "WHERE user_id IS NOT NULL GROUP BY user_id"
+    ).fetchall()
+    wallet_activity = {}
+    wallet_balance_by_user = {}
+    for user_id, change_after, max_create_time in wallet_rows_for_sync:
+        wallet_activity[user_id] = max_create_time
+        if change_after is not None:
+            wallet_balance_by_user[user_id] = change_after
     try:
         bonus_rows_for_sync = daily_conn.execute(
             "SELECT matched_category, user_id, change_value, create_time FROM bonuses"
@@ -823,7 +855,8 @@ def main():
     daily_conn.close()
     dep_info = extract_deposit_user_info(deposit_path)
     ok, reactivation_candidates, vip_upgrade_candidates = sync_master_userlist(
-        master_db_path, deposit_rows_for_sync, withdrawal_rows_for_sync, wallet_activity, bonus_rows_for_sync, dep_info, today
+        master_db_path, deposit_rows_for_sync, withdrawal_rows_for_sync, wallet_activity,
+        wallet_balance_by_user, bonus_rows_for_sync, dep_info, today
     )
     if ok:
         subprocess.run(
