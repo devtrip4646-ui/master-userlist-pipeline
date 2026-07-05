@@ -1784,11 +1784,27 @@ if (IS_SEARCH_USER) {
       msg.className = 'su-reassign-msg err';
       return;
     }
-    if (!confirm('Ban User #' + userId + ' and PERMANENTLY DELETE all their records? This cannot be undone.')) {
+    btn.disabled = true;
+    msg.textContent = 'Checking...';
+    msg.className = 'su-reassign-msg';
+    // A user_id that's already banned (or never existed) was already purged
+    // from the search index, so it 404s here -- same check the Search box
+    // uses. Ban Delete should refuse rather than dispatch a no-op.
+    const checkRes = await fetch('/api/user-search?user_id=' + encodeURIComponent(userId));
+    if (!checkRes.ok) {
+      msg.textContent = 'Not valid user';
+      msg.className = 'su-reassign-msg err';
+      btn.disabled = false;
       return;
     }
-    if (!checkActionPassword(msg, 'ban this user')) return;
-    btn.disabled = true;
+    if (!confirm('Ban User #' + userId + ' and PERMANENTLY DELETE all their records? This cannot be undone.')) {
+      btn.disabled = false;
+      return;
+    }
+    if (!checkActionPassword(msg, 'ban this user')) {
+      btn.disabled = false;
+      return;
+    }
     msg.textContent = 'Banning...';
     msg.className = 'su-reassign-msg';
     try {
