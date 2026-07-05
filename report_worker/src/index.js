@@ -2097,13 +2097,13 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     // Deposit by Channel (success rate)
     sortableTable(
       document.getElementById('success-channel-table'),
-      ['Channel', 'Comp. Orders', 'Comp. Users', 'Comp. Amount', 'Success %', 'Avg Mins'],
-      scope.success_by_channel.map(c => [c.channel, c.comp_orders, c.comp_users, c.comp_amount, c.success_pct, c.avg_minutes]),
-      r => '<tr><td>' + r[0] + '</td><td class="num">' + fmt(r[1]) + '</td><td class="num">' + fmt(r[2]) + '</td>' +
-           '<td class="num">' + money(r[3]) + '</td>' +
-           '<td class="num ' + pctClass(r[4]) + '">' + r[4] + '%</td>' +
-           '<td class="num">' + (r[5] == null ? '&mdash;' : r[5] + ' min') + '</td></tr>',
-      [1, 2, 3, 4, 5]
+      ['Channel', 'Total Orders', 'Comp. Orders', 'Comp. Users', 'Comp. Amount', 'Success %', 'Avg Mins'],
+      scope.success_by_channel.map(c => [c.channel, c.total, c.comp_orders, c.comp_users, c.comp_amount, c.success_pct, c.avg_minutes]),
+      r => '<tr><td>' + r[0] + '</td><td class="num">' + fmt(r[1]) + '</td><td class="num">' + fmt(r[2]) + '</td><td class="num">' + fmt(r[3]) + '</td>' +
+           '<td class="num">' + money(r[4]) + '</td>' +
+           '<td class="num ' + pctClass(r[5]) + '">' + r[5] + '%</td>' +
+           '<td class="num">' + (r[6] == null ? '&mdash;' : r[6] + ' min') + '</td></tr>',
+      [1, 2, 3, 4, 5, 6]
     );
 
     renderHeatmap('channel', 'heatmap-channel-table', channels);
@@ -2237,7 +2237,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     styleHeaderRow(wsRange);
     const wsChannel = wb.addWorksheet('Success by Channel');
     const channelData = currentScope.success_by_channel.map(c => ({
-      Channel: c.channel, 'Comp. Orders': c.comp_orders, 'Comp. Users': c.comp_users, 'Comp. Amount': c.comp_amount, 'Success %': c.success_pct, 'Avg Mins': c.avg_minutes,
+      Channel: c.channel, 'Total Orders': c.total, 'Comp. Orders': c.comp_orders, 'Comp. Users': c.comp_users, 'Comp. Amount': c.comp_amount, 'Success %': c.success_pct, 'Avg Mins': c.avg_minutes,
     }));
     if (channelData.length) {
       wsChannel.columns = Object.keys(channelData[0]).map(k => ({ header: k, key: k, width: Math.max(12, k.length + 2) }));
