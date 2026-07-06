@@ -243,7 +243,7 @@ def ingest_userlist(files):
         for row in rows:
             if row[0] is None:
                 continue
-            row = clean(list(row))
+            row = list(clean(row))
             if len(row) != n_cols:
                 print(
                     f"  WARNING: row for user {row[0]!r} has {len(row)} columns, expected {n_cols} "
