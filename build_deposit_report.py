@@ -11,12 +11,15 @@ caller) and R2 credentials in env vars or .r2_credentials.
 import json
 import os
 import re
+import shutil
 import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from datetime import time as dtime
 
 import boto3
+
+import ban_utils
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE, "daily_records.db")
@@ -1793,7 +1796,46 @@ def main():
     # future (negative inactive_days/hours). Compute "now" in IST to match.
     now = datetime.utcnow() + timedelta(hours=5, minutes=30)
 
-    conn = sqlite3.connect(DB_PATH)
+    # Banned users (dashboard's Ban User feature) must be invisible in every
+    # report/search-index/export, but their real records are never deleted
+    # -- so report generation reads from a THROWAWAY COPY of each DB with
+    # banned users' rows removed, while the ORIGINAL files (re-downloaded by
+    # the caller, untouched here) keep full history intact. Only the
+    # original master_userlist.db path ever gets re-uploaded to R2 (for the
+    # agent_performance write further down), so nothing deleted here is
+    # ever persisted.
+    master_db_path = os.path.join(BASE, "master_userlist.db")
+    banned_ids = ban_utils.get_banned_user_ids(master_db_path) if os.path.exists(master_db_path) else []
+
+    report_daily_db_path = os.path.join(BASE, "daily_records_report.db")
+    shutil.copyfile(DB_PATH, report_daily_db_path)
+    if banned_ids:
+        placeholders = ",".join("?" * len(banned_ids))
+        rdconn = sqlite3.connect(report_daily_db_path)
+        for table in ["deposits", "withdrawals", "wallet_transactions", "bonuses"]:
+            try:
+                rdconn.execute(f"DELETE FROM {table} WHERE user_id IN ({placeholders})", banned_ids)
+            except sqlite3.OperationalError:
+                pass
+        rdconn.commit()
+        rdconn.close()
+
+    report_master_db_path = None
+    if os.path.exists(master_db_path):
+        report_master_db_path = os.path.join(BASE, "master_userlist_report.db")
+        shutil.copyfile(master_db_path, report_master_db_path)
+        if banned_ids:
+            placeholders = ",".join("?" * len(banned_ids))
+            rmconn = sqlite3.connect(report_master_db_path)
+            for table in ["users", "agent_assignments", "balance_adjustments"]:
+                try:
+                    rmconn.execute(f"DELETE FROM {table} WHERE user_id IN ({placeholders})", banned_ids)
+                except sqlite3.OperationalError:
+                    pass
+            rmconn.commit()
+            rmconn.close()
+
+    conn = sqlite3.connect(report_daily_db_path)
     cur = conn.cursor()
 
     deposit_rows = cur.execute(
@@ -1828,9 +1870,8 @@ def main():
     vip_upgrade = None
     performance = None
     profit_users = None
-    master_db_path = os.path.join(BASE, "master_userlist.db")
-    if os.path.exists(master_db_path):
-        mconn = sqlite3.connect(master_db_path)
+    if report_master_db_path:
+        mconn = sqlite3.connect(report_master_db_path)
         total_registered_users = mconn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
         city_by_user = dict(mconn.execute("SELECT user_id, city FROM users").fetchall())
@@ -1972,8 +2013,8 @@ def main():
     }
 
     premium_active = None
-    if os.path.exists(master_db_path):
-        mconn3 = sqlite3.connect(master_db_path)
+    if report_master_db_path:
+        mconn3 = sqlite3.connect(report_master_db_path)
         premium_active = premium_active_conversion(mconn3, deposit_rows, now, agent_by_user)
         mconn3.close()
 
@@ -1984,7 +2025,7 @@ def main():
     # a stored table. Both feed bonus_claim_report() once per date in
     # all_dates, same "compute per date, ship the whole rolling window"
     # pattern already used for agent_performance/premium_active.
-    bonus_daily_conn = sqlite3.connect(DB_PATH)
+    bonus_daily_conn = sqlite3.connect(report_daily_db_path)
     try:
         bonus_rows_all = bonus_daily_conn.execute(
             "SELECT matched_category, user_id, change_value, create_time FROM bonuses"

@@ -19,8 +19,6 @@ import sqlite3
 import subprocess
 import sys
 
-import ban_utils
-
 BASE = os.path.dirname(os.path.abspath(__file__))
 MASTER_DB = os.path.join(BASE, "master_userlist.db")
 DAILY_DB = os.path.join(BASE, "daily_records.db")
@@ -492,19 +490,14 @@ def main():
     if not args.no_purge:
         purge_old_daily_records()
 
-    # Runs on every ingestion path regardless of --no-purge -- a ban must stay
-    # permanent even if a fresh file (or the hourly API pull) brings in new
-    # rows for that user_id afterward. See ban_utils.py.
-    master_touched_by_ban, daily_touched_by_ban = ban_utils.purge_banned_users(MASTER_DB, DAILY_DB)
-
     if not args.no_upload:
         # Only upload DBs that were actually touched this run -- master_userlist.db is
         # 200MB+ and rarely changes; re-uploading it on every deposits/withdrawals/wallet
         # pull wastes minutes on the scheduled pipeline for no reason.
         touched = []
-        if args.userlist or args.agents or args.bulk_reassign or master_touched_by_ban:
+        if args.userlist or args.agents or args.bulk_reassign:
             touched.append("master_userlist.db")
-        if args.deposits or args.withdrawals or args.wallet or daily_touched_by_ban:
+        if args.deposits or args.withdrawals or args.wallet:
             touched.append("daily_records.db")
         if touched:
             upload_to_r2(touched)

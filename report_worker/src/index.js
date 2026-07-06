@@ -76,6 +76,9 @@ const PAGE = `<!DOCTYPE html>
   .su-ban-btn { background: #be123c !important; }
   .su-ban-btn:hover:not(:disabled) { background: #9f1239 !important; }
   .su-ban-btn:disabled { background: #fca5a5 !important; }
+  .su-unban-btn { background: #059669 !important; }
+  .su-unban-btn:hover:not(:disabled) { background: #047857 !important; }
+  .su-unban-btn:disabled { background: #6ee7b7 !important; }
 
   .su-state { padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
   .su-state-error { color: #991b1b; background: #fef2f2; border-radius: 10px; font-weight: 600; }
@@ -1708,6 +1711,7 @@ if (IS_PLATFORM_ANALYSIS) {
 
 const REASSIGN_ENDPOINT = 'https://master-userlist-upload.devtrip4646.workers.dev/reassign-agent';
 const BAN_USER_ENDPOINT = 'https://master-userlist-upload.devtrip4646.workers.dev/ban-user';
+const UNBAN_USER_ENDPOINT = 'https://master-userlist-upload.devtrip4646.workers.dev/unban-user';
 
 if (IS_SEARCH_USER) {
   const container = document.getElementById('search-user-app');
@@ -1731,11 +1735,12 @@ if (IS_SEARCH_USER) {
     </div>
 
     <div class="su-reassign-card su-ban-card">
-      <div class="su-reassign-title"><span class="badge">&#128683;</span> Ban User</div>
-      <div class="su-ban-note">Permanently deletes ALL of this user's records (deposits, withdrawals, wallet activity, agent assignment) and hides them from the dashboard forever. This cannot be undone.</div>
+      <div class="su-reassign-title"><span class="badge">&#128683;</span> Ban / Unban User</div>
+      <div class="su-ban-note">Banning hides this user from every report, listing, export, and search on the dashboard -- their records are NOT deleted and keep updating normally in the background. Unban to make them visible again immediately, with full history intact.</div>
       <div class="su-reassign-row">
         <input type="text" id="ban-user-input" placeholder="User ID" inputmode="numeric">
-        <button id="ban-user-btn" class="su-ban-btn">&#128683; Ban &amp; Delete</button>
+        <button id="ban-user-btn" class="su-ban-btn">&#128683; Ban</button>
+        <button id="unban-user-btn" class="su-unban-btn">&#9989; Unban</button>
       </div>
       <div id="ban-user-msg" class="su-reassign-msg"></div>
     </div>
@@ -1813,9 +1818,9 @@ if (IS_SEARCH_USER) {
     btn.disabled = true;
     msg.textContent = 'Checking...';
     msg.className = 'su-reassign-msg';
-    // A user_id that's already banned (or never existed) was already purged
-    // from the search index, so it 404s here -- same check the Search box
-    // uses. Ban Delete should refuse rather than dispatch a no-op.
+    // A user_id that's already banned (or never existed) is invisible in
+    // the search index, so it 404s here -- same check the Search box uses.
+    // Ban should refuse rather than dispatch a no-op.
     const checkRes = await fetch('/api/user-search?user_id=' + encodeURIComponent(userId));
     if (!checkRes.ok) {
       msg.textContent = 'Not valid user';
@@ -1823,7 +1828,7 @@ if (IS_SEARCH_USER) {
       btn.disabled = false;
       return;
     }
-    if (!confirm('Ban User #' + userId + ' and PERMANENTLY DELETE all their records? This cannot be undone.')) {
+    if (!confirm('Ban User #' + userId + '? They will be hidden from every report and search, but no records are deleted.')) {
       btn.disabled = false;
       return;
     }
@@ -1841,7 +1846,42 @@ if (IS_SEARCH_USER) {
       });
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || res.status);
-      msg.textContent = 'User #' + userId + ' banned. Their records will be deleted from the dashboard within a minute or two.';
+      msg.textContent = 'User #' + userId + ' banned. They will disappear from the dashboard within a minute or two.';
+      msg.className = 'su-reassign-msg ok';
+      userInput.value = '';
+    } catch (err) {
+      msg.textContent = 'Error: ' + err.message;
+      msg.className = 'su-reassign-msg err';
+    }
+    btn.disabled = false;
+  });
+
+  document.getElementById('unban-user-btn').addEventListener('click', async () => {
+    const userInput = document.getElementById('ban-user-input');
+    const btn = document.getElementById('unban-user-btn');
+    const msg = document.getElementById('ban-user-msg');
+    const userId = userInput.value.trim();
+    const userIdNum = Number(userId);
+    if (!userId || !Number.isInteger(userIdNum) || userIdNum <= 0) {
+      msg.textContent = 'Enter a valid numeric User ID.';
+      msg.className = 'su-reassign-msg err';
+      return;
+    }
+    // No search pre-check here -- a banned user is, by design, invisible to
+    // search, so there's nothing to verify against before unbanning.
+    if (!checkActionPassword(msg, 'unban this user')) return;
+    btn.disabled = true;
+    msg.textContent = 'Unbanning...';
+    msg.className = 'su-reassign-msg';
+    try {
+      const res = await fetch(UNBAN_USER_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ user_id: Number(userId) }),
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || res.status);
+      msg.textContent = 'User #' + userId + ' unbanned. Their full history will reappear on the dashboard within a minute or two.';
       msg.className = 'su-reassign-msg ok';
       userInput.value = '';
     } catch (err) {

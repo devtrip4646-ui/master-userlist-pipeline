@@ -203,6 +203,10 @@ async function triggerBanUser(env, userId) {
   return dispatchWorkflow(env, "ban_user.yml", { user_id: String(userId) });
 }
 
+async function triggerUnbanUser(env, userId) {
+  return dispatchWorkflow(env, "unban_user.yml", { user_id: String(userId) });
+}
+
 // The Reassign Agent widget lives on the dashboard (04-project-performance.*),
 // a different origin from this upload worker -- CORS is required for that
 // cross-origin POST to succeed.
@@ -333,7 +337,7 @@ export default {
       }
     }
 
-    if (request.method === "OPTIONS" && (url.pathname === "/reassign-agent" || url.pathname === "/ban-user")) {
+    if (request.method === "OPTIONS" && (url.pathname === "/reassign-agent" || url.pathname === "/ban-user" || url.pathname === "/unban-user")) {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
@@ -364,6 +368,22 @@ export default {
           return jsonError("user_id must be a positive integer", 400, CORS_HEADERS);
         }
         await triggerBanUser(env, userId);
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "content-type": "application/json", ...CORS_HEADERS },
+        });
+      } catch (err) {
+        return jsonError(err.message || "Unknown error", 500, CORS_HEADERS);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/unban-user") {
+      try {
+        const { user_id } = await request.json();
+        const userId = Number(user_id);
+        if (!user_id || !Number.isInteger(userId) || userId <= 0) {
+          return jsonError("user_id must be a positive integer", 400, CORS_HEADERS);
+        }
+        await triggerUnbanUser(env, userId);
         return new Response(JSON.stringify({ ok: true }), {
           headers: { "content-type": "application/json", ...CORS_HEADERS },
         });

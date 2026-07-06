@@ -1,12 +1,14 @@
 """
-Bans a user: deletes every trace of their records (users, agent_assignments,
-balance_adjustments in master_userlist.db; deposits, withdrawals,
-wallet_transactions, bonuses in daily_records.db) and adds them to the
-permanent banned_users table so they can never reappear, even if the
-business platform sends new deposit/withdrawal/wallet activity for that
-user_id in a future hourly pull -- see ban_utils.py, imported by both
-ingest_update.py (purges on every ingestion run) and api_pull_ingest.py's
-sync_master_userlist() (never re-inserts a banned user_id).
+Bans a user: adds them to the permanent banned_users table in
+master_userlist.db. This is a soft ban only -- it does NOT delete or touch
+any of their existing records. Their users/agent_assignments/
+balance_adjustments rows, and their deposits/withdrawals/wallet_transactions/
+bonuses rows, keep existing and keep updating normally as new activity comes
+in; the ban only makes build_deposit_report.py exclude them from every
+report, listing, export, and the user-search index (see the
+"report_daily_db_path"/"report_master_db_path" filtered-copy logic in its
+main()) -- so they're fully invisible on the dashboard without losing any
+history. Unban with unban_user.py.
 
 Triggered by the "Ban User" widget on the dashboard's Search User page (via
 the master-userlist-upload worker's /ban-user endpoint) -- same pattern as
@@ -21,8 +23,6 @@ import sys
 from datetime import datetime, timedelta
 
 import boto3
-
-import ban_utils
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 MASTER_DB = os.path.join(BASE, "master_userlist.db")
@@ -48,6 +48,9 @@ def main():
     s3 = r2_client()
     try:
         s3.download_file(bucket, "master_userlist.db", MASTER_DB)
+        # Not modified here, but build_deposit_report.py (run right after
+        # this script, in the same job workspace) needs it present locally
+        # to refresh the live report -- same pattern as reassign_agent.py.
         s3.download_file(bucket, "daily_records.db", DAILY_DB)
     except Exception as e:
         print(f"FATAL: could not download DBs from R2: {e}", file=sys.stderr)
@@ -65,14 +68,10 @@ def main():
     conn.commit()
     conn.close()
     if not exists:
-        print(f"NOTE: user_id {args.user_id} was not found in users table (banning anyway, in case only daily_records has traces)")
-
-    master_touched, daily_touched = ban_utils.purge_banned_users(MASTER_DB, DAILY_DB)
-    print(f"Banned user {args.user_id} at {now} -- master_touched={master_touched}, daily_touched={daily_touched}")
+        print(f"NOTE: user_id {args.user_id} was not found in users table (banning anyway)")
 
     s3.upload_file(MASTER_DB, bucket, "master_userlist.db")
-    s3.upload_file(DAILY_DB, bucket, "daily_records.db")
-    print("Uploaded both DBs")
+    print(f"Banned user {args.user_id} at {now} -- no records deleted, they'll disappear from reports on the next refresh")
 
 
 if __name__ == "__main__":

@@ -1,16 +1,10 @@
 """
-Removes a user from the permanent banned_users table so they stop being
-purged on every future ingestion run (see ban_utils.py / ban_user.py).
-
-IMPORTANT: this does NOT restore anything that was already deleted when the
-user was banned. ban_user.py permanently deletes their users/
-agent_assignments/balance_adjustments rows in master_userlist.db and their
-deposits/withdrawals/wallet_transactions/bonuses rows in daily_records.db
-at the moment of banning -- there's no soft-delete/backup, so that history
-is gone. This script only stops FUTURE purging; whatever the business API's
-regular rolling-window pulls (deposits: ~5 days, withdrawals: ~5 days,
-wallet: current export) pick up for this user_id from now on will
-re-populate their profile from scratch, same as a brand-new user.
+Removes a user from the permanent banned_users table (see ban_utils.py /
+ban_user.py) so build_deposit_report.py stops excluding them from every
+report/export/search-index. Banning never deleted anything -- their real
+records kept updating normally the whole time it was banned -- so as soon
+as this runs and the report is refreshed, their full history (including
+whatever happened while banned) is visible again immediately.
 
 Usage: python3 unban_user.py --user-id 1162645
 """
@@ -23,6 +17,7 @@ import boto3
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 MASTER_DB = os.path.join(BASE, "master_userlist.db")
+DAILY_DB = os.path.join(BASE, "daily_records.db")
 
 
 def r2_client():
@@ -44,8 +39,12 @@ def main():
     s3 = r2_client()
     try:
         s3.download_file(bucket, "master_userlist.db", MASTER_DB)
+        # Not modified here, but build_deposit_report.py (run right after
+        # this script, in the same job workspace) needs it present locally
+        # to refresh the live report -- same pattern as reassign_agent.py.
+        s3.download_file(bucket, "daily_records.db", DAILY_DB)
     except Exception as e:
-        print(f"FATAL: could not download master_userlist.db from R2: {e}", file=sys.stderr)
+        print(f"FATAL: could not download DBs from R2: {e}", file=sys.stderr)
         sys.exit(1)
 
     conn = sqlite3.connect(MASTER_DB)
