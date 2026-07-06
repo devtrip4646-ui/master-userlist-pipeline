@@ -850,18 +850,17 @@ def main():
     master_db_path = os.path.join(ci_ingest.BASE, "master_userlist.db")
     daily_db_path = os.path.join(ci_ingest.BASE, "daily_records.db")
     daily_conn = sqlite3.connect(daily_db_path)
+    # Backs the ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY create_time
+    # DESC, id DESC) window function below -- without this, that query would
+    # need a full sort of wallet_transactions (tens of millions of rows)
+    # every run instead of walking this index directly.
+    daily_conn.execute("CREATE INDEX IF NOT EXISTS idx_wt_user_time_id ON wallet_transactions(user_id, create_time DESC, id DESC)")
     deposit_rows_for_sync = daily_conn.execute(
         "SELECT pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit FROM deposits"
     ).fetchall()
     withdrawal_rows_for_sync = daily_conn.execute(
         "SELECT withdraw_amount, create_time, status, user_id FROM withdrawals"
     ).fetchall()
-    # idx_wt_user (created once in build_daily_records.py, already persisted
-    # in R2) lets SQLite group by user_id without a full sort. A new
-    # composite (user_id, create_time) index isn't worth adding here: this
-    # local daily_records.db copy is opened AFTER ingest_update.py already
-    # re-uploaded it to R2, so a new index built here would just be rebuilt
-    # from scratch on every future run instead of paying for itself once.
     # change_after is the wallet ledger's own balance snapshot, but the
     # source export lags it by exactly one row: row i's change_after is
     # actually the TRUE balance BEFORE row i's own transaction was applied
@@ -871,17 +870,26 @@ def main():
     # 100% match, zero exceptions. So the true CURRENT balance is the most
     # recent row's own change_after PLUS (direction 0, credit) or MINUS
     # (direction 1, debit) that same row's own change_value -- one more step
-    # than just reading change_after directly. Selecting change_value/
-    # direction alongside a bare MAX(create_time) relies on SQLite's
-    # documented "bare column" behavior for a query with exactly one
-    # min()/max() aggregate: every other selected column comes from the SAME
-    # row as that max, not an arbitrary row in the group --
-    # https://www.sqlite.org/lang_select.html#bareagg. So this one query
-    # gives "last active via wallet" AND the ingredients for "balance as of
-    # that moment" per user, in a single pass, no self-join needed.
+    # than just reading change_after directly.
+    #
+    # "Most recent row" MUST be tie-broken by id, not create_time alone --
+    # multiple transactions routinely land in the same second (confirmed:
+    # user 949900 had a bet and a win both stamped '2026-07-06 03:08:38'),
+    # and a bare GROUP BY/MAX(create_time) has no defined behavior for which
+    # tied row's OTHER columns get returned (SQLite's docs say it's
+    # "arbitrary which particular input row is used" when the max is
+    # achieved by more than one row -- previously misread as guaranteed-safe
+    # here, which it isn't). That's exactly what caused this user's balance
+    # to keep reverting to a stale value every single sync. ROW_NUMBER()
+    # partitioned by user_id, ordered by (create_time, id) DESC, picking
+    # rn=1 gives the true latest row per user deterministically, same
+    # tie-break resync_user_balances.py already uses.
     wallet_rows_for_sync = daily_conn.execute(
-        "SELECT user_id, change_after, change_value, direction, MAX(create_time) FROM wallet_transactions "
-        "WHERE user_id IS NOT NULL GROUP BY user_id"
+        "SELECT user_id, change_after, change_value, direction, create_time FROM ("
+        "  SELECT user_id, change_after, change_value, direction, create_time,"
+        "         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY create_time DESC, id DESC) AS rn"
+        "  FROM wallet_transactions WHERE user_id IS NOT NULL"
+        ") WHERE rn = 1"
     ).fetchall()
     wallet_activity = {}
     wallet_balance_by_user = {}
