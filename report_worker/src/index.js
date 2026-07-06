@@ -1936,6 +1936,7 @@ if (IS_SEARCH_USER) {
             <div class="su-fin-section-title">Lifetime</div>
             <div class="su-fin-stats">
               <div class="su-fin-stat"><div class="su-fin-label">Total Deposit</div><div class="su-fin-value c-green">\${fmtMoney(data.total_deposit)}</div></div>
+              <div class="su-fin-stat"><div class="su-fin-label">Deposit Count</div><div class="su-fin-value c-blue">\${fmt(data.total_deposit_count || 0)}</div></div>
               <div class="su-fin-stat"><div class="su-fin-label">Total Withdraw</div><div class="su-fin-value c-red">\${fmtMoney(data.total_withdraw)}</div></div>
               <div class="su-fin-stat"><div class="su-fin-label">Wallet Balance</div><div class="su-fin-value c-blue">\${fmtMoney(data.wallet_balance)}</div></div>
               <div class="su-fin-stat"><div class="su-fin-label">Net Lifetime (Deposit &minus; Withdraw)</div><div class="su-fin-value \${data.net_lifetime >= 0 ? 'c-blue' : 'c-red'}">\${fmtMoney(data.net_lifetime)}</div></div>
@@ -1945,6 +1946,7 @@ if (IS_SEARCH_USER) {
             <div class="su-fin-section-title">Last 7 Days <span class="su-fin-note">(completed only)</span></div>
             <div class="su-fin-stats">
               <div class="su-fin-stat"><div class="su-fin-label">Deposits</div><div class="su-fin-value c-green">\${fmtMoney(dep7)}</div></div>
+              <div class="su-fin-stat"><div class="su-fin-label">Deposit Count</div><div class="su-fin-value c-blue">\${fmt(data.recent_deposit_count_7d || 0)}</div></div>
               <div class="su-fin-stat"><div class="su-fin-label">Withdrawals</div><div class="su-fin-value c-red">\${fmtMoney(wd7)}</div></div>
               <div class="su-fin-stat"><div class="su-fin-label">Net</div><div class="su-fin-value \${(dep7 - wd7) >= 0 ? 'c-blue' : 'c-red'}">\${fmtMoney(dep7 - wd7)}</div></div>
             </div>

@@ -478,6 +478,7 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
         "ALTER TABLE users ADD COLUMN deposit_sync_time TEXT",
         "ALTER TABLE users ADD COLUMN total_withdrawal REAL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN withdrawal_sync_time TEXT",
+        "ALTER TABLE users ADD COLUMN recharge_count INTEGER DEFAULT 0",
     ):
         try:
             cur.execute(ddl)
@@ -545,12 +546,12 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
     print(f"Daily performance rollup refreshed for {n_days} dates; bonus performance for {n_bonus} category-dates (both permanent, survive the 33-day purge)")
 
     existing_rows = cur.execute(
-        "SELECT user_id, total_recharge, vip_level, deposit_sync_time, last_active_time, total_withdrawal, withdrawal_sync_time FROM users"
+        "SELECT user_id, total_recharge, vip_level, deposit_sync_time, last_active_time, total_withdrawal, withdrawal_sync_time, recharge_count FROM users"
     ).fetchall()
     existing = {
         uid: {"total_recharge": tr, "vip_level": vl, "sync_time": st, "last_active_time": lat,
-              "total_withdrawal": tw, "withdrawal_sync_time": wst}
-        for uid, tr, vl, st, lat, tw, wst in existing_rows
+              "total_withdrawal": tw, "withdrawal_sync_time": wst, "recharge_count": rc}
+        for uid, tr, vl, st, lat, tw, wst, rc in existing_rows
     }
 
     fixed = 0
@@ -564,7 +565,7 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
 
     today_amount = defaultdict(float)
     today_active = set()
-    deltas = defaultdict(lambda: {"amount": 0.0, "max_create_time": None})
+    deltas = defaultdict(lambda: {"amount": 0.0, "count": 0, "max_create_time": None})
     for pay_channel, order_amount, create_time, update_time_col, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None or not create_time:
             continue
@@ -576,6 +577,7 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
             continue
         d = deltas[user_id]
         d["amount"] += order_amount or 0.0
+        d["count"] += 1
         if not d["max_create_time"] or str(create_time) > str(d["max_create_time"]):
             d["max_create_time"] = create_time
 
@@ -673,6 +675,7 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
             fresh_balance = round(fresh_balance + adjustments[user_id], 2)
         if prior is None:
             deposit_amount = round(d["amount"], 2) if d else 0.0
+            deposit_count = d["count"] if d else 0
             withdrawal_amount = round(wd["amount"], 2) if wd else 0.0
             vip = vip_level_for_total(deposit_amount)
             dep = deposit_info.get(user_id, {})
@@ -680,11 +683,11 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
             withdrawal_sync_time = str(wd["max_create_time"]) if wd and wd["max_create_time"] else None
             cur.execute(
                 "INSERT INTO users (user_id, phone, city, channel, total_recharge, vip_level, "
-                "last_active_time, deposit_sync_time, create_time, total_withdrawal, withdrawal_sync_time, user_balance) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "last_active_time, deposit_sync_time, create_time, total_withdrawal, withdrawal_sync_time, user_balance, recharge_count) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (user_id, dep.get("phone"), dep.get("city"), dep.get("channel"), deposit_amount, vip,
                  latest_activity, deposit_sync_time, str(dep.get("register_time") or latest_activity),
-                 withdrawal_amount, withdrawal_sync_time, fresh_balance),
+                 withdrawal_amount, withdrawal_sync_time, fresh_balance, deposit_count),
             )
             new_users += 1
         else:
@@ -692,10 +695,12 @@ def sync_master_userlist(master_db_path, deposit_rows, withdrawal_rows, wallet_a
             if d and d["max_create_time"]:
                 new_total = round((prior["total_recharge"] or 0.0) + d["amount"], 2)
                 new_vip = vip_level_for_total(new_total)
-                sets += ["total_recharge = ?", "vip_level = ?", "deposit_sync_time = ?"]
-                params += [new_total, new_vip, str(d["max_create_time"])]
+                new_recharge_count = (prior["recharge_count"] or 0) + d["count"]
+                sets += ["total_recharge = ?", "vip_level = ?", "deposit_sync_time = ?", "recharge_count = ?"]
+                params += [new_total, new_vip, str(d["max_create_time"]), new_recharge_count]
                 prior["total_recharge"] = new_total
                 prior["vip_level"] = new_vip
+                prior["recharge_count"] = new_recharge_count
             if wd and wd["max_create_time"]:
                 new_total_withdrawal = round((prior["total_withdrawal"] or 0.0) + wd["amount"], 2)
                 sets += ["total_withdrawal = ?", "withdrawal_sync_time = ?"]

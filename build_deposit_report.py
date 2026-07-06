@@ -1294,16 +1294,24 @@ def build_recent_activity_by_user(daily_conn, today):
     since daily_records.db's connection is closed early in main()."""
     dep_start = (today - timedelta(days=6)).isoformat()
     deposits_by_user = defaultdict(list)
-    for user_id, order_amount, create_time, status, order_no, pay_channel in daily_conn.execute(
-        "SELECT user_id, order_amount, create_time, status, order_no, pay_channel FROM deposits WHERE create_time >= ?",
+    deposit_count_7d = defaultdict(int)
+    for user_id, order_amount, create_time, status, order_no, pay_center_order_no, pay_channel in daily_conn.execute(
+        "SELECT user_id, order_amount, create_time, status, order_no, pay_center_order_no, pay_channel FROM deposits WHERE create_time >= ?",
         (dep_start,),
     ).fetchall():
         if user_id is None:
             continue
+        # pay_center_order_no is the "TP..."-prefixed order number the
+        # platform's own admin panel shows; order_no ("DI..."-prefixed) is
+        # only a fallback for older rows that predate this column being
+        # populated, same pattern withdrawals already use for their own
+        # payment_center_order_no.
         deposits_by_user[user_id].append({
             "date": create_time, "amount": order_amount, "status": status,
-            "order_no": order_no, "channel": pay_channel,
+            "order_no": pay_center_order_no or order_no, "channel": pay_channel,
         })
+        if status == "COMPLETE":
+            deposit_count_7d[user_id] += 1
 
     withdrawals_by_user = defaultdict(list)
     for user_id, withdraw_amount, create_time, status, order_no, payment_channel in daily_conn.execute(
@@ -1363,7 +1371,7 @@ def build_recent_activity_by_user(daily_conn, today):
     for d in bonuses_by_user.values():
         d.sort(key=lambda r: r["date"], reverse=True)
 
-    return deposits_by_user, withdrawals_by_user, games_by_user, bonuses_by_user
+    return deposits_by_user, withdrawals_by_user, games_by_user, bonuses_by_user, deposit_count_7d
 
 
 def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_user):
@@ -1376,15 +1384,18 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
     (even ones with zero activity, so a lookup for any valid ID gives a
     sensible "no recent activity" result rather than a 404); recent
     deposits/withdrawals/games are only present for users who have any."""
-    deposits_by_user, withdrawals_by_user, games_by_user, bonuses_by_user = recent_activity
+    deposits_by_user, withdrawals_by_user, games_by_user, bonuses_by_user, deposit_count_7d = recent_activity
     shards = [dict() for _ in range(USER_SEARCH_SHARDS)]
     # Phone is deliberately not selected/exposed here -- not displayed
-    # anywhere on the dashboard.
+    # anywhere on the dashboard. recharge_count is the platform's own
+    # lifetime deposit count (bootstrapped from the original userlist
+    # export, incrementally updated in sync_master_userlist() exactly like
+    # total_recharge -- see api_pull_ingest.py).
     rows = mconn.execute(
         "SELECT user_id, city, channel, total_recharge, total_withdrawal, vip_level, "
-        "user_balance, last_active_time, create_time FROM users"
+        "user_balance, last_active_time, create_time, recharge_count FROM users"
     ).fetchall()
-    for user_id, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time in rows:
+    for user_id, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time, recharge_count in rows:
         profile = {
             "user_id": user_id,
             "agent": agent_for(agent_by_user, user_id),
@@ -1392,12 +1403,14 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
             "acquisition_channel": channel,
             "vip_level": vip_level,
             "total_deposit": round(total_recharge or 0.0, 2),
+            "total_deposit_count": recharge_count or 0,
             "total_withdraw": round(total_withdrawal or 0.0, 2),
             "wallet_balance": round(user_balance or 0.0, 2),
             "net_lifetime": round((total_recharge or 0.0) - (total_withdrawal or 0.0), 2),
             "last_active_time": last_active_time,
             "registered": create_time,
             "recent_deposits": deposits_by_user.get(user_id, []),
+            "recent_deposit_count_7d": deposit_count_7d.get(user_id, 0),
             "recent_withdrawals": withdrawals_by_user.get(user_id, []),
             "recent_games": games_by_user.get(user_id, []),
             "recent_bonuses": bonuses_by_user.get(user_id, []),
