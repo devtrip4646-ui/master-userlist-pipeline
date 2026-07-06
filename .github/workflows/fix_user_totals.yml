@@ -7,14 +7,21 @@ on:
         description: "User ID to correct"
         required: true
       balance:
-        description: "Correct user_balance"
-        required: true
+        description: "Correct user_balance (optional)"
+        required: false
+        default: ""
       total_recharge:
-        description: "Correct total_recharge (lifetime deposit)"
-        required: true
+        description: "Correct total_recharge, lifetime deposit amount (optional)"
+        required: false
+        default: ""
       total_withdrawal:
-        description: "Correct total_withdrawal (lifetime withdrawal)"
-        required: true
+        description: "Correct total_withdrawal, lifetime withdrawal amount (optional)"
+        required: false
+        default: ""
+      recharge_count:
+        description: "Correct recharge_count, lifetime deposit count (optional)"
+        required: false
+        default: ""
 
 concurrency:
   group: db-ingest
@@ -40,8 +47,12 @@ jobs:
           R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          python3 fix_user_totals.py --user-id "${{ inputs.user_id }}" --balance "${{ inputs.balance }}" \
-            --total-recharge "${{ inputs.total_recharge }}" --total-withdrawal "${{ inputs.total_withdrawal }}"
+          ARGS="--user-id ${{ inputs.user_id }}"
+          if [ -n "${{ inputs.balance }}" ]; then ARGS="$ARGS --balance ${{ inputs.balance }}"; fi
+          if [ -n "${{ inputs.total_recharge }}" ]; then ARGS="$ARGS --total-recharge ${{ inputs.total_recharge }}"; fi
+          if [ -n "${{ inputs.total_withdrawal }}" ]; then ARGS="$ARGS --total-withdrawal ${{ inputs.total_withdrawal }}"; fi
+          if [ -n "${{ inputs.recharge_count }}" ]; then ARGS="$ARGS --recharge-count ${{ inputs.recharge_count }}"; fi
+          python3 fix_user_totals.py $ARGS
 
       - name: Refresh deposit report
         env:
