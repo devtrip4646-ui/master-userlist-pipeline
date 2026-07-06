@@ -1166,7 +1166,7 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_
 
     today_withdraw = defaultdict(float)
     for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, payment_center_order_id in withdrawal_rows:
-        if status != 2 or user_id is None:  # 2 = Complete
+        if status not in (0, 1, 2) or user_id is None:  # 0 In-Review, 1 Processing, 2 Complete -- excludes 3 Rejected, 4 Failed
             continue
         dt = parse_dt(create_time)
         if dt and dt.date() == today:
