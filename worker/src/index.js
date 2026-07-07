@@ -74,6 +74,8 @@ document.getElementById('tokenForm').addEventListener('submit', async (e) => {
   const input = document.getElementById('tokenInput');
   const token = input.value.trim();
   if (!token) return;
+  const password = prompt('Enter password to update the API token:');
+  if (password === null) return;
   btn.disabled = true;
   msg.textContent = 'Saving...';
   msg.className = '';
@@ -81,7 +83,7 @@ document.getElementById('tokenForm').addEventListener('submit', async (e) => {
     const res = await fetch('/set-api-token', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, password }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.status);
@@ -211,7 +213,7 @@ async function triggerUnbanUser(env, userId) {
 // a different origin from this upload worker -- CORS is required for that
 // cross-origin POST to succeed.
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://04-project-performance.devtrip4646.workers.dev",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "content-type",
 };
@@ -301,7 +303,10 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/set-api-token") {
       try {
-        const { token } = await request.json();
+        const { token, password } = await request.json();
+        if (password !== env.ACTION_PASSWORD) {
+          return jsonError("Access Denied", 403);
+        }
         if (!token || typeof token !== "string" || token.trim().length < 10) {
           return jsonError("Token looks too short/empty", 400);
         }
@@ -343,7 +348,10 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/reassign-agent") {
       try {
-        const { user_id, agent } = await request.json();
+        const { user_id, agent, password } = await request.json();
+        if (password !== env.ACTION_PASSWORD) {
+          return jsonError("Access Denied", 403, CORS_HEADERS);
+        }
         const userId = Number(user_id);
         if (!user_id || !Number.isInteger(userId) || userId <= 0) {
           return jsonError("user_id must be a positive integer", 400, CORS_HEADERS);
@@ -362,7 +370,10 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/ban-user") {
       try {
-        const { user_id } = await request.json();
+        const { user_id, password } = await request.json();
+        if (password !== env.ACTION_PASSWORD) {
+          return jsonError("Access Denied", 403, CORS_HEADERS);
+        }
         const userId = Number(user_id);
         if (!user_id || !Number.isInteger(userId) || userId <= 0) {
           return jsonError("user_id must be a positive integer", 400, CORS_HEADERS);
@@ -378,7 +389,10 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/unban-user") {
       try {
-        const { user_id } = await request.json();
+        const { user_id, password } = await request.json();
+        if (password !== env.ACTION_PASSWORD) {
+          return jsonError("Access Denied", 403, CORS_HEADERS);
+        }
         const userId = Number(user_id);
         if (!user_id || !Number.isInteger(userId) || userId <= 0) {
           return jsonError("user_id must be a positive integer", 400, CORS_HEADERS);

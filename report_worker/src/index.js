@@ -409,6 +409,15 @@ function checkActionPassword(msgEl, actionLabel) {
   return true;
 }
 
+// Ban/Reassign/Unban actually hit the upload worker's API, which now
+// verifies the password itself (see ACTION_PASSWORD in worker/src/index.js)
+// -- so this just prompts and passes the raw value through; the server's
+// 403 "Access Denied" is the real check, not a client-side comparison.
+function promptActionPassword(actionLabel) {
+  const entered = prompt('Enter password to ' + actionLabel + ':');
+  return entered === null ? null : entered;
+}
+
 if (IS_AGENT_SCOPED) {
   document.getElementById('nav-home').href = agentUrl('');
   document.getElementById('nav-action-center').href = agentUrl('action-center');
@@ -1783,7 +1792,8 @@ if (IS_SEARCH_USER) {
       msg.className = 'su-reassign-msg err';
       return;
     }
-    if (!checkActionPassword(msg, 'reassign this user')) return;
+    const reassignPassword = promptActionPassword('reassign this user');
+    if (reassignPassword === null) return;
     btn.disabled = true;
     msg.textContent = 'Saving...';
     msg.className = 'su-reassign-msg';
@@ -1791,7 +1801,7 @@ if (IS_SEARCH_USER) {
       const res = await fetch(REASSIGN_ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ user_id: Number(userId), agent: select.value }),
+        body: JSON.stringify({ user_id: Number(userId), agent: select.value, password: reassignPassword }),
       });
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || res.status);
@@ -1832,7 +1842,8 @@ if (IS_SEARCH_USER) {
       btn.disabled = false;
       return;
     }
-    if (!checkActionPassword(msg, 'ban this user')) {
+    const banPassword = promptActionPassword('ban this user');
+    if (banPassword === null) {
       btn.disabled = false;
       return;
     }
@@ -1842,7 +1853,7 @@ if (IS_SEARCH_USER) {
       const res = await fetch(BAN_USER_ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ user_id: Number(userId) }),
+        body: JSON.stringify({ user_id: Number(userId), password: banPassword }),
       });
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || res.status);
@@ -1869,7 +1880,8 @@ if (IS_SEARCH_USER) {
     }
     // No search pre-check here -- a banned user is, by design, invisible to
     // search, so there's nothing to verify against before unbanning.
-    if (!checkActionPassword(msg, 'unban this user')) return;
+    const unbanPassword = promptActionPassword('unban this user');
+    if (unbanPassword === null) return;
     btn.disabled = true;
     msg.textContent = 'Unbanning...';
     msg.className = 'su-reassign-msg';
@@ -1877,7 +1889,7 @@ if (IS_SEARCH_USER) {
       const res = await fetch(UNBAN_USER_ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ user_id: Number(userId) }),
+        body: JSON.stringify({ user_id: Number(userId), password: unbanPassword }),
       });
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || res.status);
@@ -2362,7 +2374,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
                 const pctUnder = under ? (under.parsed.y / total) * 100 : 0;
                 const pctOver = 100 - pctUnder;
                 return 'Total: ' + total.toLocaleString('en-IN') +
-                  '\n' + pctUnder.toFixed(1) + '% <4h vs ' + pctOver.toFixed(1) + '% >4h';
+                  '\\n' + pctUnder.toFixed(1) + '% <4h vs ' + pctOver.toFixed(1) + '% >4h';
               },
             },
           },
@@ -2604,9 +2616,116 @@ function slugifyAgentName(name) {
   return s || "agent";
 }
 
+// --- Server-side login wall ---
+// Every route (including /data.json, /api/*) requires a valid signed
+// session cookie -- previously there was no auth at all, so anyone with the
+// URL could see every user's financial data. The signed cookie (HMAC-SHA256
+// over an expiry timestamp, verified with the Web Crypto API) means the
+// check is a single fast local computation per request -- no KV/DB lookup,
+// no added latency to report loading, and no change to report content.
+const LOGIN_PAGE = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in - Project 04</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f3f4f6; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  .box { background: #fff; padding: 32px; border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: 320px; }
+  h1 { font-size: 17px; margin: 0 0 20px; color: #1a1a1a; }
+  input { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+  button { width: 100%; padding: 11px; background: #4338ca; color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; }
+  button:hover { background: #3730a3; }
+  .err { color: #991b1b; font-size: 13px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>Project 04 &mdash; Performance &amp; Analysis</h1>
+    <form method="POST" action="/login">
+      __ERROR__
+      <input type="password" name="password" placeholder="Password" autofocus required>
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+</body>
+</html>`;
+
+async function hmacSign(secret, message) {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+
+const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+async function makeSessionCookieValue(env) {
+  const payload = String(Date.now() + SESSION_DURATION_MS);
+  const sig = await hmacSign(env.SESSION_SECRET, payload);
+  return `${payload}.${sig}`;
+}
+
+async function verifySessionCookieValue(env, value) {
+  if (!value) return false;
+  const dot = value.lastIndexOf(".");
+  if (dot < 0) return false;
+  const payload = value.slice(0, dot);
+  const sig = value.slice(dot + 1);
+  if (!payload || !sig || Number(payload) < Date.now()) return false;
+  const expected = await hmacSign(env.SESSION_SECRET, payload);
+  return expected === sig;
+}
+
+function getCookie(request, name) {
+  const header = request.headers.get("Cookie") || "";
+  const match = header.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (request.method === "GET" && url.pathname === "/login") {
+      return new Response(LOGIN_PAGE.replace("__ERROR__", ""), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+
+    if (request.method === "POST" && url.pathname === "/login") {
+      const form = await request.formData();
+      if (form.get("password") !== env.DASHBOARD_PASSWORD) {
+        return new Response(LOGIN_PAGE.replace("__ERROR__", '<div class="err">Incorrect password</div>'), {
+          status: 401,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      const cookieValue = await makeSessionCookieValue(env);
+      return new Response(null, {
+        status: 302,
+        headers: {
+          "Location": "/",
+          "Set-Cookie": `session=${encodeURIComponent(cookieValue)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DURATION_MS / 1000}`,
+        },
+      });
+    }
+
+    const authed = await verifySessionCookieValue(env, getCookie(request, "session"));
+    if (!authed) {
+      if (url.pathname.startsWith("/api/") || url.pathname === "/data.json") {
+        return new Response(JSON.stringify({ error: "Not authenticated" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(LOGIN_PAGE.replace("__ERROR__", ""), {
+        status: 401,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
 
     // Per-agent dashboards: /agent/<name>(/action-center|analytics|search-user)?
     // -- the name is URL-encoded so decodeURIComponent recovers the exact
