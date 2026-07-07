@@ -1211,6 +1211,109 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_
     return result
 
 
+def new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, today):
+    """Per-day new-vs-old depositor breakdown for Platform Analysis, below
+    Bonus Claim Report. "New" = a user whose FIRST-EVER deposit
+    (is_first_deposit=1) landed on that day; "old" = any other COMPLETE
+    depositor that day (excluded from the new-user set even if they also
+    happen to appear there). Also breaks out withdrawal behavior for each
+    cohort (status 2 = Complete only) and 3-day return-deposit retention for
+    new users, split by whether they withdrew (any status) in that window.
+
+    `all_dates` already spans exactly what daily_records.db retains -- a
+    rolling RETENTION_DAYS(=33)-day window (see ingest_update.py) -- so this
+    naturally starts wherever data first became available rather than
+    always covering a full 33 days, and needs no separate date-range input.
+    """
+    dep_by_date = defaultdict(list)
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        dep_by_date[dt.date().isoformat()].append((user_id, order_amount or 0.0, is_first_deposit == 1))
+
+    wd_by_date = defaultdict(list)
+    for withdraw_amount, create_time, status, user_id, *_rest in withdrawal_rows:
+        if user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        wd_by_date[dt.date().isoformat()].append((user_id, withdraw_amount or 0.0, status))
+
+    daily_rows = []
+    for date_str in all_dates:
+        rows = dep_by_date.get(date_str, [])
+        new_ids = {uid for uid, amt, is_first in rows if is_first}
+        old_ids = {uid for uid, amt, is_first in rows if not is_first} - new_ids
+        new_dep_total = sum(amt for uid, amt, is_first in rows if uid in new_ids)
+        old_dep_total = sum(amt for uid, amt, is_first in rows if uid in old_ids)
+
+        wd_rows = wd_by_date.get(date_str, [])
+        wd_complete = [(uid, amt) for uid, amt, status in wd_rows if status == 2]  # 2 = Complete
+        old_withdrawers = {uid for uid, amt in wd_complete if uid in old_ids}
+        new_withdrawers = {uid for uid, amt in wd_complete if uid in new_ids}
+        old_wd_total = sum(amt for uid, amt in wd_complete if uid in old_withdrawers)
+        new_wd_total = sum(amt for uid, amt in wd_complete if uid in new_withdrawers)
+
+        daily_rows.append({
+            "date": date_str,
+            "old_users_count": len(old_ids),
+            "old_users_deposit_total": round(old_dep_total, 2),
+            "old_users_avg_deposit": round(old_dep_total / len(old_ids), 2) if old_ids else 0,
+            "new_users_count": len(new_ids),
+            "new_users_deposit_total": round(new_dep_total, 2),
+            "new_users_avg_deposit": round(new_dep_total / len(new_ids), 2) if new_ids else 0,
+            "old_users_withdraw_count": len(old_withdrawers),
+            "old_users_withdraw_total": round(old_wd_total, 2),
+            "old_users_avg_withdraw": round(old_wd_total / len(old_withdrawers), 2) if old_withdrawers else 0,
+            "new_users_withdraw_count": len(new_withdrawers),
+            "new_users_withdraw_total": round(new_wd_total, 2),
+            "new_users_avg_withdraw": round(new_wd_total / len(new_withdrawers), 2) if new_withdrawers else 0,
+            "total_deposit": round(new_dep_total + old_dep_total, 2),
+            "total_depositor_count": len(new_ids) + len(old_ids),
+        })
+
+    # 3-day retention needs D, D+1, D+2, D+3 all in the past -- skip dates
+    # where that window hasn't fully elapsed yet (would otherwise undercount
+    # "returned" purely because the days haven't happened).
+    retention_rows = []
+    for date_str in all_dates:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        window_dates = [(d + timedelta(days=k)).isoformat() for k in range(4)]
+        if window_dates[-1] > today.isoformat():
+            continue
+        new_ids = {uid for uid, amt, is_first in dep_by_date.get(date_str, []) if is_first}
+        if not new_ids:
+            continue
+        withdrew_ids = set()
+        for wdstr in window_dates:
+            for uid, amt, status in wd_by_date.get(wdstr, []):
+                if uid in new_ids:
+                    withdrew_ids.add(uid)
+        returned_ids = set()
+        for rdstr in window_dates[1:]:
+            for uid, amt, is_first in dep_by_date.get(rdstr, []):
+                if uid in new_ids and not is_first:
+                    returned_ids.add(uid)
+        withdrew_group = new_ids & withdrew_ids
+        never_withdrew_group = new_ids - withdrew_ids
+        retention_rows.append({
+            "date": date_str,
+            "new_users": len(new_ids),
+            "withdrew_group_count": len(withdrew_group),
+            "withdrew_group_returned": len(withdrew_group & returned_ids),
+            "withdrew_group_retention_pct": round(100 * len(withdrew_group & returned_ids) / len(withdrew_group), 2) if withdrew_group else None,
+            "never_withdrew_group_count": len(never_withdrew_group),
+            "never_withdrew_group_returned": len(never_withdrew_group & returned_ids),
+            "never_withdrew_group_retention_pct": round(100 * len(never_withdrew_group & returned_ids) / len(never_withdrew_group), 2) if never_withdrew_group else None,
+        })
+
+    return {"daily": daily_rows, "retention": retention_rows}
+
+
 def channel_performance_report(daily_conn, today):
     """Channel acquisition quality, last 4 days combined. Of users whose
     FIRST deposit (is_first_deposit=1) landed in the last 4 calendar days,
@@ -2042,6 +2145,8 @@ def main():
         bonus_claims_by_date[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, d)
     bonus_claims = bonus_claims_by_date.get(now.date().isoformat(), {"wallet_bonuses": [], "deposit_challenge_bonuses": []})
 
+    new_old_user_analysis = new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, now.date())
+
     # Persist today's per-agent performance, then read back the full rolling
     # window for the Performance page -- small enough (agents x 7 categories
     # x up to 35 days) to ship in full and let the frontend do date-range
@@ -2139,6 +2244,7 @@ def main():
         "channel_performance": channel_performance,
         "bonus_claims": bonus_claims,
         "bonus_claims_by_date": bonus_claims_by_date,
+        "new_old_user_analysis": new_old_user_analysis,
         # Distinct real agent names (never includes AGENT_UNASSIGNED) -- powers
         # the Reassign Agent dropdown on the Search User page and the
         # Performance leaderboard.

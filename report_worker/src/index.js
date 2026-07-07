@@ -1513,6 +1513,7 @@ if (IS_PLATFORM_ANALYSIS) {
     const bonusDates = Object.keys(bonusClaimsByDate).sort();
     let selectedBonusDate = data.report_today && bonusClaimsByDate[data.report_today] ? data.report_today : bonusDates[bonusDates.length - 1];
     let bonusClaims = bonusClaimsByDate[selectedBonusDate] || data.bonus_claims;
+    const newOldAnalysis = data.new_old_user_analysis || { daily: [], retention: [] };
 
     document.getElementById('platform-analysis-app').innerHTML = \`
       <div class="analysis-heading deposit"><h2>Game &amp; Revenue Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
@@ -1561,6 +1562,19 @@ if (IS_PLATFORM_ANALYSIS) {
           <button data-view="dcb">Deposit Challenge Bonus</button>
         </div>
         <div id="bonus-claims-table"></div>
+      </section>
+      <section class="acc-blue">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-blue">&#128200;</div><h2>New vs Old User Analysis &mdash; Last 33 Days</h2></div>
+          <button class="download-btn-sm" id="btn-dl-new-old">&#128190; Excel</button>
+        </div>
+        <div class="ac-note">Old = repeat depositors that day. New = users whose first-ever deposit landed that day. Covers every day daily_records.db has (rolling 33-day retention), so it starts wherever data first became available.</div>
+        <div class="date-switch" id="new-old-switch">
+          <button data-view="daily" class="active">Daily Breakdown</button>
+          <button data-view="retention">New User 3-Day Retention</button>
+        </div>
+        <div id="new-old-table"></div>
+        <div class="ac-pagination" id="new-old-pagination"></div>
       </section>
     \`;
 
@@ -1745,6 +1759,59 @@ if (IS_PLATFORM_ANALYSIS) {
         downloadExcel(bonusRows(), bonusCols(), 'Bonus Claims', 'bonus-claims-' + bonusView + '-' + selectedBonusDate + '.xlsx'));
     } else {
       document.getElementById('bonus-claims-table').innerHTML = '<div class="no-data">No bonus claims recorded yet.</div>';
+    }
+
+    // --- New vs Old User Analysis -- rolling window, whatever daily_records.db retains (up to 33 days) ---
+    let newOldView = 'daily';
+    function pctOrDash(v) { return v === null || v === undefined ? '&mdash;' : v + '%'; }
+    const newOldDailyCols = [
+      { label: 'Date', render: r => shortDate(r.date), raw: r => r.date },
+      { label: 'Old Users', render: r => fmt(r.old_users_count), raw: r => r.old_users_count, num: true },
+      { label: 'Avg Dep (Old)', render: r => money(r.old_users_avg_deposit), raw: r => r.old_users_avg_deposit, num: true },
+      { label: 'New Users', render: r => fmt(r.new_users_count), raw: r => r.new_users_count, num: true },
+      { label: 'Avg Dep (New)', render: r => money(r.new_users_avg_deposit), raw: r => r.new_users_avg_deposit, num: true },
+      { label: 'Old WD Users', render: r => fmt(r.old_users_withdraw_count), raw: r => r.old_users_withdraw_count, num: true },
+      { label: 'Avg WD (Old)', render: r => money(r.old_users_avg_withdraw), raw: r => r.old_users_avg_withdraw, num: true },
+      { label: 'New WD Users', render: r => fmt(r.new_users_withdraw_count), raw: r => r.new_users_withdraw_count, num: true },
+      { label: 'Avg WD (New)', render: r => money(r.new_users_avg_withdraw), raw: r => r.new_users_avg_withdraw, num: true },
+      { label: 'Total Deposit', render: r => money(r.total_deposit), raw: r => r.total_deposit, num: true },
+      { label: 'Total Depositors', render: r => fmt(r.total_depositor_count), raw: r => r.total_depositor_count, num: true },
+    ];
+    const newOldRetentionCols = [
+      { label: 'Date', render: r => shortDate(r.date), raw: r => r.date },
+      { label: 'New Users', render: r => fmt(r.new_users), raw: r => r.new_users, num: true },
+      { label: 'Withdrew - Count', render: r => fmt(r.withdrew_group_count), raw: r => r.withdrew_group_count, num: true },
+      { label: 'Withdrew - Returned', render: r => fmt(r.withdrew_group_returned), raw: r => r.withdrew_group_returned, num: true },
+      { label: 'Withdrew - Retention %', render: r => pctOrDash(r.withdrew_group_retention_pct), raw: r => r.withdrew_group_retention_pct, num: true },
+      { label: 'Never Withdrew - Count', render: r => fmt(r.never_withdrew_group_count), raw: r => r.never_withdrew_group_count, num: true },
+      { label: 'Never Withdrew - Returned', render: r => fmt(r.never_withdrew_group_returned), raw: r => r.never_withdrew_group_returned, num: true },
+      { label: 'Never Withdrew - Retention %', render: r => pctOrDash(r.never_withdrew_group_retention_pct), raw: r => r.never_withdrew_group_retention_pct, num: true },
+    ];
+    function newOldRows() { return newOldView === 'daily' ? newOldAnalysis.daily : newOldAnalysis.retention; }
+    function newOldCols() { return newOldView === 'daily' ? newOldDailyCols : newOldRetentionCols; }
+    function renderNewOld() {
+      const rows = newOldRows().slice().sort((a, b) => b.date.localeCompare(a.date));
+      const cols = newOldCols();
+      if (!rows.length) {
+        document.getElementById('new-old-table').innerHTML = '<div class="no-data">No data available yet.</div>';
+        document.getElementById('new-old-pagination').innerHTML = '';
+        return;
+      }
+      paginatedTable('new-old-table', 'new-old-pagination', rows, cols, 10);
+    }
+    if ((newOldAnalysis.daily && newOldAnalysis.daily.length) || (newOldAnalysis.retention && newOldAnalysis.retention.length)) {
+      renderNewOld();
+      document.querySelectorAll('#new-old-switch button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          newOldView = btn.dataset.view;
+          document.querySelectorAll('#new-old-switch button').forEach(b => b.classList.toggle('active', b === btn));
+          renderNewOld();
+        });
+      });
+      document.getElementById('btn-dl-new-old').addEventListener('click', () =>
+        downloadExcel(newOldRows(), newOldCols(), newOldView === 'daily' ? 'New vs Old Daily' : 'New User Retention', 'new-old-user-analysis-' + newOldView + '.xlsx'));
+    } else {
+      document.getElementById('new-old-table').innerHTML = '<div class="no-data">No data available yet.</div>';
     }
   })();
 }
