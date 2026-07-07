@@ -219,6 +219,14 @@ const PAGE = `<!DOCTYPE html>
   .perf-controls .perf-to { color: #9ca3af; font-size: 12px; font-weight: 700; }
   .perf-preset { padding: 7px 14px; border-radius: 18px; border: 1px solid #d8dce5; background: #f9fafb; font-size: 12px; cursor: pointer; font-weight: 700; color: #444; }
   .perf-preset.active { background: #4338ca; color: #fff; border-color: #4338ca; }
+  .perf-daterange { position: relative; }
+  .perf-daterange-btn { padding: 8px 14px; border-radius: 8px; border: 1px solid #d8dce5; background: #fff; font-size: 13px; cursor: pointer; font-weight: 600; color: #333; }
+  .perf-daterange-btn:hover { border-color: #4338ca; }
+  .perf-daterange-popover { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); padding: 14px; display: flex; align-items: flex-end; gap: 10px; }
+  .perf-daterange-popover label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; }
+  .perf-daterange-popover input[type=date] { border: 1px solid #d8dce5; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  .perf-daterange-popover button { padding: 8px 16px; border: none; border-radius: 8px; background: #4338ca; color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; }
+  .perf-daterange-popover button:hover { background: #3730a3; }
 
   .perf-podium { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 26px; }
   @media (max-width: 900px) { .perf-podium { grid-template-columns: 1fr; } }
@@ -891,9 +899,14 @@ if (IS_PERFORMANCE) {
         <button class="perf-preset" data-preset="30d">Last 30 Days</button>
         <button class="perf-preset" data-preset="35d">Last 35 Days</button>
         <span class="perf-to">|</span>
-        <input type="date" id="perf-from">
-        <span class="perf-to">to</span>
-        <input type="date" id="perf-to">
+        <div class="perf-daterange">
+          <button type="button" id="perf-daterange-btn" class="perf-daterange-btn">&#128197; <span id="perf-daterange-label">Today</span></button>
+          <div id="perf-daterange-popover" class="perf-daterange-popover" style="display:none">
+            <label>From<input type="date" id="perf-from"></label>
+            <label>To<input type="date" id="perf-to"></label>
+            <button type="button" id="perf-daterange-apply">Apply</button>
+          </div>
+        </div>
       </div>
       <div id="perf-list"></div>
     \`;
@@ -1026,6 +1039,21 @@ if (IS_PERFORMANCE) {
     const fromInput = document.getElementById('perf-from');
     const toInput = document.getElementById('perf-to');
     const presetBtns = Array.from(document.querySelectorAll('.perf-preset'));
+    const dateRangeBtn = document.getElementById('perf-daterange-btn');
+    const dateRangeLabel = document.getElementById('perf-daterange-label');
+    const dateRangePopover = document.getElementById('perf-daterange-popover');
+    const dateRangeApply = document.getElementById('perf-daterange-apply');
+
+    function updateDateRangeLabel(from, to) {
+      dateRangeLabel.textContent = from === to ? shortDate(from) : shortDate(from) + ' \\u2013 ' + shortDate(to);
+    }
+
+    dateRangeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dateRangePopover.style.display = dateRangePopover.style.display === 'none' ? 'flex' : 'none';
+    });
+    dateRangePopover.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => { dateRangePopover.style.display = 'none'; });
 
     function applyPreset(preset) {
       let from = todayStr, to = todayStr;
@@ -1047,17 +1075,20 @@ if (IS_PERFORMANCE) {
       fromInput.value = from;
       toInput.value = to;
       presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === preset));
+      updateDateRangeLabel(from, to);
+      dateRangePopover.style.display = 'none';
       render(from, to);
     }
 
     presetBtns.forEach(btn => btn.addEventListener('click', () => applyPreset(btn.dataset.preset)));
-    fromInput.addEventListener('change', () => {
+    dateRangeApply.addEventListener('click', () => {
+      const from = fromInput.value || toInput.value;
+      const to = toInput.value || fromInput.value;
+      if (!from || !to) return;
       presetBtns.forEach(b => b.classList.remove('active'));
-      render(fromInput.value, toInput.value || fromInput.value);
-    });
-    toInput.addEventListener('change', () => {
-      presetBtns.forEach(b => b.classList.remove('active'));
-      render(fromInput.value || toInput.value, toInput.value);
+      updateDateRangeLabel(from, to);
+      dateRangePopover.style.display = 'none';
+      render(from, to);
     });
 
     renderPodium();
