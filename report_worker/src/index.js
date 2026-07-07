@@ -2200,9 +2200,10 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
 
     <section class="acc-rose">
       <div class="section-head">
-        <div class="sec-title"><div class="badge b-rose">&#9989;</div><h2>Completed Orders &mdash; Within 4h vs More than 4h (Last 4 Days)</h2></div>
+        <div class="sec-title"><div class="badge b-rose">&#9989;</div><h2>Completed Orders &mdash; &lt;4h vs &gt;4h (Last 4 Days)</h2></div>
         <button class="download-btn-sm" id="btn-dl-last4days">&#128190; Excel</button>
       </div>
+      <div class="ac-note" id="last4days-pct-summary"></div>
       <canvas id="last4days-chart"></canvas>
     </section>
   \`;
@@ -2322,13 +2323,28 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     });
     if (last4daysChart) last4daysChart.destroy();
     const last4 = wa.last4days_completion || [];
+    // % split + point difference, most recent day with any completed orders --
+    // e.g. "82.4% <4h vs 17.6% >4h (64.8 point gap)".
+    const pctSummaryEl = document.getElementById('last4days-pct-summary');
+    if (pctSummaryEl) {
+      const latest = [...last4].reverse().find(r => (r.within_4h + r.more_than_4h) > 0);
+      if (latest) {
+        const total = latest.within_4h + latest.more_than_4h;
+        const pctUnder = (latest.within_4h / total) * 100;
+        const pctOver = 100 - pctUnder;
+        pctSummaryEl.innerHTML = latest.date + ': ' + pctUnder.toFixed(1) + '% &lt;4h vs ' + pctOver.toFixed(1) +
+          '% &gt;4h (' + Math.abs(pctUnder - pctOver).toFixed(1) + ' point gap)';
+      } else {
+        pctSummaryEl.textContent = '';
+      }
+    }
     last4daysChart = new Chart(document.getElementById('last4days-chart'), {
       type: 'bar',
       data: {
         labels: last4.map(r => r.date),
         datasets: [
-          { label: 'Within 4h', data: last4.map(r => r.within_4h), backgroundColor: '#34d399', borderRadius: 6 },
-          { label: 'More than 4h', data: last4.map(r => r.more_than_4h), backgroundColor: '#f87171', borderRadius: 6 },
+          { label: '<4h', data: last4.map(r => r.within_4h), backgroundColor: '#34d399', borderRadius: 6 },
+          { label: '>4h', data: last4.map(r => r.more_than_4h), backgroundColor: '#f87171', borderRadius: 6 },
         ],
       },
       options: {
@@ -2341,7 +2357,12 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
             callbacks: {
               footer: (items) => {
                 const total = items.reduce((sum, item) => sum + item.parsed.y, 0);
-                return 'Total: ' + total.toLocaleString('en-IN');
+                if (!total) return 'Total: 0';
+                const under = items.find(i => i.dataset.label === '<4h');
+                const pctUnder = under ? (under.parsed.y / total) * 100 : 0;
+                const pctOver = 100 - pctUnder;
+                return 'Total: ' + total.toLocaleString('en-IN') +
+                  '\n' + pctUnder.toFixed(1) + '% <4h vs ' + pctOver.toFixed(1) + '% >4h';
               },
             },
           },
