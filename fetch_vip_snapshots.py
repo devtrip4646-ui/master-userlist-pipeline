@@ -12,12 +12,10 @@ for d in dates:
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
         out[d] = json.loads(obj["Body"].read())
-        print(f"{d}: FOUND")
+        print(f"{d}: FOUND", flush=True)
     except s3.exceptions.NoSuchKey:
-        print(f"{d}: MISSING")
-    except Exception as e:
-        print(f"{d}: ERROR {e}")
+        print(f"{d}: MISSING", flush=True)
 
-with open("vip_snapshots.json", "w") as f:
-    json.dump(out, f)
-print("saved", len(out), "snapshots")
+print("=== VIP_SNAPSHOTS_JSON_START ===")
+print(json.dumps(out))
+print("=== VIP_SNAPSHOTS_JSON_END ===")

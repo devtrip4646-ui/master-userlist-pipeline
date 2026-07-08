@@ -20,7 +20,3 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           python3 fetch_vip_snapshots.py
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vip-snapshots
-          path: vip_snapshots.json
