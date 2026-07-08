@@ -1217,6 +1217,17 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_
         if dt and dt.date() == today:
             today_withdraw[user_id] += withdraw_amount or 0.0
 
+    # "New user" here = whose FIRST-EVER deposit (is_first_deposit=1) landed
+    # today or either of the previous 2 days, for the "3 Days New User" filter
+    # button -- same is_first_deposit concept as new_vs_old_user_analysis.
+    new_user_within_3d = set()
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None or is_first_deposit != 1:
+            continue
+        dt = parse_dt(create_time)
+        if dt and 0 <= (today - dt.date()).days <= 2:
+            new_user_within_3d.add(user_id)
+
     def days_ago_label(sync_time):
         dt = parse_dt(sync_time)
         if not dt:
@@ -1252,6 +1263,7 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_
             "net_dep": round(dep_today - wd_today, 2),
             "last_dep": days_ago_label(dep_sync),
             "last_wd": days_ago_label(wd_sync),
+            "is_new_user_3d": user_id in new_user_within_3d,
         })
     return result
 

@@ -1521,7 +1521,10 @@ if (IS_PLATFORM_ANALYSIS) {
         <section class="acc-orange">
           <div class="section-head">
             <div class="sec-title"><div class="badge b-orange">&#128181;</div><h2>Profit Users of the Day</h2></div>
-            <button class="download-btn-sm" id="btn-dl-profit-users">&#128190; Excel</button>
+            <div style="display:flex;gap:8px">
+              <button class="download-btn-sm" id="btn-profit-new-users" style="background:#f59e0b">&#127881; 3 Days New User</button>
+              <button class="download-btn-sm" id="btn-dl-profit-users">&#128190; Excel</button>
+            </div>
           </div>
           <div class="ac-note">Top users by CURRENT wallet balance -- who's sitting on the most money right now. Last Dep/WD show "Today" or how many days ago, tracked permanently so it stays accurate even beyond the 33-day window.</div>
           <div id="profit-users-table"></div>
@@ -1599,10 +1602,32 @@ if (IS_PLATFORM_ANALYSIS) {
       { label: 'Last Dep', render: r => lastActivityPill(r.last_dep), raw: r => r.last_dep },
       { label: 'Last WD', render: r => lastActivityPill(r.last_wd), raw: r => r.last_wd },
     ];
+    let profitUsersNewOnly = false;
+    function currentProfitUsers() {
+      return profitUsersNewOnly ? (profitUsers || []).filter(r => r.is_new_user_3d) : (profitUsers || []);
+    }
+    function renderProfitUsersTable() {
+      const rows = currentProfitUsers();
+      if (rows.length) {
+        paginatedTable('profit-users-table', 'profit-users-pagination', rows, profitUsersCols, 10);
+      } else {
+        document.getElementById('profit-users-table').innerHTML = '<div class="no-data">' +
+          (profitUsersNewOnly ? 'No new users (first deposit in the last 3 days) currently hold a wallet balance.' : 'No wallet balance data available.') +
+          '</div>';
+        document.getElementById('profit-users-pagination').innerHTML = '';
+      }
+    }
     if (profitUsers && profitUsers.length) {
-      paginatedTable('profit-users-table', 'profit-users-pagination', profitUsers, profitUsersCols, 10);
+      renderProfitUsersTable();
       document.getElementById('btn-dl-profit-users').addEventListener('click', () =>
-        downloadExcel(profitUsers, profitUsersCols, 'Profit Users of the Day', 'profit-users-of-the-day.xlsx'));
+        downloadExcel(currentProfitUsers(), profitUsersCols, 'Profit Users of the Day', 'profit-users-of-the-day.xlsx'));
+      const newUserBtn = document.getElementById('btn-profit-new-users');
+      newUserBtn.addEventListener('click', () => {
+        profitUsersNewOnly = !profitUsersNewOnly;
+        newUserBtn.style.background = profitUsersNewOnly ? '#b45309' : '#f59e0b';
+        newUserBtn.innerHTML = profitUsersNewOnly ? '&#127881; Showing New Users (click to reset)' : '&#127881; 3 Days New User';
+        renderProfitUsersTable();
+      });
     } else {
       document.getElementById('profit-users-table').innerHTML = '<div class="no-data">No wallet balance data available.</div>';
     }
