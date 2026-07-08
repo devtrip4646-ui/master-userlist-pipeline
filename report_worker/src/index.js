@@ -2308,14 +2308,23 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       </section>
     </div>
 
-    <section class="acc-rose">
-      <div class="section-head">
-        <div class="sec-title"><div class="badge b-rose">&#9989;</div><h2>Completed Orders &mdash; &lt;4h vs &gt;4h (Last 4 Days)</h2></div>
-        <button class="download-btn-sm" id="btn-dl-last4days">&#128190; Excel</button>
-      </div>
-      <div class="ac-note" id="last4days-pct-summary"></div>
-      <canvas id="last4days-chart"></canvas>
-    </section>
+    <div class="row2col">
+      <section class="acc-rose">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-rose">&#9989;</div><h2>Completed Orders &mdash; &lt;4h vs &gt;4h (Last 4 Days)</h2></div>
+          <button class="download-btn-sm" id="btn-dl-last4days">&#128190; Excel</button>
+        </div>
+        <div class="ac-note" id="last4days-pct-summary"></div>
+        <canvas id="last4days-chart"></canvas>
+      </section>
+      <section class="acc-cyan">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-cyan">&#128176;</div><h2>Withdrawal Processing &mdash; Amount Range</h2></div>
+          <button class="download-btn-sm" id="btn-dl-amount-range">&#128190; Excel</button>
+        </div>
+        <canvas id="amount-range-chart"></canvas>
+      </section>
+    </div>
   \`;
 
   let currentScope = null;
@@ -2460,7 +2469,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     };
   }
 
-  let processingBacklogChart = null, inreviewBacklogChart = null, last4daysChart = null;
+  let processingBacklogChart = null, inreviewBacklogChart = null, last4daysChart = null, amountRangeChart = null;
   function renderBacklogCharts() {
     const wa = data.withdrawal_analysis;
     if (processingBacklogChart) processingBacklogChart.destroy();
@@ -2480,6 +2489,17 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       data: {
         labels: wa.inreview_backlog.map(r => r.bucket),
         datasets: [{ label: 'Orders', data: wa.inreview_backlog.map(r => r.count), backgroundColor: '#22d3ee', borderRadius: 6 }],
+      },
+      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+    });
+    if (amountRangeChart) amountRangeChart.destroy();
+    const war = wa.processing_amount_range || [];
+    amountRangeChart = new Chart(document.getElementById('amount-range-chart'), {
+      type: 'bar',
+      plugins: [barValueLabelsPlugin('datasetTotal', (dsIndex, index) => war[index] ? war[index].amount : null)],
+      data: {
+        labels: war.map(r => r.bucket),
+        datasets: [{ label: 'Orders', data: war.map(r => r.count), backgroundColor: '#38bdf8', borderRadius: 6 }],
       },
       options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
@@ -2725,6 +2745,15 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       'Order Number': o.payment_center_order_no || o.order_no,
       'Hrs Completed': o.waiting_hours == null ? '' : o.waiting_hours,
     })), 'Last 4 Days Completed Orders', 'completed-orders-last-4-days.xlsx');
+  });
+
+  document.getElementById('btn-dl-amount-range').addEventListener('click', () => {
+    const orders = (data.withdrawal_orders_full || []).filter(o => o.status === 'Processing');
+    downloadStyledExcel(orders.map(o => ({
+      'User ID': o.user_id, Agent: o.agent || 'Un-Assigned', VIP: o.vip_level, 'Withdraw Amount': o.amount, Channel: o.channel,
+      'Order Number': o.payment_center_order_no || o.order_no,
+      'Hrs in Processing': o.hours_processing == null ? '' : o.hours_processing,
+    })), 'Processing Orders by Amount Range', 'withdrawal-processing-amount-range.xlsx');
   });
 
   // Date picker wiring

@@ -362,6 +362,37 @@ def withdrawal_completion_by_channel(withdrawal_full_records):
     ]
 
 
+AMOUNT_RANGE_BUCKETS = ["200-999", "1000-4999", "5000-9999", "10000-50000"]
+
+
+def amount_range_bucket(amount):
+    if amount < 200:
+        return None
+    if amount < 1000:
+        return "200-999"
+    if amount < 5000:
+        return "1000-4999"
+    if amount < 10000:
+        return "5000-9999"
+    if amount <= 50000:
+        return "10000-50000"
+    return None
+
+
+def withdrawal_amount_range(withdrawal_full_records, status, bucket_fn, bucket_labels):
+    """Snapshot of orders currently sitting in `status`, bucketed by withdrawal amount."""
+    counts = {label: 0 for label in bucket_labels}
+    amounts = {label: 0.0 for label in bucket_labels}
+    for r in withdrawal_full_records:
+        if r["status"] != status:
+            continue
+        bucket = bucket_fn(r["amount"] or 0.0)
+        if bucket:
+            counts[bucket] += 1
+            amounts[bucket] += r["amount"] or 0.0
+    return [{"bucket": label, "count": counts[label], "amount": round(amounts[label], 2)} for label in bucket_labels]
+
+
 def withdrawal_backlog(withdrawal_full_records, now, status, bucket_fn, bucket_labels):
     """Snapshot (as of `now`) of orders currently sitting in `status`, aged from create_time."""
     counts = {label: 0 for label in bucket_labels}
@@ -1874,6 +1905,8 @@ def build_agent_home_report(
         "inreview_backlog_buckets": INREVIEW_BACKLOG_BUCKETS,
         "processing_backlog": withdrawal_backlog(agent_all_withdrawal_full, now, 1, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS),
         "inreview_backlog": withdrawal_backlog(agent_all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
+        "amount_range_buckets": AMOUNT_RANGE_BUCKETS,
+        "processing_amount_range": withdrawal_amount_range(agent_all_withdrawal_full, 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS),
         "backlog_as_of": now.isoformat(),
         "last4days_completion": last4days_completion(by_date_withdrawal_full_agent, all_dates),
     }
@@ -2102,6 +2135,8 @@ def main():
         "inreview_backlog_buckets": INREVIEW_BACKLOG_BUCKETS,
         "processing_backlog": withdrawal_backlog(all_withdrawal_full, now, 1, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS),
         "inreview_backlog": withdrawal_backlog(all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
+        "amount_range_buckets": AMOUNT_RANGE_BUCKETS,
+        "processing_amount_range": withdrawal_amount_range(all_withdrawal_full, 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS),
         "backlog_as_of": now.isoformat(),
         "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
     }
