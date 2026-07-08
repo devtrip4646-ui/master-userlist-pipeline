@@ -28,6 +28,8 @@ from datetime import datetime, timedelta
 
 import boto3
 
+import ban_utils
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 MASTER_DB = os.path.join(BASE, "master_userlist.db")
 DAILY_DB = os.path.join(BASE, "daily_records.db")
@@ -81,8 +83,13 @@ def main():
         d += timedelta(days=1)
     window_date_set = set(window_dates)
 
+    banned_ids = set(ban_utils.get_banned_user_ids(MASTER_DB))
+
     mconn = sqlite3.connect(MASTER_DB)
-    total_recharge_by_user = dict(mconn.execute("SELECT user_id, total_recharge FROM users").fetchall())
+    total_recharge_by_user = {
+        uid: tr for uid, tr in mconn.execute("SELECT user_id, total_recharge FROM users").fetchall()
+        if uid not in banned_ids
+    }
     agent_by_user = {}
     try:
         agent_by_user = dict(mconn.execute("SELECT user_id, agent_name FROM agent_assignments").fetchall())
