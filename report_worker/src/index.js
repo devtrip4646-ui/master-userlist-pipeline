@@ -2450,12 +2450,14 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
             const amount = getAmount ? getAmount(dsIndex, index) : null;
             const lines = [fmt(value), pct.toFixed(1) + '%'];
             if (amount != null) lines.push(money(amount));
-            // Anchor near the TOP of the bar, inside it -- for very short
-            // bars the text may slightly overrun the bar's own edge (canvas
-            // doesn't clip to the bar shape), but stays visually "inside"
-            // for every bar big enough to matter.
             const lineHeight = 12;
-            let y = bar.y + 14;
+            const neededHeight = lines.length * lineHeight + 4;
+            const barHeight = (bar.base != null ? bar.base : chart.chartArea.bottom) - bar.y;
+            // Draw inside the bar (top-anchored) when there's room; for bars
+            // too short to fit the text, draw it stacked above the bar
+            // instead so it doesn't spill into the axis labels below.
+            const fitsInside = barHeight >= neededHeight;
+            let y = fitsInside ? bar.y + 14 : bar.y - neededHeight + 8;
             ctx.save();
             ctx.textAlign = 'center';
             ctx.fillStyle = '#000000';
