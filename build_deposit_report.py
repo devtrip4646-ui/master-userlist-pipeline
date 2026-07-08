@@ -362,7 +362,7 @@ def withdrawal_completion_by_channel(withdrawal_full_records):
     ]
 
 
-AMOUNT_RANGE_BUCKETS = ["200-999", "1000-4999", "5000-9999", "10000-50000"]
+AMOUNT_RANGE_BUCKETS = ["200-999", "1000-4999", "5000-9999", "10000-20000", "20001-50000"]
 
 
 def amount_range_bucket(amount):
@@ -374,8 +374,10 @@ def amount_range_bucket(amount):
         return "1000-4999"
     if amount < 10000:
         return "5000-9999"
+    if amount <= 20000:
+        return "10000-20000"
     if amount <= 50000:
-        return "10000-50000"
+        return "20001-50000"
     return None
 
 
