@@ -2320,9 +2320,9 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       <section class="acc-cyan">
         <div class="section-head">
           <div class="sec-title"><div class="badge b-cyan">&#128176;</div><h2>Withdrawal Processing &mdash; Amount Range</h2></div>
-          <button class="download-btn-sm" id="btn-dl-amount-range">&#128190; Excel</button>
+          <button class="download-btn-sm" id="btn-dl-withdrawal-amount-range">&#128190; Excel</button>
         </div>
-        <canvas id="amount-range-chart"></canvas>
+        <div id="amount-range-table"></div>
       </section>
     </div>
   \`;
@@ -2389,8 +2389,6 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
 
     renderWithdrawalTimingTable('withdrawal-review-table', scope.withdrawal_review_by_channel || [], 'No processing (status 1) withdrawals for this date.');
     renderWithdrawalTimingTable('withdrawal-completion-table', scope.withdrawal_completion_by_channel || [], 'No completed (status 2) withdrawals for this date.');
-
-    renderAmountRangeChart(scope.processing_amount_range || []);
   }
 
   function renderWithdrawalTimingTable(containerId, matrix, emptyMsg) {
@@ -2418,6 +2416,37 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       rows.map(row => '<tr><td>' + row.channel + '</td>' +
         procBuckets.map(b => '<td class="num">' + (row[b] || '') + '</td>').join('') +
         '<td class="num"><strong>' + row._total + '</strong></td></tr>').join('') +
+      '</tbody></table></div>';
+  }
+
+  function renderAmountRangeMatrix(matrix) {
+    const container = document.getElementById('amount-range-table');
+    const ageBuckets = data.withdrawal_analysis.processing_backlog_buckets;
+    const amountRanges = data.withdrawal_analysis.amount_range_buckets;
+    if (!matrix.length) {
+      container.innerHTML = '<div class="no-data">No processing (status 1) withdrawals in backlog.</div>';
+      return;
+    }
+    const rows = amountRanges.map(ar => {
+      const row = { amount_range: ar };
+      let totalCount = 0, totalAmount = 0;
+      for (const b of ageBuckets) {
+        const found = matrix.find(x => x.amount_range === ar && x.bucket === b);
+        row[b] = found ? found.count : 0;
+        totalCount += row[b];
+        totalAmount += found ? found.amount : 0;
+      }
+      row._totalCount = totalCount;
+      row._totalAmount = totalAmount;
+      return row;
+    });
+    const headers = ['Amount Range'].concat(ageBuckets).concat(['Total Orders', 'Total Amount']);
+    container.innerHTML = '<div class="table-wrap"><table><thead><tr>' +
+      headers.map((h, i) => '<th' + (i > 0 ? ' class="num"' : '') + '>' + h + '</th>').join('') + '</tr></thead><tbody>' +
+      rows.map(row => '<tr><td>' + row.amount_range + '</td>' +
+        ageBuckets.map(b => '<td class="num">' + (row[b] || '') + '</td>').join('') +
+        '<td class="num"><strong>' + row._totalCount + '</strong></td>' +
+        '<td class="num">' + money(row._totalAmount) + '</td></tr>').join('') +
       '</tbody></table></div>';
   }
 
@@ -2473,7 +2502,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     };
   }
 
-  let processingBacklogChart = null, inreviewBacklogChart = null, last4daysChart = null, amountRangeChart = null;
+  let processingBacklogChart = null, inreviewBacklogChart = null, last4daysChart = null;
   function renderBacklogCharts() {
     const wa = data.withdrawal_analysis;
     if (processingBacklogChart) processingBacklogChart.destroy();
@@ -2546,19 +2575,8 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
         scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
       },
     });
-  }
 
-  function renderAmountRangeChart(war) {
-    if (amountRangeChart) amountRangeChart.destroy();
-    amountRangeChart = new Chart(document.getElementById('amount-range-chart'), {
-      type: 'bar',
-      plugins: [barValueLabelsPlugin('datasetTotal', (dsIndex, index) => war[index] ? war[index].amount : null)],
-      data: {
-        labels: war.map(r => r.bucket),
-        datasets: [{ label: 'Orders', data: war.map(r => r.count), backgroundColor: '#38bdf8', borderRadius: 6 }],
-      },
-      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
-    });
+    renderAmountRangeMatrix(wa.processing_amount_range_matrix || []);
   }
 
   function renderHeatmap(mode, containerId, rowKeys) {
@@ -2753,7 +2771,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     })), 'Last 4 Days Completed Orders', 'completed-orders-last-4-days.xlsx');
   });
 
-  document.getElementById('btn-dl-amount-range').addEventListener('click', () => {
+  document.getElementById('btn-dl-withdrawal-amount-range').addEventListener('click', () => {
     const orders = (data.withdrawal_orders_full || []).filter(o => o.status === 'Processing');
     downloadStyledExcel(orders.map(o => ({
       'User ID': o.user_id, Agent: o.agent || 'Un-Assigned', VIP: o.vip_level, 'Withdraw Amount': o.amount, Channel: o.channel,

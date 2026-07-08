@@ -379,18 +379,28 @@ def amount_range_bucket(amount):
     return None
 
 
-def withdrawal_amount_range(withdrawal_full_records, status, bucket_fn, bucket_labels):
-    """Snapshot of orders currently sitting in `status`, bucketed by withdrawal amount."""
-    counts = {label: 0 for label in bucket_labels}
-    amounts = {label: 0.0 for label in bucket_labels}
+def withdrawal_amount_range_aging_matrix(withdrawal_full_records, now, status, amount_bucket_fn, amount_buckets, time_bucket_fn, time_buckets):
+    """Snapshot (as of `now`) of orders sitting in `status`, cross-tabulated by
+    withdrawal amount range x aging bucket (same aging logic as withdrawal_backlog)."""
+    matrix = defaultdict(lambda: defaultdict(int))
+    amounts = defaultdict(lambda: defaultdict(float))
     for r in withdrawal_full_records:
-        if r["status"] != status:
+        if r["status"] != status or not r["create_dt"]:
             continue
-        bucket = bucket_fn(r["amount"] or 0.0)
-        if bucket:
-            counts[bucket] += 1
-            amounts[bucket] += r["amount"] or 0.0
-    return [{"bucket": label, "count": counts[label], "amount": round(amounts[label], 2)} for label in bucket_labels]
+        hours = max((now - r["create_dt"]).total_seconds() / 3600.0, 0)
+        time_bucket = time_bucket_fn(hours)
+        if not time_bucket:
+            continue
+        amount_bucket = amount_bucket_fn(r["amount"] or 0.0)
+        if not amount_bucket:
+            continue
+        matrix[amount_bucket][time_bucket] += 1
+        amounts[amount_bucket][time_bucket] += r["amount"] or 0.0
+    return [
+        {"amount_range": ar, "bucket": tb, "count": matrix[ar][tb], "amount": round(amounts[ar][tb], 2)}
+        for ar in amount_buckets
+        for tb in time_buckets
+    ]
 
 
 def withdrawal_backlog(withdrawal_full_records, now, status, bucket_fn, bucket_labels):
@@ -1895,7 +1905,6 @@ def build_agent_home_report(
             ),
             "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full_agent.get(date, [])),
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full_agent.get(date, [])),
-            "processing_amount_range": withdrawal_amount_range(by_date_withdrawal_full_agent.get(date, []), 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS),
         }
         for date in all_dates
     }
@@ -1907,6 +1916,9 @@ def build_agent_home_report(
         "processing_backlog": withdrawal_backlog(agent_all_withdrawal_full, now, 1, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS),
         "inreview_backlog": withdrawal_backlog(agent_all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
         "amount_range_buckets": AMOUNT_RANGE_BUCKETS,
+        "processing_amount_range_matrix": withdrawal_amount_range_aging_matrix(
+            agent_all_withdrawal_full, now, 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS
+        ),
         "backlog_as_of": now.isoformat(),
         "last4days_completion": last4days_completion(by_date_withdrawal_full_agent, all_dates),
     }
@@ -2125,7 +2137,6 @@ def main():
             "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_orders": withdrawal_orders_export(by_date_withdrawal_full.get(date, []), vip_by_user, now, agent_by_user),
-            "processing_amount_range": withdrawal_amount_range(by_date_withdrawal_full.get(date, []), 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS),
         }
         for date in all_dates
     }
@@ -2137,6 +2148,9 @@ def main():
         "processing_backlog": withdrawal_backlog(all_withdrawal_full, now, 1, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS),
         "inreview_backlog": withdrawal_backlog(all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
         "amount_range_buckets": AMOUNT_RANGE_BUCKETS,
+        "processing_amount_range_matrix": withdrawal_amount_range_aging_matrix(
+            all_withdrawal_full, now, 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS
+        ),
         "backlog_as_of": now.isoformat(),
         "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
     }
