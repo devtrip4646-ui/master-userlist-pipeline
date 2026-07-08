@@ -365,6 +365,7 @@ def withdrawal_completion_by_channel(withdrawal_full_records):
 def withdrawal_backlog(withdrawal_full_records, now, status, bucket_fn, bucket_labels):
     """Snapshot (as of `now`) of orders currently sitting in `status`, aged from create_time."""
     counts = {label: 0 for label in bucket_labels}
+    amounts = {label: 0.0 for label in bucket_labels}
     for r in withdrawal_full_records:
         if r["status"] != status or not r["create_dt"]:
             continue
@@ -372,7 +373,8 @@ def withdrawal_backlog(withdrawal_full_records, now, status, bucket_fn, bucket_l
         bucket = bucket_fn(hours)
         if bucket:
             counts[bucket] += 1
-    return [{"bucket": label, "count": counts[label]} for label in bucket_labels]
+            amounts[bucket] += r["amount"] or 0.0
+    return [{"bucket": label, "count": counts[label], "amount": round(amounts[label], 2)} for label in bucket_labels]
 
 
 # Cumulative deposit ("experience") required to reach each VIP level, per the

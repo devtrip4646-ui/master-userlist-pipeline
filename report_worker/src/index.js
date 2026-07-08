@@ -2410,13 +2410,15 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       '</tbody></table></div>';
   }
 
-  // Draws each bar's own value (and a percentage) directly above/inside it,
-  // so the aging/completion breakdown is readable at a glance without
-  // hovering. pctMode 'datasetTotal': % of that whole dataset's own total
-  // (e.g. this bucket is 29% of all processing-backlog orders). pctMode
-  // 'indexTotal': % of the total across all datasets AT THAT SAME x-axis
-  // category (e.g. this day's <4h share vs >4h share).
-  function barValueLabelsPlugin(pctMode) {
+  // Draws each bar's own value, percentage, and (optionally) a total-amount
+  // line INSIDE the bar near its top, so the aging/completion breakdown is
+  // readable at a glance without hovering. pctMode 'datasetTotal': % of
+  // that whole dataset's own total (e.g. this bucket is 29% of all
+  // processing-backlog orders). pctMode 'indexTotal': % of the total across
+  // all datasets AT THAT SAME x-axis category (e.g. this day's <4h share vs
+  // >4h share). getAmount(dsIndex, index), if given, adds a third "money"
+  // line (e.g. Rs45,000 sitting in that aging bucket).
+  function barValueLabelsPlugin(pctMode, getAmount) {
     return {
       id: 'barValueLabels',
       afterDatasetsDraw(chart) {
@@ -2434,14 +2436,23 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
             if (!value) return;
             const denom = pctMode === 'indexTotal' ? indexTotals[index] : datasetTotals[dsIndex];
             const pct = denom ? (value / denom * 100) : 0;
+            const amount = getAmount ? getAmount(dsIndex, index) : null;
+            const lines = [fmt(value), pct.toFixed(1) + '%'];
+            if (amount != null) lines.push(money(amount));
+            // Anchor near the TOP of the bar, inside it -- for very short
+            // bars the text may slightly overrun the bar's own edge (canvas
+            // doesn't clip to the bar shape), but stays visually "inside"
+            // for every bar big enough to matter.
+            const lineHeight = 12;
+            let y = bar.y + 14;
             ctx.save();
-            ctx.fillStyle = '#374151';
-            ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText(fmt(value), bar.x, bar.y - 16);
-            ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
-            ctx.fillStyle = '#6b7280';
-            ctx.fillText(pct.toFixed(1) + '%', bar.x, bar.y - 4);
+            ctx.fillStyle = '#ffffff';
+            lines.forEach((line, i) => {
+              ctx.font = i === 0 ? 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif' : '10px -apple-system, BlinkMacSystemFont, sans-serif';
+              ctx.fillText(line, bar.x, y);
+              y += lineHeight;
+            });
             ctx.restore();
           });
         });
@@ -2455,22 +2466,22 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     if (processingBacklogChart) processingBacklogChart.destroy();
     processingBacklogChart = new Chart(document.getElementById('processing-backlog-chart'), {
       type: 'bar',
-      plugins: [barValueLabelsPlugin('datasetTotal')],
+      plugins: [barValueLabelsPlugin('datasetTotal', (dsIndex, index) => wa.processing_backlog[index] ? wa.processing_backlog[index].amount : null)],
       data: {
         labels: wa.processing_backlog.map(r => r.bucket),
         datasets: [{ label: 'Orders', data: wa.processing_backlog.map(r => r.count), backgroundColor: '#fb7185', borderRadius: 6 }],
       },
-      options: { layout: { padding: { top: 24 } }, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
     if (inreviewBacklogChart) inreviewBacklogChart.destroy();
     inreviewBacklogChart = new Chart(document.getElementById('inreview-backlog-chart'), {
       type: 'bar',
-      plugins: [barValueLabelsPlugin('datasetTotal')],
+      plugins: [barValueLabelsPlugin('datasetTotal', (dsIndex, index) => wa.inreview_backlog[index] ? wa.inreview_backlog[index].amount : null)],
       data: {
         labels: wa.inreview_backlog.map(r => r.bucket),
         datasets: [{ label: 'Orders', data: wa.inreview_backlog.map(r => r.count), backgroundColor: '#22d3ee', borderRadius: 6 }],
       },
-      options: { layout: { padding: { top: 24 } }, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
     if (last4daysChart) last4daysChart.destroy();
     const last4 = wa.last4days_completion || [];
@@ -2500,7 +2511,6 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
         ],
       },
       options: {
-        layout: { padding: { top: 24 } },
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: true },
