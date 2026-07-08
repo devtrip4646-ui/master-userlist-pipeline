@@ -2410,26 +2410,67 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       '</tbody></table></div>';
   }
 
+  // Draws each bar's own value (and a percentage) directly above/inside it,
+  // so the aging/completion breakdown is readable at a glance without
+  // hovering. pctMode 'datasetTotal': % of that whole dataset's own total
+  // (e.g. this bucket is 29% of all processing-backlog orders). pctMode
+  // 'indexTotal': % of the total across all datasets AT THAT SAME x-axis
+  // category (e.g. this day's <4h share vs >4h share).
+  function barValueLabelsPlugin(pctMode) {
+    return {
+      id: 'barValueLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        const datasets = chart.data.datasets;
+        const datasetTotals = datasets.map(ds => ds.data.reduce((s, v) => s + (Number(v) || 0), 0));
+        const indexTotals = (chart.data.labels || []).map((_, i) =>
+          datasets.reduce((s, ds) => s + (Number(ds.data[i]) || 0), 0)
+        );
+        datasets.forEach((dataset, dsIndex) => {
+          const meta = chart.getDatasetMeta(dsIndex);
+          if (meta.hidden) return;
+          meta.data.forEach((bar, index) => {
+            const value = Number(dataset.data[index]) || 0;
+            if (!value) return;
+            const denom = pctMode === 'indexTotal' ? indexTotals[index] : datasetTotals[dsIndex];
+            const pct = denom ? (value / denom * 100) : 0;
+            ctx.save();
+            ctx.fillStyle = '#374151';
+            ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(fmt(value), bar.x, bar.y - 16);
+            ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.fillStyle = '#6b7280';
+            ctx.fillText(pct.toFixed(1) + '%', bar.x, bar.y - 4);
+            ctx.restore();
+          });
+        });
+      },
+    };
+  }
+
   let processingBacklogChart = null, inreviewBacklogChart = null, last4daysChart = null;
   function renderBacklogCharts() {
     const wa = data.withdrawal_analysis;
     if (processingBacklogChart) processingBacklogChart.destroy();
     processingBacklogChart = new Chart(document.getElementById('processing-backlog-chart'), {
       type: 'bar',
+      plugins: [barValueLabelsPlugin('datasetTotal')],
       data: {
         labels: wa.processing_backlog.map(r => r.bucket),
         datasets: [{ label: 'Orders', data: wa.processing_backlog.map(r => r.count), backgroundColor: '#fb7185', borderRadius: 6 }],
       },
-      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+      options: { layout: { padding: { top: 24 } }, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
     if (inreviewBacklogChart) inreviewBacklogChart.destroy();
     inreviewBacklogChart = new Chart(document.getElementById('inreview-backlog-chart'), {
       type: 'bar',
+      plugins: [barValueLabelsPlugin('datasetTotal')],
       data: {
         labels: wa.inreview_backlog.map(r => r.bucket),
         datasets: [{ label: 'Orders', data: wa.inreview_backlog.map(r => r.count), backgroundColor: '#22d3ee', borderRadius: 6 }],
       },
-      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+      options: { layout: { padding: { top: 24 } }, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
     if (last4daysChart) last4daysChart.destroy();
     const last4 = wa.last4days_completion || [];
@@ -2450,6 +2491,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     }
     last4daysChart = new Chart(document.getElementById('last4days-chart'), {
       type: 'bar',
+      plugins: [barValueLabelsPlugin('indexTotal')],
       data: {
         labels: last4.map(r => r.date),
         datasets: [
@@ -2458,6 +2500,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
         ],
       },
       options: {
+        layout: { padding: { top: 24 } },
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: true },
