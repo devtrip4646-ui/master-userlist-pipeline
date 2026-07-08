@@ -2447,7 +2447,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
             let y = bar.y + 14;
             ctx.save();
             ctx.textAlign = 'center';
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = '#000000';
             lines.forEach((line, i) => {
               ctx.font = i === 0 ? 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif' : '10px -apple-system, BlinkMacSystemFont, sans-serif';
               ctx.fillText(line, bar.x, y);
