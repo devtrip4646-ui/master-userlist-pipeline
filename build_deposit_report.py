@@ -1895,6 +1895,7 @@ def build_agent_home_report(
             ),
             "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full_agent.get(date, [])),
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full_agent.get(date, [])),
+            "processing_amount_range": withdrawal_amount_range(by_date_withdrawal_full_agent.get(date, []), 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS),
         }
         for date in all_dates
     }
@@ -1906,7 +1907,6 @@ def build_agent_home_report(
         "processing_backlog": withdrawal_backlog(agent_all_withdrawal_full, now, 1, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS),
         "inreview_backlog": withdrawal_backlog(agent_all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
         "amount_range_buckets": AMOUNT_RANGE_BUCKETS,
-        "processing_amount_range": withdrawal_amount_range(agent_all_withdrawal_full, 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS),
         "backlog_as_of": now.isoformat(),
         "last4days_completion": last4days_completion(by_date_withdrawal_full_agent, all_dates),
     }
@@ -2125,6 +2125,7 @@ def main():
             "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_orders": withdrawal_orders_export(by_date_withdrawal_full.get(date, []), vip_by_user, now, agent_by_user),
+            "processing_amount_range": withdrawal_amount_range(by_date_withdrawal_full.get(date, []), 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS),
         }
         for date in all_dates
     }
@@ -2136,7 +2137,6 @@ def main():
         "processing_backlog": withdrawal_backlog(all_withdrawal_full, now, 1, processing_backlog_bucket, PROCESSING_BACKLOG_BUCKETS),
         "inreview_backlog": withdrawal_backlog(all_withdrawal_full, now, 0, inreview_backlog_bucket, INREVIEW_BACKLOG_BUCKETS),
         "amount_range_buckets": AMOUNT_RANGE_BUCKETS,
-        "processing_amount_range": withdrawal_amount_range(all_withdrawal_full, 1, amount_range_bucket, AMOUNT_RANGE_BUCKETS),
         "backlog_as_of": now.isoformat(),
         "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
     }

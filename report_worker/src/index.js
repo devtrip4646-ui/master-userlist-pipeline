@@ -2389,6 +2389,8 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
 
     renderWithdrawalTimingTable('withdrawal-review-table', scope.withdrawal_review_by_channel || [], 'No processing (status 1) withdrawals for this date.');
     renderWithdrawalTimingTable('withdrawal-completion-table', scope.withdrawal_completion_by_channel || [], 'No completed (status 2) withdrawals for this date.');
+
+    renderAmountRangeChart(scope.processing_amount_range || []);
   }
 
   function renderWithdrawalTimingTable(containerId, matrix, emptyMsg) {
@@ -2492,17 +2494,6 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       },
       options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
-    if (amountRangeChart) amountRangeChart.destroy();
-    const war = wa.processing_amount_range || [];
-    amountRangeChart = new Chart(document.getElementById('amount-range-chart'), {
-      type: 'bar',
-      plugins: [barValueLabelsPlugin('datasetTotal', (dsIndex, index) => war[index] ? war[index].amount : null)],
-      data: {
-        labels: war.map(r => r.bucket),
-        datasets: [{ label: 'Orders', data: war.map(r => r.count), backgroundColor: '#38bdf8', borderRadius: 6 }],
-      },
-      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
-    });
     if (last4daysChart) last4daysChart.destroy();
     const last4 = wa.last4days_completion || [];
     // % split + point difference, most recent day with any completed orders --
@@ -2552,6 +2543,19 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
         },
         scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
       },
+    });
+  }
+
+  function renderAmountRangeChart(war) {
+    if (amountRangeChart) amountRangeChart.destroy();
+    amountRangeChart = new Chart(document.getElementById('amount-range-chart'), {
+      type: 'bar',
+      plugins: [barValueLabelsPlugin('datasetTotal', (dsIndex, index) => war[index] ? war[index].amount : null)],
+      data: {
+        labels: war.map(r => r.bucket),
+        datasets: [{ label: 'Orders', data: war.map(r => r.count), backgroundColor: '#38bdf8', borderRadius: 6 }],
+      },
+      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
   }
 
