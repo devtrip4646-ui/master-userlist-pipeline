@@ -1561,7 +1561,7 @@ if (IS_PLATFORM_ANALYSIS) {
             <div class="sec-title"><div class="badge b-rose">&#128680;</div><h2>Suspicious Withdraw Users</h2></div>
             <button class="download-btn-sm" id="btn-dl-suspicious-withdraw">&#128190; Excel</button>
           </div>
-          <div class="ac-note">Deposited AND requested a withdrawal (In-Review/Processing/Complete) within the last 3 days, while playing fewer than 25 games in that same window -- deposit-and-cash-out without genuine play.</div>
+          <div class="ac-note">Deposited &#8377;1,000+ AND requested a withdrawal (In-Review/Processing/Complete) within the last 3 days, while playing fewer than 25 games in that same window -- deposit-and-cash-out without genuine play.</div>
           <div id="suspicious-withdraw-table"></div>
           <div class="ac-pagination" id="suspicious-withdraw-pagination"></div>
         </section>
@@ -1758,6 +1758,7 @@ if (IS_PLATFORM_ANALYSIS) {
       { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
       { label: 'VIP', render: r => r.vip == null ? '—' : r.vip, raw: r => r.vip, num: true },
+      { label: 'Deposit (3d)', render: r => money(r.deposit_amount), raw: r => r.deposit_amount, num: true },
       { label: 'Games Played (3d)', render: r => fmt(r.game_count), raw: r => r.game_count, num: true },
     ];
     if (suspiciousWithdraw && suspiciousWithdraw.length) {

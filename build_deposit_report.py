@@ -1269,26 +1269,29 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_
 
 
 SUSPICIOUS_WITHDRAW_MAX_GAMES = 25
+SUSPICIOUS_WITHDRAW_MIN_DEPOSIT = 1000.0
 
 
 def suspicious_withdraw_users(deposit_rows, withdrawal_rows, game_play_rows, now, agent_by_user, vip_by_user):
     """Fraud/bonus-abuse signal: users who, within the last 3 days (today
-    and the previous 2), BOTH made a COMPLETE deposit AND requested a
-    withdrawal (In-Review/Processing/Complete -- same statuses "WD Today"
-    counts elsewhere), while playing fewer than SUSPICIOUS_WITHDRAW_MAX_GAMES
-    actual games in that same window -- i.e. deposited and cashed out
-    without genuinely playing. game_play_rows excludes bonus payouts (same
+    and the previous 2), BOTH made COMPLETE deposits totaling at least
+    SUSPICIOUS_WITHDRAW_MIN_DEPOSIT AND requested a withdrawal (In-Review/
+    Processing/Complete -- same statuses "WD Today" counts elsewhere), while
+    playing fewer than SUSPICIOUS_WITHDRAW_MAX_GAMES actual games in that
+    same window -- i.e. deposited a meaningful amount and cashed out without
+    genuinely playing. game_play_rows excludes bonus payouts (same
     definition as the "games played" query in build_recent_activity_by_user:
     wallet_transactions rows with a real game_name, id NOT IN bonuses)."""
     window_start = now.date() - timedelta(days=2)
 
-    deposited_users = set()
+    deposit_amount = defaultdict(float)
     for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None:
             continue
         dt = parse_dt(create_time)
         if dt and dt.date() >= window_start:
-            deposited_users.add(user_id)
+            deposit_amount[user_id] += order_amount or 0.0
+    deposited_users = {u for u, amt in deposit_amount.items() if amt >= SUSPICIOUS_WITHDRAW_MIN_DEPOSIT}
 
     withdrew_users = set()
     for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, payment_center_order_id in withdrawal_rows:
@@ -1314,6 +1317,7 @@ def suspicious_withdraw_users(deposit_rows, withdrawal_rows, game_play_rows, now
                 "user_id": user_id,
                 "agent": agent_for(agent_by_user, user_id),
                 "vip": vip_by_user.get(user_id),
+                "deposit_amount": round(deposit_amount[user_id], 2),
                 "game_count": count,
             })
     result.sort(key=lambda r: r["game_count"])
