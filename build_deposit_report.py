@@ -1268,6 +1268,58 @@ def profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_
     return result
 
 
+SUSPICIOUS_WITHDRAW_MAX_GAMES = 25
+
+
+def suspicious_withdraw_users(deposit_rows, withdrawal_rows, game_play_rows, now, agent_by_user, vip_by_user):
+    """Fraud/bonus-abuse signal: users who, within the last 3 days (today
+    and the previous 2), BOTH made a COMPLETE deposit AND requested a
+    withdrawal (In-Review/Processing/Complete -- same statuses "WD Today"
+    counts elsewhere), while playing fewer than SUSPICIOUS_WITHDRAW_MAX_GAMES
+    actual games in that same window -- i.e. deposited and cashed out
+    without genuinely playing. game_play_rows excludes bonus payouts (same
+    definition as the "games played" query in build_recent_activity_by_user:
+    wallet_transactions rows with a real game_name, id NOT IN bonuses)."""
+    window_start = now.date() - timedelta(days=2)
+
+    deposited_users = set()
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if dt and dt.date() >= window_start:
+            deposited_users.add(user_id)
+
+    withdrew_users = set()
+    for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, payment_center_order_id in withdrawal_rows:
+        if status not in (0, 1, 2) or user_id is None:  # 0 In-Review, 1 Processing, 2 Complete
+            continue
+        dt = parse_dt(create_time)
+        if dt and dt.date() >= window_start:
+            withdrew_users.add(user_id)
+
+    game_count = defaultdict(int)
+    for user_id, create_time in game_play_rows:
+        if user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if dt and dt.date() >= window_start:
+            game_count[user_id] += 1
+
+    result = []
+    for user_id in deposited_users & withdrew_users:
+        count = game_count.get(user_id, 0)
+        if count < SUSPICIOUS_WITHDRAW_MAX_GAMES:
+            result.append({
+                "user_id": user_id,
+                "agent": agent_for(agent_by_user, user_id),
+                "vip": vip_by_user.get(user_id),
+                "game_count": count,
+            })
+    result.sort(key=lambda r: r["game_count"])
+    return result
+
+
 def new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, today):
     """Per-day new-vs-old depositor breakdown for Platform Analysis, below
     Bonus Claim Report. "New" = a user whose FIRST-EVER deposit
@@ -2018,6 +2070,14 @@ def main():
     wallet_rows = cur.execute(
         "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
     ).fetchall()
+    # Actual game plays only -- excludes bonus payouts, same definition as
+    # build_recent_activity_by_user's "games played" query -- used by
+    # suspicious_withdraw_users() below.
+    game_play_rows = cur.execute(
+        "SELECT user_id, create_time FROM wallet_transactions "
+        "WHERE game_name IS NOT NULL AND game_name != '' AND user_id IS NOT NULL "
+        "AND id NOT IN (SELECT id FROM bonuses)"
+    ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
     conn.close()
@@ -2081,6 +2141,8 @@ def main():
         build_and_upload_user_search_index(mconn, recent_activity, load_creds(), agent_by_user)
 
         mconn.close()
+
+    suspicious_withdraw = suspicious_withdraw_users(deposit_rows, withdrawal_rows, game_play_rows, now, agent_by_user, vip_by_user)
 
     by_date_records = defaultdict(list)
     all_records = []
@@ -2334,6 +2396,7 @@ def main():
         "performance_history": performance,
         "profit_users": profit_users,
         "channel_performance": channel_performance,
+        "suspicious_withdraw_users": suspicious_withdraw,
         "bonus_claims": bonus_claims,
         "bonus_claims_by_date": bonus_claims_by_date,
         "bonus_claims_by_week": bonus_claims_by_week,

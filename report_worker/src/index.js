@@ -1509,6 +1509,7 @@ if (IS_PLATFORM_ANALYSIS) {
     const netRevDates = Object.keys(netRevRegionVip).sort();
     const netRevLatest = netRevDates.length ? netRevRegionVip[netRevDates[netRevDates.length - 1]] : null;
     const acqChannel = data.channel_performance;
+    const suspiciousWithdraw = data.suspicious_withdraw_users;
     const bonusClaimsRangeSources = {
       day: data.bonus_claims_by_date || {},
       week: data.bonus_claims_by_week || {},
@@ -1554,14 +1555,25 @@ if (IS_PLATFORM_ANALYSIS) {
       </div>
 
       <div class="analysis-heading withdrawal"><h2>Acquisition &amp; Bonus Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
-      <section class="acc-blue">
-        <div class="section-head">
-          <div class="sec-title"><div class="badge b-blue">&#128202;</div><h2>Channel performance &mdash; 4-day combined</h2></div>
-          <button class="download-btn-sm" id="btn-dl-acq-channel">&#128190; Excel</button>
-        </div>
-        <div id="acq-channel-table"></div>
-        <div class="ac-pagination" id="acq-channel-pagination"></div>
-      </section>
+      <div class="row2col">
+        <section class="acc-rose">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-rose">&#128680;</div><h2>Suspicious Withdraw Users</h2></div>
+            <button class="download-btn-sm" id="btn-dl-suspicious-withdraw">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">Deposited AND requested a withdrawal (In-Review/Processing/Complete) within the last 3 days, while playing fewer than 25 games in that same window -- deposit-and-cash-out without genuine play.</div>
+          <div id="suspicious-withdraw-table"></div>
+          <div class="ac-pagination" id="suspicious-withdraw-pagination"></div>
+        </section>
+        <section class="acc-blue">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-blue">&#128202;</div><h2>Channel performance &mdash; 4-day combined</h2></div>
+            <button class="download-btn-sm" id="btn-dl-acq-channel">&#128190; Excel</button>
+          </div>
+          <div id="acq-channel-table"></div>
+          <div class="ac-pagination" id="acq-channel-pagination"></div>
+        </section>
+      </div>
       <section class="acc-purple">
         <div class="section-head">
           <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
@@ -1740,6 +1752,20 @@ if (IS_PLATFORM_ANALYSIS) {
         downloadExcel(acqChannel, acqChannelCols, 'Channel Performance', 'channel-performance-4day.xlsx'));
     } else {
       document.getElementById('acq-channel-table').innerHTML = '<div class="no-data">No channel data available for the last 4 days.</div>';
+    }
+
+    const suspiciousWithdrawCols = [
+      { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
+      { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
+      { label: 'VIP', render: r => r.vip == null ? '—' : r.vip, raw: r => r.vip, num: true },
+      { label: 'Games Played (3d)', render: r => fmt(r.game_count), raw: r => r.game_count, num: true },
+    ];
+    if (suspiciousWithdraw && suspiciousWithdraw.length) {
+      paginatedTable('suspicious-withdraw-table', 'suspicious-withdraw-pagination', suspiciousWithdraw, suspiciousWithdrawCols, 10);
+      document.getElementById('btn-dl-suspicious-withdraw').addEventListener('click', () =>
+        downloadExcel(suspiciousWithdraw, suspiciousWithdrawCols, 'Suspicious Withdraw Users', 'suspicious-withdraw-users.xlsx'));
+    } else {
+      document.getElementById('suspicious-withdraw-table').innerHTML = '<div class="no-data">No users matched this pattern in the last 3 days.</div>';
     }
 
     // --- Bonus Claim Report -- today only, both views share the same shape ---
