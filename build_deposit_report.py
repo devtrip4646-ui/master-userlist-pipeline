@@ -1593,8 +1593,8 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
     print(f"Uploaded {USER_SEARCH_SHARDS} user search shards covering {len(rows)} users")
 
 
-def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_rows, target_date):
-    """All bonuses claimed on target_date -- both wallet-sourced bonuses
+def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_rows, target_dates):
+    """All bonuses claimed on target_dates -- both wallet-sourced bonuses
     (Welcome Back, Loyalty, VIP tiers, Daily Active, etc., from
     daily_records.db's `bonuses` table) and the 3-Day Deposit Challenge
     Bonus (Rules 1-4). For each: claimed users, total bonus value, how many
@@ -1622,21 +1622,27 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
     Active Bonus Low" categories (stripping the random per-instance
     suffix). Any bonus matching one of these rules is picked up
     automatically the first day it appears -- no maintained name list, no
-    code change needed."""
-    today_str = target_date.isoformat()
+    code change needed.
+
+    target_dates is an iterable of 'YYYY-MM-DD' strings -- a single day for
+    the Day view, or a rolling 7/30-day window for the Week/Month views
+    (see bonus_claims_by_week/bonus_claims_by_month in main()). Using a set
+    keeps "claimed users" a true distinct count across the whole window
+    rather than a sum-of-daily-counts that double-counts repeat claimers."""
+    target_dates = set(target_dates)
 
     today_deposit_amount = defaultdict(float)
     for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None or not create_time:
             continue
-        if str(create_time).startswith(today_str):
+        if str(create_time)[:10] in target_dates:
             today_deposit_amount[user_id] += order_amount or 0.0
     today_depositors = set(today_deposit_amount.keys())
 
 
     by_category = defaultdict(lambda: {"users": set(), "value": 0.0})
     for matched_category, user_id, change_value, create_time in bonus_rows_all:
-        if not matched_category or not create_time or not str(create_time).startswith(today_str):
+        if not matched_category or not create_time or str(create_time)[:10] not in target_dates:
             continue
         b = by_category[matched_category]
         b["users"].add(user_id)
@@ -2203,12 +2209,33 @@ def main():
     bonus_daily_conn.close()
 
     deposit_day_stats = build_deposit_day_stats(deposit_rows)
+    dcb_rows_by_date = {}
     bonus_claims_by_date = {}
     for date_str in all_dates:
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         dcb_rows_for_date = deposit_challenge_bonus_rows if d == now.date() else deposit_challenge_bonus(deposit_rows, deposit_day_stats, d, agent_by_user)
-        bonus_claims_by_date[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, d)
+        dcb_rows_by_date[date_str] = dcb_rows_for_date
+        bonus_claims_by_date[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, {date_str})
     bonus_claims = bonus_claims_by_date.get(now.date().isoformat(), {"wallet_bonuses": [], "deposit_challenge_bonuses": []})
+
+    # Week/Month views: rolling window ENDING at each retained date, clipped
+    # to whatever's actually in all_dates (the 33-day retention window), so
+    # e.g. "Month" on an early date just covers however much history exists.
+    all_dates_set = set(all_dates)
+
+    def rolling_window(end_date_str, days):
+        end_d = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+        return {(end_d - timedelta(days=i)).isoformat() for i in range(days)} & all_dates_set
+
+    bonus_claims_by_week = {}
+    bonus_claims_by_month = {}
+    for date_str in all_dates:
+        week_dates = rolling_window(date_str, 7)
+        month_dates = rolling_window(date_str, 30)
+        week_dcb_rows = [r for d in week_dates for r in dcb_rows_by_date.get(d, [])]
+        month_dcb_rows = [r for d in month_dates for r in dcb_rows_by_date.get(d, [])]
+        bonus_claims_by_week[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, week_dcb_rows, week_dates)
+        bonus_claims_by_month[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, month_dcb_rows, month_dates)
 
     new_old_user_analysis = new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, now.date())
 
@@ -2309,6 +2336,8 @@ def main():
         "channel_performance": channel_performance,
         "bonus_claims": bonus_claims,
         "bonus_claims_by_date": bonus_claims_by_date,
+        "bonus_claims_by_week": bonus_claims_by_week,
+        "bonus_claims_by_month": bonus_claims_by_month,
         "new_old_user_analysis": new_old_user_analysis,
         # Distinct real agent names (never includes AGENT_UNASSIGNED) -- powers
         # the Reassign Agent dropdown on the Search User page and the

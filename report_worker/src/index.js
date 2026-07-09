@@ -1509,10 +1509,19 @@ if (IS_PLATFORM_ANALYSIS) {
     const netRevDates = Object.keys(netRevRegionVip).sort();
     const netRevLatest = netRevDates.length ? netRevRegionVip[netRevDates[netRevDates.length - 1]] : null;
     const acqChannel = data.channel_performance;
-    const bonusClaimsByDate = data.bonus_claims_by_date || {};
-    const bonusDates = Object.keys(bonusClaimsByDate).sort();
-    let selectedBonusDate = data.report_today && bonusClaimsByDate[data.report_today] ? data.report_today : bonusDates[bonusDates.length - 1];
-    let bonusClaims = bonusClaimsByDate[selectedBonusDate] || data.bonus_claims;
+    const bonusClaimsRangeSources = {
+      day: data.bonus_claims_by_date || {},
+      week: data.bonus_claims_by_week || {},
+      month: data.bonus_claims_by_month || {},
+    };
+    // Day pills only show the most recent 10 -- Week/Month cover further
+    // back automatically via their own rolling window, without needing to
+    // pick an older day first.
+    const bonusDatesAll = Object.keys(bonusClaimsRangeSources.day).sort();
+    const bonusDates = bonusDatesAll.slice(-10);
+    let bonusRange = 'day';
+    let selectedBonusDate = data.report_today && bonusClaimsRangeSources.day[data.report_today] ? data.report_today : bonusDatesAll[bonusDatesAll.length - 1];
+    let bonusClaims = bonusClaimsRangeSources[bonusRange][selectedBonusDate] || data.bonus_claims;
     const newOldAnalysis = data.new_old_user_analysis || { daily: [], retention: [] };
 
     document.getElementById('platform-analysis-app').innerHTML = \`
@@ -1558,7 +1567,12 @@ if (IS_PLATFORM_ANALYSIS) {
           <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
           <button class="download-btn-sm" id="btn-dl-bonus-claims">&#128190; Excel</button>
         </div>
-        <div class="ac-note">All bonuses claimed on the selected date, and % who deposited afterward.</div>
+        <div class="ac-note">All bonuses claimed on the selected date (or rolling week/month), and % who deposited afterward.</div>
+        <div class="date-switch" id="bonus-claims-range-switch">
+          <button data-range="day" class="active">Day</button>
+          <button data-range="week">Week</button>
+          <button data-range="month">Month</button>
+        </div>
         <div class="date-switch" id="bonus-claims-date-switch"></div>
         <div class="date-switch" id="bonus-claims-switch">
           <button data-view="wallet" class="active">Wallet Bonuses</button>
@@ -1764,7 +1778,7 @@ if (IS_PLATFORM_ANALYSIS) {
       el.querySelectorAll('button').forEach(btn => {
         btn.addEventListener('click', () => {
           selectedBonusDate = btn.dataset.date;
-          bonusClaims = bonusClaimsByDate[selectedBonusDate] || { wallet_bonuses: [], deposit_challenge_bonuses: [] };
+          bonusClaims = bonusClaimsRangeSources[bonusRange][selectedBonusDate] || { wallet_bonuses: [], deposit_challenge_bonuses: [] };
           renderBonusDateSwitch();
           renderBonusClaims();
         });
@@ -1779,9 +1793,17 @@ if (IS_PLATFORM_ANALYSIS) {
           renderBonusClaims();
         });
       });
+      document.querySelectorAll('#bonus-claims-range-switch button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          bonusRange = btn.dataset.range;
+          document.querySelectorAll('#bonus-claims-range-switch button').forEach(b => b.classList.toggle('active', b === btn));
+          bonusClaims = bonusClaimsRangeSources[bonusRange][selectedBonusDate] || { wallet_bonuses: [], deposit_challenge_bonuses: [] };
+          renderBonusClaims();
+        });
+      });
       renderBonusClaims();
       document.getElementById('btn-dl-bonus-claims').addEventListener('click', () =>
-        downloadExcel(bonusRows(), bonusCols(), 'Bonus Claims', 'bonus-claims-' + bonusView + '-' + selectedBonusDate + '.xlsx'));
+        downloadExcel(bonusRows(), bonusCols(), 'Bonus Claims', 'bonus-claims-' + bonusView + '-' + bonusRange + '-' + selectedBonusDate + '.xlsx'));
     } else {
       document.getElementById('bonus-claims-table').innerHTML = '<div class="no-data">No bonus claims recorded yet.</div>';
     }
