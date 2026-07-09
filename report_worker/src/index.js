@@ -2399,6 +2399,15 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
         <div id="amount-range-table"></div>
       </section>
     </div>
+
+    <section class="acc-cyan">
+      <div class="section-head">
+        <div class="sec-title"><div class="badge b-cyan">&#128181;</div><h2>Withdrawal Amount Range &mdash; Yesterday (<span id="yesterday-wd-date"></span>)</h2></div>
+        <button class="download-btn-sm" id="btn-dl-yesterday-wd-range">&#128190; Excel</button>
+      </div>
+      <div class="ac-note">Every withdrawal order CREATED yesterday, split by amount range and current status (In-Review / Processing / Complete).</div>
+      <div id="yesterday-wd-range-table"></div>
+    </section>
   \`;
 
   let currentScope = null;
@@ -2521,6 +2530,37 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
         ageBuckets.map(b => '<td class="num">' + (row[b] || '') + '</td>').join('') +
         '<td class="num"><strong>' + row._totalCount + '</strong></td>' +
         '<td class="num">' + money(row._totalAmount) + '</td></tr>').join('') +
+      '</tbody></table></div>';
+  }
+
+  const YESTERDAY_WD_STATUS_COLS = [
+    { key: 'in_review', label: 'In-Review' },
+    { key: 'processing', label: 'Processing' },
+    { key: 'complete', label: 'Complete' },
+  ];
+
+  function renderYesterdayWithdrawalRange() {
+    const rep = data.yesterday_withdrawal_amount_range;
+    const container = document.getElementById('yesterday-wd-range-table');
+    const dateEl = document.getElementById('yesterday-wd-date');
+    if (!rep || !rep.rows || !rep.rows.length) {
+      if (container) container.innerHTML = '<div class="no-data">No withdrawal orders yesterday.</div>';
+      return;
+    }
+    if (dateEl) dateEl.textContent = shortDate(rep.date);
+    const headers = ['Amount Range'].concat(
+      YESTERDAY_WD_STATUS_COLS.flatMap(s => [s.label + ' Orders', s.label + ' Amount'])
+    ).concat(['Total Orders', 'Total Amount']);
+    const bodyRows = rep.rows.concat([rep.totals]);
+    container.innerHTML = '<div class="table-wrap"><table><thead><tr>' +
+      headers.map((h, i) => '<th' + (i > 0 ? ' class="num"' : '') + '>' + h + '</th>').join('') + '</tr></thead><tbody>' +
+      bodyRows.map(row => {
+        const isTotal = row.range === 'Total';
+        return '<tr' + (isTotal ? ' style="font-weight:700;background:#f9fafb"' : '') + '><td>' + row.range + '</td>' +
+          YESTERDAY_WD_STATUS_COLS.map(s => '<td class="num">' + fmt(row[s.key].orders) + '</td><td class="num">' + money(row[s.key].amount) + '</td>').join('') +
+          '<td class="num"><strong>' + fmt(row.total_orders) + '</strong></td>' +
+          '<td class="num">' + money(row.total_amount) + '</td></tr>';
+      }).join('') +
       '</tbody></table></div>';
   }
 
@@ -2854,6 +2894,20 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     })), 'Processing Orders by Amount Range', 'withdrawal-processing-amount-range.xlsx');
   });
 
+  document.getElementById('btn-dl-yesterday-wd-range').addEventListener('click', () => {
+    const rep = data.yesterday_withdrawal_amount_range;
+    if (!rep || !rep.rows) return;
+    const bodyRows = rep.rows.concat([rep.totals]);
+    const exportRows = bodyRows.map(row => ({
+      'Amount Range': row.range,
+      'In-Review Orders': row.in_review.orders, 'In-Review Amount': row.in_review.amount,
+      'Processing Orders': row.processing.orders, 'Processing Amount': row.processing.amount,
+      'Complete Orders': row.complete.orders, 'Complete Amount': row.complete.amount,
+      'Total Orders': row.total_orders, 'Total Amount': row.total_amount,
+    }));
+    downloadStyledExcel(exportRows, 'Withdrawal Amount Range - Yesterday', 'withdrawal-amount-range-yesterday-' + rep.date + '.xlsx');
+  });
+
   // Date picker wiring
   const dateBar = document.getElementById('date-bar');
   const datePicker = document.getElementById('date-picker');
@@ -2881,6 +2935,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
 
   selectDate(todayLocalISO());
   renderBacklogCharts();
+  renderYesterdayWithdrawalRange();
 })();
 </script>
 </body>

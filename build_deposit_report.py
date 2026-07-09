@@ -405,6 +405,78 @@ def withdrawal_amount_range_aging_matrix(withdrawal_full_records, now, status, a
     ]
 
 
+YESTERDAY_AMOUNT_RANGES = ["<10,000", "10,000-19,999", "20,000-49,999", "50,000+"]
+# 0 In-Review, 1 Processing, 2 Complete -- excludes 3 Rejected/4 Failed, per
+# the report's explicit scope ("completed, processing, in-review").
+WITHDRAWAL_STATUS_LABELS = {0: "in_review", 1: "processing", 2: "complete"}
+
+
+def yesterday_amount_range_bucket(amount):
+    if amount < 10000:
+        return "<10,000"
+    if amount < 20000:
+        return "10,000-19,999"
+    if amount < 50000:
+        return "20,000-49,999"
+    return "50,000+"
+
+
+def yesterday_withdrawal_amount_range_report(withdrawal_full_records, yesterday_date_str):
+    """Amount-range x status breakdown of withdrawal ORDERS CREATED yesterday
+    (create_time date == yesterday), for the Home page report below the
+    existing Withdrawal Processing -- Amount Range chart. Unlike that chart
+    (a live snapshot of the CURRENT processing/in-review backlog, aged from
+    create_time to now), this is a fixed one-day cohort: every withdrawal
+    order created yesterday, however it stands today, split by
+    In-Review/Processing/Complete and by amount range."""
+    counts = defaultdict(lambda: defaultdict(int))
+    amounts = defaultdict(lambda: defaultdict(float))
+    for r in withdrawal_full_records:
+        if r["status"] not in WITHDRAWAL_STATUS_LABELS:
+            continue
+        if not r["create_dt"] or r["create_dt"].strftime("%Y-%m-%d") != yesterday_date_str:
+            continue
+        bucket = yesterday_amount_range_bucket(r["amount"] or 0.0)
+        counts[bucket][r["status"]] += 1
+        amounts[bucket][r["status"]] += r["amount"] or 0.0
+
+    rows = []
+    grand_orders = defaultdict(int)
+    grand_amount = defaultdict(float)
+    grand_total_orders = 0
+    grand_total_amount = 0.0
+    for bucket in YESTERDAY_AMOUNT_RANGES:
+        row = {"range": bucket}
+        total_orders = 0
+        total_amount = 0.0
+        for status, label in WITHDRAWAL_STATUS_LABELS.items():
+            c = counts[bucket][status]
+            a = round(amounts[bucket][status], 2)
+            row[label] = {"orders": c, "amount": a}
+            total_orders += c
+            total_amount += a
+            grand_orders[status] += c
+            grand_amount[status] += a
+        row["total_orders"] = total_orders
+        row["total_amount"] = round(total_amount, 2)
+        rows.append(row)
+        grand_total_orders += total_orders
+        grand_total_amount += total_amount
+
+    totals_row = {"range": "Total"}
+    for status, label in WITHDRAWAL_STATUS_LABELS.items():
+        totals_row[label] = {"orders": grand_orders[status], "amount": round(grand_amount[status], 2)}
+    totals_row["total_orders"] = grand_total_orders
+    totals_row["total_amount"] = round(grand_total_amount, 2)
+
+    return {
+        "date": yesterday_date_str,
+        "ranges": YESTERDAY_AMOUNT_RANGES,
+        "rows": rows,
+        "totals": totals_row,
+    }
+
+
 def withdrawal_backlog(withdrawal_full_records, now, status, bucket_fn, bucket_labels):
     """Snapshot (as of `now`) of orders currently sitting in `status`, aged from create_time."""
     counts = {label: 0 for label in bucket_labels}
@@ -2241,6 +2313,11 @@ def main():
         "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
     }
 
+    yesterday_str = (now.date() - timedelta(days=1)).isoformat()
+    yesterday_withdrawal_amount_range = yesterday_withdrawal_amount_range_report(
+        by_date_withdrawal_full.get(yesterday_str, []), yesterday_str
+    )
+
     deposit_challenge_bonus_rows = deposit_challenge_bonus(deposit_rows, build_deposit_day_stats(deposit_rows), now.date(), agent_by_user)
     action_center_extra = {
         "yesterday_first_deposit_users": yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, now.date(), agent_by_user),
@@ -2384,6 +2461,7 @@ def main():
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(all_withdrawal_full),
         },
         "withdrawal_analysis": withdrawal_analysis,
+        "yesterday_withdrawal_amount_range": yesterday_withdrawal_amount_range,
         # All-dates raw order rows (unlike by_date[...].withdrawal_orders,
         # which is scoped to a single selected date) -- needed for the
         # Processing/In-Review aging charts and the Last-4-Days completed
