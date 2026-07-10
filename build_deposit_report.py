@@ -421,20 +421,21 @@ def yesterday_amount_range_bucket(amount):
     return "50,000+"
 
 
-def yesterday_withdrawal_amount_range_report(withdrawal_full_records, yesterday_date_str):
-    """Amount-range x status breakdown of withdrawal ORDERS CREATED yesterday
-    (create_time date == yesterday), for the Home page report below the
-    existing Withdrawal Processing -- Amount Range chart. Unlike that chart
-    (a live snapshot of the CURRENT processing/in-review backlog, aged from
-    create_time to now), this is a fixed one-day cohort: every withdrawal
-    order created yesterday, however it stands today, split by
-    In-Review/Processing/Complete and by amount range."""
+def withdrawal_amount_range_day_report(withdrawal_full_records, date_str):
+    """Amount-range x status breakdown of withdrawal ORDERS CREATED on
+    `date_str`, for the Home page report below the existing Withdrawal
+    Processing -- Amount Range chart. Unlike that chart (a live snapshot of
+    the CURRENT processing/in-review backlog, aged from create_time to now),
+    this is a fixed one-day cohort: every withdrawal order created that day,
+    however it stands now, split by In-Review/Processing/Complete and by
+    amount range. Called once for "today" and once for "yesterday" so the
+    frontend can toggle between them without a extra request."""
     counts = defaultdict(lambda: defaultdict(int))
     amounts = defaultdict(lambda: defaultdict(float))
     for r in withdrawal_full_records:
         if r["status"] not in WITHDRAWAL_STATUS_LABELS:
             continue
-        if not r["create_dt"] or r["create_dt"].strftime("%Y-%m-%d") != yesterday_date_str:
+        if not r["create_dt"] or r["create_dt"].strftime("%Y-%m-%d") != date_str:
             continue
         bucket = yesterday_amount_range_bucket(r["amount"] or 0.0)
         counts[bucket][r["status"]] += 1
@@ -470,7 +471,7 @@ def yesterday_withdrawal_amount_range_report(withdrawal_full_records, yesterday_
     totals_row["total_amount"] = round(grand_total_amount, 2)
 
     return {
-        "date": yesterday_date_str,
+        "date": date_str,
         "ranges": YESTERDAY_AMOUNT_RANGES,
         "rows": rows,
         "totals": totals_row,
@@ -2313,10 +2314,12 @@ def main():
         "last4days_completion": last4days_completion(by_date_withdrawal_full, all_dates),
     }
 
+    today_str = now.date().isoformat()
     yesterday_str = (now.date() - timedelta(days=1)).isoformat()
-    yesterday_withdrawal_amount_range = yesterday_withdrawal_amount_range_report(
-        by_date_withdrawal_full.get(yesterday_str, []), yesterday_str
-    )
+    withdrawal_amount_range_by_day = {
+        "today": withdrawal_amount_range_day_report(by_date_withdrawal_full.get(today_str, []), today_str),
+        "yesterday": withdrawal_amount_range_day_report(by_date_withdrawal_full.get(yesterday_str, []), yesterday_str),
+    }
 
     deposit_challenge_bonus_rows = deposit_challenge_bonus(deposit_rows, build_deposit_day_stats(deposit_rows), now.date(), agent_by_user)
     action_center_extra = {
@@ -2461,7 +2464,7 @@ def main():
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(all_withdrawal_full),
         },
         "withdrawal_analysis": withdrawal_analysis,
-        "yesterday_withdrawal_amount_range": yesterday_withdrawal_amount_range,
+        "withdrawal_amount_range_by_day": withdrawal_amount_range_by_day,
         # All-dates raw order rows (unlike by_date[...].withdrawal_orders,
         # which is scoped to a single selected date) -- needed for the
         # Processing/In-Review aging charts and the Last-4-Days completed

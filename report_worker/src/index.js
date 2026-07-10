@@ -2402,10 +2402,14 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
 
     <section class="acc-cyan">
       <div class="section-head">
-        <div class="sec-title"><div class="badge b-cyan">&#128181;</div><h2>Withdrawal Amount Range &mdash; Yesterday (<span id="yesterday-wd-date"></span>)</h2></div>
+        <div class="sec-title"><div class="badge b-cyan">&#128181;</div><h2>Withdrawal Amount Range (<span id="yesterday-wd-date"></span>)</h2></div>
         <button class="download-btn-sm" id="btn-dl-yesterday-wd-range">&#128190; Excel</button>
       </div>
-      <div class="ac-note">Every withdrawal order CREATED yesterday, split by amount range and current status (In-Review / Processing / Complete).</div>
+      <div class="ac-note">Every withdrawal order CREATED on the selected day, split by amount range and current status (In-Review / Processing / Complete).</div>
+      <div class="date-switch" id="yesterday-wd-switch">
+        <button data-day="today">Today</button>
+        <button data-day="yesterday" class="active">Yesterday</button>
+      </div>
       <div id="yesterday-wd-range-table"></div>
     </section>
   \`;
@@ -2539,12 +2543,15 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     { key: 'complete', label: 'Complete' },
   ];
 
+  let yesterdayWdDay = 'yesterday';
   function renderYesterdayWithdrawalRange() {
-    const rep = data.yesterday_withdrawal_amount_range;
+    const byDay = data.withdrawal_amount_range_by_day || {};
+    const rep = byDay[yesterdayWdDay];
     const container = document.getElementById('yesterday-wd-range-table');
     const dateEl = document.getElementById('yesterday-wd-date');
     if (!rep || !rep.rows || !rep.rows.length) {
-      if (container) container.innerHTML = '<div class="no-data">No withdrawal orders yesterday.</div>';
+      if (dateEl && rep) dateEl.textContent = shortDate(rep.date);
+      if (container) container.innerHTML = '<div class="no-data">No withdrawal orders ' + yesterdayWdDay + '.</div>';
       return;
     }
     if (dateEl) dateEl.textContent = shortDate(rep.date);
@@ -2894,8 +2901,16 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     })), 'Processing Orders by Amount Range', 'withdrawal-processing-amount-range.xlsx');
   });
 
+  document.querySelectorAll('#yesterday-wd-switch button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      yesterdayWdDay = btn.dataset.day;
+      document.querySelectorAll('#yesterday-wd-switch button').forEach(b => b.classList.toggle('active', b === btn));
+      renderYesterdayWithdrawalRange();
+    });
+  });
+
   document.getElementById('btn-dl-yesterday-wd-range').addEventListener('click', () => {
-    const rep = data.yesterday_withdrawal_amount_range;
+    const rep = (data.withdrawal_amount_range_by_day || {})[yesterdayWdDay];
     if (!rep || !rep.rows) return;
     const bodyRows = rep.rows.concat([rep.totals]);
     const exportRows = bodyRows.map(row => ({
@@ -2905,7 +2920,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       'Complete Orders': row.complete.orders, 'Complete Amount': row.complete.amount,
       'Total Orders': row.total_orders, 'Total Amount': row.total_amount,
     }));
-    downloadStyledExcel(exportRows, 'Withdrawal Amount Range - Yesterday', 'withdrawal-amount-range-yesterday-' + rep.date + '.xlsx');
+    downloadStyledExcel(exportRows, 'Withdrawal Amount Range - ' + yesterdayWdDay, 'withdrawal-amount-range-' + yesterdayWdDay + '-' + rep.date + '.xlsx');
   });
 
   // Date picker wiring
