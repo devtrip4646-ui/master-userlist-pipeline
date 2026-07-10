@@ -1346,22 +1346,19 @@ SUSPICIOUS_WITHDRAW_MIN_DEPOSIT = 1000.0
 
 
 def suspicious_withdraw_users(deposit_rows, withdrawal_rows, game_play_rows, now, agent_by_user, vip_by_user):
-    """Fraud/bonus-abuse signal: NEW users (first-ever deposit landed today
-    or either of the previous 2 days -- same is_first_deposit concept as
-    profit_users_of_the_day's is_new_user_3d) who, within that same 3-day
-    window, made COMPLETE deposits totaling at least
-    SUSPICIOUS_WITHDRAW_MIN_DEPOSIT AND requested a withdrawal (In-Review/
-    Processing/Complete -- same statuses "WD Today" counts elsewhere), while
-    playing fewer than SUSPICIOUS_WITHDRAW_MAX_GAMES actual games in that
-    same window -- i.e. a brand-new signup deposited a meaningful amount and
-    cashed out without genuinely playing. game_play_rows excludes bonus
+    """Fraud/bonus-abuse signal: any users (new or existing) who, within
+    the last 3 days (today and the previous 2), made COMPLETE deposits
+    totaling at least SUSPICIOUS_WITHDRAW_MIN_DEPOSIT AND requested a
+    withdrawal (In-Review/Processing/Complete -- same statuses "WD Today"
+    counts elsewhere), while playing fewer than SUSPICIOUS_WITHDRAW_MAX_GAMES
+    actual games in that same window -- i.e. deposited a meaningful amount
+    and cashed out without genuinely playing. game_play_rows excludes bonus
     payouts (same definition as the "games played" query in
     build_recent_activity_by_user: wallet_transactions rows with a real
     game_name, id NOT IN bonuses)."""
     window_start = now.date() - timedelta(days=2)
 
     deposit_amount = defaultdict(float)
-    new_users = set()
     for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None:
             continue
@@ -1369,9 +1366,7 @@ def suspicious_withdraw_users(deposit_rows, withdrawal_rows, game_play_rows, now
         if not dt or dt.date() < window_start:
             continue
         deposit_amount[user_id] += order_amount or 0.0
-        if is_first_deposit == 1:
-            new_users.add(user_id)
-    deposited_users = {u for u, amt in deposit_amount.items() if amt >= SUSPICIOUS_WITHDRAW_MIN_DEPOSIT} & new_users
+    deposited_users = {u for u, amt in deposit_amount.items() if amt >= SUSPICIOUS_WITHDRAW_MIN_DEPOSIT}
 
     withdrew_users = set()
     for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, payment_center_order_id in withdrawal_rows:

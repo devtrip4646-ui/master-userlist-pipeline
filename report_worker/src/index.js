@@ -1561,7 +1561,7 @@ if (IS_PLATFORM_ANALYSIS) {
             <div class="sec-title"><div class="badge b-rose">&#128680;</div><h2>Suspicious Withdraw Users</h2></div>
             <button class="download-btn-sm" id="btn-dl-suspicious-withdraw">&#128190; Excel</button>
           </div>
-          <div class="ac-note">NEW users (first-ever deposit in the last 3 days including today) who deposited &#8377;1,000+ AND requested a withdrawal (In-Review/Processing/Complete) within that window, while playing fewer than 50 games -- new signup deposit-and-cash-out without genuine play.</div>
+          <div class="ac-note">Deposited &#8377;1,000+ AND requested a withdrawal (In-Review/Processing/Complete) within the last 3 days, while playing fewer than 50 games in that same window -- deposit-and-cash-out without genuine play.</div>
           <div id="suspicious-withdraw-table"></div>
           <div class="ac-pagination" id="suspicious-withdraw-pagination"></div>
         </section>
