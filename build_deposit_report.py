@@ -1724,7 +1724,7 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
     print(f"Uploaded {USER_SEARCH_SHARDS} user search shards covering {len(rows)} users")
 
 
-def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_rows, target_dates):
+def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_rows, target_dates, agent_by_user):
     """All bonuses claimed on target_dates -- both wallet-sourced bonuses
     (Welcome Back, Loyalty, VIP tiers, Daily Active, etc., from
     daily_records.db's `bonuses` table) and the 3-Day Deposit Challenge
@@ -1772,12 +1772,24 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
 
 
     by_category = defaultdict(lambda: {"users": set(), "value": 0.0})
+    wallet_claim_details = []
     for matched_category, user_id, change_value, create_time in bonus_rows_all:
         if not matched_category or not create_time or str(create_time)[:10] not in target_dates:
             continue
         b = by_category[matched_category]
         b["users"].add(user_id)
         b["value"] += change_value or 0.0
+        converted = user_id in today_depositors
+        wallet_claim_details.append({
+            "user_id": user_id,
+            "agent": agent_for(agent_by_user, user_id),
+            "bonus_category": matched_category,
+            "bonus_amount": round(change_value or 0.0, 2),
+            "claimed_time": str(create_time),
+            "deposited_after": "Yes" if converted else "No",
+            "deposit_amount": round(today_deposit_amount[user_id], 2) if converted else 0.0,
+        })
+    wallet_claim_details.sort(key=lambda r: r["claimed_time"])
 
     def build_rows(groups):
         rows = []
@@ -1803,9 +1815,22 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
         d["users"].add(r["user_id"])
         d["value"] += r["bonus_amount"]
 
+    dcb_claim_details = [
+        {
+            "user_id": r["user_id"],
+            "agent": r["agent"],
+            "rule": r["rule"],
+            "bonus_amount": round(r["bonus_amount"], 2),
+            "fd_date": r["fd_date"],
+        }
+        for r in sorted(deposit_challenge_bonus_rows, key=lambda r: r["fd_date"])
+    ]
+
     return {
         "wallet_bonuses": build_rows(by_category),
         "deposit_challenge_bonuses": build_rows(dcb_groups),
+        "wallet_claim_details": wallet_claim_details,
+        "deposit_challenge_bonus_claim_details": dcb_claim_details,
     }
 
 
@@ -2363,8 +2388,11 @@ def main():
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         dcb_rows_for_date = deposit_challenge_bonus_rows if d == now.date() else deposit_challenge_bonus(deposit_rows, deposit_day_stats, d, agent_by_user)
         dcb_rows_by_date[date_str] = dcb_rows_for_date
-        bonus_claims_by_date[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, {date_str})
-    bonus_claims = bonus_claims_by_date.get(now.date().isoformat(), {"wallet_bonuses": [], "deposit_challenge_bonuses": []})
+        bonus_claims_by_date[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, {date_str}, agent_by_user)
+    bonus_claims = bonus_claims_by_date.get(now.date().isoformat(), {
+        "wallet_bonuses": [], "deposit_challenge_bonuses": [],
+        "wallet_claim_details": [], "deposit_challenge_bonus_claim_details": [],
+    })
 
     # Week/Month views: rolling window ENDING at each retained date, clipped
     # to whatever's actually in all_dates (the 33-day retention window), so
@@ -2382,8 +2410,8 @@ def main():
         month_dates = rolling_window(date_str, 30)
         week_dcb_rows = [r for d in week_dates for r in dcb_rows_by_date.get(d, [])]
         month_dcb_rows = [r for d in month_dates for r in dcb_rows_by_date.get(d, [])]
-        bonus_claims_by_week[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, week_dcb_rows, week_dates)
-        bonus_claims_by_month[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, month_dcb_rows, month_dates)
+        bonus_claims_by_week[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, week_dcb_rows, week_dates, agent_by_user)
+        bonus_claims_by_month[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, month_dcb_rows, month_dates, agent_by_user)
 
     new_old_user_analysis = new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, now.date())
 

@@ -1833,8 +1833,42 @@ if (IS_PLATFORM_ANALYSIS) {
         });
       });
       renderBonusClaims();
-      document.getElementById('btn-dl-bonus-claims').addEventListener('click', () =>
-        downloadExcel(bonusRows(), bonusCols(), 'Bonus Claims', 'bonus-claims-' + bonusView + '-' + bonusRange + '-' + selectedBonusDate + '.xlsx'));
+      document.getElementById('btn-dl-bonus-claims').addEventListener('click', async () => {
+        const cols = bonusCols();
+        const summaryRows = bonusRows().map(r => {
+          const obj = {};
+          cols.forEach(c => { obj[c.label] = c.raw ? c.raw(r) : c.render(r); });
+          return obj;
+        });
+        const detailRaw = bonusView === 'wallet'
+          ? (bonusClaims.wallet_claim_details || [])
+          : (bonusClaims.deposit_challenge_bonus_claim_details || []);
+        const detailRows = bonusView === 'wallet'
+          ? detailRaw.map(d => ({
+              'User ID': d.user_id, Agent: d.agent || 'Un-Assigned', 'Bonus Category': d.bonus_category,
+              'Bonus Amount': d.bonus_amount, 'Claimed Time': d.claimed_time,
+              'Deposited After': d.deposited_after, 'Deposit Amount': d.deposit_amount,
+            }))
+          : detailRaw.map(d => ({
+              'User ID': d.user_id, Agent: d.agent || 'Un-Assigned', Rule: d.rule,
+              'Bonus Amount': d.bonus_amount, 'FD Date': d.fd_date,
+            }));
+
+        const wb = new ExcelJS.Workbook();
+        const wsSummary = wb.addWorksheet('Summary');
+        if (summaryRows.length) {
+          wsSummary.columns = Object.keys(summaryRows[0]).map(k => ({ header: k, key: k, width: Math.max(12, k.length + 2) }));
+          wsSummary.addRows(summaryRows);
+        }
+        styleHeaderRow(wsSummary);
+        const wsUsers = wb.addWorksheet('User Data');
+        if (detailRows.length) {
+          wsUsers.columns = Object.keys(detailRows[0]).map(k => ({ header: k, key: k, width: Math.max(12, k.length + 2) }));
+          wsUsers.addRows(detailRows);
+        }
+        styleHeaderRow(wsUsers);
+        await saveWorkbook(wb, 'bonus-claims-' + bonusView + '-' + bonusRange + '-' + selectedBonusDate + '.xlsx');
+      });
     } else {
       document.getElementById('bonus-claims-table').innerHTML = '<div class="no-data">No bonus claims recorded yet.</div>';
     }
