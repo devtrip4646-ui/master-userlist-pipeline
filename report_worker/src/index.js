@@ -146,6 +146,10 @@ const PAGE = `<!DOCTYPE html>
   section.acc-orange { border-left-color: #f59e0b; }
   section.acc-rose { border-left-color: #f43f5e; }
   section.acc-cyan { border-left-color: #06b6d4; }
+  section.ac-compact { padding: 12px 16px; }
+  section.ac-compact .table-wrap { max-height: none; }
+  section.ac-compact table { max-width: 420px; }
+  @media (max-width: 600px) { section.ac-compact table { max-width: 100%; } }
   section.acc-emerald { border-left-color: #10b981; }
   .sec-title { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
   .sec-title .badge { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
@@ -2400,12 +2404,11 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       </section>
     </div>
 
-    <section class="acc-cyan">
+    <section class="acc-cyan ac-compact">
       <div class="section-head">
-        <div class="sec-title"><div class="badge b-cyan">&#128181;</div><h2>Withdrawal Amount Range (<span id="yesterday-wd-date"></span>)</h2></div>
+        <div class="sec-title"><div class="badge b-cyan">&#128181;</div><h2>Withdrawal Amount Range</h2></div>
         <button class="download-btn-sm" id="btn-dl-yesterday-wd-range">&#128190; Excel</button>
       </div>
-      <div class="ac-note">Every withdrawal order CREATED on the selected day, split by amount range and current status (In-Review / Processing / Complete).</div>
       <div class="date-switch" id="yesterday-wd-switch">
         <button data-day="today">Today</button>
         <button data-day="yesterday" class="active">Yesterday</button>
@@ -2537,34 +2540,22 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       '</tbody></table></div>';
   }
 
-  const YESTERDAY_WD_STATUS_COLS = [
-    { key: 'in_review', label: 'In-Review' },
-    { key: 'processing', label: 'Processing' },
-    { key: 'complete', label: 'Complete' },
-  ];
-
   let yesterdayWdDay = 'yesterday';
   function renderYesterdayWithdrawalRange() {
     const byDay = data.withdrawal_amount_range_by_day || {};
     const rep = byDay[yesterdayWdDay];
     const container = document.getElementById('yesterday-wd-range-table');
-    const dateEl = document.getElementById('yesterday-wd-date');
     if (!rep || !rep.rows || !rep.rows.length) {
-      if (dateEl && rep) dateEl.textContent = shortDate(rep.date);
       if (container) container.innerHTML = '<div class="no-data">No withdrawal orders ' + yesterdayWdDay + '.</div>';
       return;
     }
-    if (dateEl) dateEl.textContent = shortDate(rep.date);
-    const headers = ['Amount Range'].concat(
-      YESTERDAY_WD_STATUS_COLS.flatMap(s => [s.label + ' Orders', s.label + ' Amount'])
-    ).concat(['Total Orders', 'Total Amount']);
+    const headers = ['Amount Range', 'Total Orders', 'Total Amount'];
     const bodyRows = rep.rows.concat([rep.totals]);
     container.innerHTML = '<div class="table-wrap"><table><thead><tr>' +
       headers.map((h, i) => '<th' + (i > 0 ? ' class="num"' : '') + '>' + h + '</th>').join('') + '</tr></thead><tbody>' +
       bodyRows.map(row => {
         const isTotal = row.range === 'Total';
         return '<tr' + (isTotal ? ' style="font-weight:700;background:#f9fafb"' : '') + '><td>' + row.range + '</td>' +
-          YESTERDAY_WD_STATUS_COLS.map(s => '<td class="num">' + fmt(row[s.key].orders) + '</td><td class="num">' + money(row[s.key].amount) + '</td>').join('') +
           '<td class="num"><strong>' + fmt(row.total_orders) + '</strong></td>' +
           '<td class="num">' + money(row.total_amount) + '</td></tr>';
       }).join('') +
@@ -2915,9 +2906,6 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     const bodyRows = rep.rows.concat([rep.totals]);
     const exportRows = bodyRows.map(row => ({
       'Amount Range': row.range,
-      'In-Review Orders': row.in_review.orders, 'In-Review Amount': row.in_review.amount,
-      'Processing Orders': row.processing.orders, 'Processing Amount': row.processing.amount,
-      'Complete Orders': row.complete.orders, 'Complete Amount': row.complete.amount,
       'Total Orders': row.total_orders, 'Total Amount': row.total_amount,
     }));
     downloadStyledExcel(exportRows, 'Withdrawal Amount Range - ' + yesterdayWdDay, 'withdrawal-amount-range-' + yesterdayWdDay + '-' + rep.date + '.xlsx');
