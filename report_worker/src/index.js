@@ -2786,7 +2786,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
         const cell = cellsByHour[idx];
         const total = cell ? cell.total : 0;
         const pct = cell ? cell.success_pct : 0;
-        rowData['h' + h] = total ? (pct + '% (' + total + ' orders)') : '—';
+        rowData['h' + h] = total ? (pct + '% (' + total + ')') : '—';
       });
       const row = ws.addRow(rowData);
       hours.forEach((h, idx) => {
