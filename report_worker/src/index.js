@@ -1544,6 +1544,27 @@ if (IS_PLATFORM_ANALYSIS) {
           <div id="profit-users-table"></div>
           <div class="ac-pagination" id="profit-users-pagination"></div>
         </section>
+        <section class="acc-rose">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-rose">&#128680;</div><h2>Suspicious Withdraw Users</h2></div>
+            <button class="download-btn-sm" id="btn-dl-suspicious-withdraw">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">Deposited &#8377;1,000+ AND requested a withdrawal (In-Review/Processing/Complete) within the last 3 days, while playing fewer than 50 games in that same window -- deposit-and-cash-out without genuine play.</div>
+          <div id="suspicious-withdraw-table"></div>
+          <div class="ac-pagination" id="suspicious-withdraw-pagination"></div>
+        </section>
+      </div>
+
+      <div class="analysis-heading withdrawal"><h2>Acquisition &amp; Bonus Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
+      <div class="row2col">
+        <section class="acc-blue">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-blue">&#128202;</div><h2>Channel performance &mdash; 4-day combined</h2></div>
+            <button class="download-btn-sm" id="btn-dl-acq-channel">&#128190; Excel</button>
+          </div>
+          <div id="acq-channel-table"></div>
+          <div class="ac-pagination" id="acq-channel-pagination"></div>
+        </section>
         <section class="acc-emerald">
           <div class="section-head">
             <div class="sec-title"><div class="badge b-emerald">&#128176;</div><h2>Net Revenue by Region &amp; VIP</h2></div>
@@ -1555,27 +1576,6 @@ if (IS_PLATFORM_ANALYSIS) {
             <button data-view="vip">By VIP Level</button>
           </div>
           <div id="net-rev-table"></div>
-        </section>
-      </div>
-
-      <div class="analysis-heading withdrawal"><h2>Acquisition &amp; Bonus Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
-      <div class="row2col">
-        <section class="acc-rose">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-rose">&#128680;</div><h2>Suspicious Withdraw Users</h2></div>
-            <button class="download-btn-sm" id="btn-dl-suspicious-withdraw">&#128190; Excel</button>
-          </div>
-          <div class="ac-note">Deposited &#8377;1,000+ AND requested a withdrawal (In-Review/Processing/Complete) within the last 3 days, while playing fewer than 50 games in that same window -- deposit-and-cash-out without genuine play.</div>
-          <div id="suspicious-withdraw-table"></div>
-          <div class="ac-pagination" id="suspicious-withdraw-pagination"></div>
-        </section>
-        <section class="acc-blue">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-blue">&#128202;</div><h2>Channel performance &mdash; 4-day combined</h2></div>
-            <button class="download-btn-sm" id="btn-dl-acq-channel">&#128190; Excel</button>
-          </div>
-          <div id="acq-channel-table"></div>
-          <div class="ac-pagination" id="acq-channel-pagination"></div>
         </section>
       </div>
       <section class="acc-purple">
@@ -1763,6 +1763,7 @@ if (IS_PLATFORM_ANALYSIS) {
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
       { label: 'VIP', render: r => r.vip == null ? '—' : r.vip, raw: r => r.vip, num: true },
       { label: 'Deposit (3d)', render: r => money(r.deposit_amount), raw: r => r.deposit_amount, num: true },
+      { label: 'Withdraw (3d)', render: r => money(r.withdraw_amount), raw: r => r.withdraw_amount, num: true },
       { label: 'Games Played (3d)', render: r => fmt(r.game_count), raw: r => r.game_count, num: true },
     ];
     if (suspiciousWithdraw && suspiciousWithdraw.length) {

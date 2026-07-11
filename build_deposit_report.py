@@ -1368,13 +1368,14 @@ def suspicious_withdraw_users(deposit_rows, withdrawal_rows, game_play_rows, now
         deposit_amount[user_id] += order_amount or 0.0
     deposited_users = {u for u, amt in deposit_amount.items() if amt >= SUSPICIOUS_WITHDRAW_MIN_DEPOSIT}
 
-    withdrew_users = set()
+    withdraw_amount_by_user = defaultdict(float)
     for withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, payment_center_order_id in withdrawal_rows:
         if status not in (0, 1, 2) or user_id is None:  # 0 In-Review, 1 Processing, 2 Complete
             continue
         dt = parse_dt(create_time)
         if dt and dt.date() >= window_start:
-            withdrew_users.add(user_id)
+            withdraw_amount_by_user[user_id] += withdraw_amount or 0.0
+    withdrew_users = set(withdraw_amount_by_user.keys())
 
     game_count = defaultdict(int)
     for user_id, create_time in game_play_rows:
@@ -1393,6 +1394,7 @@ def suspicious_withdraw_users(deposit_rows, withdrawal_rows, game_play_rows, now
                 "agent": agent_for(agent_by_user, user_id),
                 "vip": vip_by_user.get(user_id),
                 "deposit_amount": round(deposit_amount[user_id], 2),
+                "withdraw_amount": round(withdraw_amount_by_user[user_id], 2),
                 "game_count": count,
             })
     result.sort(key=lambda r: r["game_count"])
