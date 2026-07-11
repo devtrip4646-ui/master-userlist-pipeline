@@ -1747,13 +1747,15 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
     view surfaces.
 
     Learning about new bonuses: `bonuses` is populated by classify_bonus()
-    (in ingest_update.py) under three confirmed rules -- a real bonus name
+    (in ingest_update.py) under four confirmed rules -- a real bonus name
     in game_name with blank source (category = game_name); game_name
     literally "Elle Import Excel Add", using source_id for the real bonus
-    identity (e.g. "Daily Active Low VIP"); or blank game_name with "bonus"
+    identity (e.g. "Daily Active Low VIP"); blank game_name with "bonus"
     in source_id, rolled up into combined "Daily Active Bonus"/"Daily
     Active Bonus Low" categories (stripping the random per-instance
-    suffix). Any bonus matching one of these rules is picked up
+    suffix); or blank game_name with source_id starting "WEEKLY_SIGN",
+    rolled up into "Weekly Check-IN Bonus". Any bonus matching one of these
+    rules is picked up
     automatically the first day it appears -- no maintained name list, no
     code change needed.
 

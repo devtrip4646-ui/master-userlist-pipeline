@@ -316,7 +316,7 @@ def normalize(s):
 
 
 def classify_bonus(game_name, source, source_id):
-    """A wallet_transactions row is a bonus credit under any of three rules,
+    """A wallet_transactions row is a bonus credit under any of four rules,
     all confirmed against real data:
 
     1. game_name is a real bonus name (e.g. "Welcome Back Bonus", "VIP
@@ -358,6 +358,13 @@ def classify_bonus(game_name, source, source_id):
         if lowered.startswith("daily active bonus"):
             return "Daily Active Bonus"
         return source_id
+
+    # 4. game_name is BLANK and source_id starts with "WEEKLY_SIGN" -- a
+    # fourth family (weekly sign-in/check-in credit), rolled up into one
+    # combined category the same way Daily Active Bonus is, rather than
+    # exposing the raw source_id per instance.
+    if not game_name and source_id.upper().startswith("WEEKLY_SIGN"):
+        return "Weekly Check-IN Bonus"
 
     return None
 
