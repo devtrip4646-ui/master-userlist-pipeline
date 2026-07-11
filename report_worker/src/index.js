@@ -2319,6 +2319,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     <div class="net-flow">
       <div class="nf-label">NET FLOW</div>
       <div class="nf-stats">
+        <div>Return Users: <b id="nf-return-users">&mdash;</b></div>
         <div>Difference: <b id="nf-difference">&mdash;</b></div>
         <div>Withdraw/Deposit: <b id="nf-ratio">&mdash;</b></div>
       </div>
@@ -2466,6 +2467,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     document.getElementById('k-withdraw-users').textContent = fmt(s.withdraw_users);
     document.getElementById('k-active-users').textContent = fmt(s.active_users);
 
+    document.getElementById('nf-return-users').textContent = s.return_users == null ? '—' : fmt(s.return_users);
     const diffEl = document.getElementById('nf-difference');
     diffEl.textContent = (s.difference < 0 ? '-' : '') + money(Math.abs(s.difference));
     diffEl.className = s.difference < 0 ? 'neg' : 'pos';

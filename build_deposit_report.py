@@ -253,7 +253,7 @@ def aggregate(records):
 ACTIVE_WITHDRAW_STATUSES = (0, 1, 2)
 
 
-def summarize(deposit_records, withdrawal_records, bet_user_ids):
+def summarize(deposit_records, withdrawal_records, bet_user_ids, return_users=None):
     completed_deposits = [r for r in deposit_records if r["status"] == "COMPLETE"]
     active_withdrawals = [r for r in withdrawal_records if r["status"] in ACTIVE_WITHDRAW_STATUSES]
 
@@ -271,6 +271,10 @@ def summarize(deposit_records, withdrawal_records, bet_user_ids):
         "deposit_users": len(deposit_users),
         "withdraw_users": len(withdraw_users),
         "active_users": len(active_users),
+        # Users with a COMPLETE deposit on this date who also had one on the
+        # calendar day immediately before it -- None when that previous day
+        # falls outside the retained window (see compute_return_users()).
+        "return_users": return_users,
         "difference": round(total_deposit - total_withdraw, 2),
         "withdraw_deposit_pct": round(total_withdraw / total_deposit * 100, 1) if total_deposit else None,
         # kept for backward compatibility with the KPI cards
@@ -278,6 +282,32 @@ def summarize(deposit_records, withdrawal_records, bet_user_ids):
         "total_orders": len(completed_deposits),
         "profit": round(total_deposit - total_withdraw, 2),
     }
+
+
+def compute_return_users(by_date_records_dict, all_dates):
+    """For each date, the count of distinct users with a COMPLETE deposit
+    that date who ALSO had a COMPLETE deposit on the calendar day
+    immediately before it -- a simple day-over-day return-depositor count,
+    for the Home page's "Return Users" tile. Uses the calendar date, not
+    just the previous entry in all_dates, so a gap in the retained window
+    correctly yields None rather than comparing against the wrong day."""
+    depositors_by_date = {
+        date_str: {
+            r["user_id"] for r in records
+            if r["status"] == "COMPLETE" and r["user_id"] is not None
+        }
+        for date_str, records in by_date_records_dict.items()
+    }
+    result = {}
+    for date_str in all_dates:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        prev_str = (d - timedelta(days=1)).isoformat()
+        prev_set = depositors_by_date.get(prev_str)
+        if prev_set is None:
+            result[date_str] = None
+        else:
+            result[date_str] = len(depositors_by_date.get(date_str, set()) & prev_set)
+    return result
 
 
 PROCESSING_TIME_BUCKETS = ["<1h", "1-3h", "3-6h", "6-12h", ">12h"]
@@ -2076,12 +2106,14 @@ def build_agent_home_report(
     by_date_withdrawals_agent = {d: flt(rows) for d, rows in by_date_withdrawals.items()}
     by_date_withdrawal_full_agent = {d: flt(rows) for d, rows in by_date_withdrawal_full.items()}
 
+    return_users_by_date_agent = compute_return_users(by_date_records_agent, all_dates)
     by_date_out = {
         date: {
             **aggregate(by_date_records_agent.get(date, [])),
             "summary": summarize(
                 by_date_records_agent.get(date, []), by_date_withdrawals_agent.get(date, []),
                 by_date_bet_users.get(date, set()) & agent_bet_users_all,
+                return_users_by_date_agent.get(date),
             ),
             "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full_agent.get(date, [])),
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full_agent.get(date, [])),
@@ -2318,11 +2350,13 @@ def main():
             by_date_withdrawal_full[date_str].append(full_record)
 
     all_dates = sorted(set(by_date_records.keys()) | set(by_date_withdrawals.keys()))
+    return_users_by_date = compute_return_users(by_date_records, all_dates)
     by_date = {
         date: {
             **aggregate(by_date_records.get(date, [])),
             "summary": summarize(
-                by_date_records.get(date, []), by_date_withdrawals.get(date, []), by_date_bet_users.get(date, set())
+                by_date_records.get(date, []), by_date_withdrawals.get(date, []), by_date_bet_users.get(date, set()),
+                return_users_by_date.get(date),
             ),
             "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full.get(date, [])),
