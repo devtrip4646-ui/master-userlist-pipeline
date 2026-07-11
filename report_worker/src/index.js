@@ -2467,7 +2467,8 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     document.getElementById('k-withdraw-users').textContent = fmt(s.withdraw_users);
     document.getElementById('k-active-users').textContent = fmt(s.active_users);
 
-    document.getElementById('nf-return-users').textContent = s.return_users == null ? '—' : fmt(s.return_users);
+    document.getElementById('nf-return-users').textContent = s.return_users == null ? '—' :
+      fmt(s.return_users) + (s.deposit_users ? ' (' + (s.return_users / s.deposit_users * 100).toFixed(1) + '%)' : '');
     const diffEl = document.getElementById('nf-difference');
     diffEl.textContent = (s.difference < 0 ? '-' : '') + money(Math.abs(s.difference));
     diffEl.className = s.difference < 0 ? 'neg' : 'pos';
