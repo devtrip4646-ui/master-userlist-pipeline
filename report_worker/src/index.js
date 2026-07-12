@@ -2467,8 +2467,15 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     document.getElementById('k-withdraw-users').textContent = fmt(s.withdraw_users);
     document.getElementById('k-active-users').textContent = fmt(s.active_users);
 
+    // % is of YESTERDAY's deposit_users (how many of yesterday's depositors
+    // came back today), not today's -- matches return_users' own definition
+    // (deposited both today AND the calendar day before).
+    const prevDateForReturn = new Date(label + 'T00:00:00');
+    prevDateForReturn.setDate(prevDateForReturn.getDate() - 1);
+    const prevScopeForReturn = data.by_date[prevDateForReturn.toISOString().slice(0, 10)];
+    const prevDepositUsers = prevScopeForReturn ? prevScopeForReturn.summary.deposit_users : null;
     document.getElementById('nf-return-users').textContent = s.return_users == null ? '—' :
-      fmt(s.return_users) + (s.deposit_users ? ' (' + (s.return_users / s.deposit_users * 100).toFixed(1) + '%)' : '');
+      fmt(s.return_users) + (prevDepositUsers ? ' (' + (s.return_users / prevDepositUsers * 100).toFixed(1) + '%)' : '');
     const diffEl = document.getElementById('nf-difference');
     diffEl.textContent = (s.difference < 0 ? '-' : '') + money(Math.abs(s.difference));
     diffEl.className = s.difference < 0 ? 'neg' : 'pos';
