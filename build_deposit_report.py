@@ -2602,6 +2602,15 @@ def main():
         s3.upload_file(agent_out_path, creds["R2_BUCKET"], agent_key)
     print(f"Uploaded {len(agent_list)} per-agent home reports to reports/agent/*.json")
 
+    # Tiny standalone file with just the agent name list -- lets the Worker's
+    # admin-only /admin/agent-links endpoint read who's a valid agent without
+    # pulling the full (100MB+) deposit_report.json into memory, which
+    # exceeds a Worker's memory limit.
+    agent_list_out_path = os.path.join(BASE, "agent_list.json")
+    with open(agent_list_out_path, "w") as f:
+        json.dump({"agent_list": agent_list}, f)
+    s3.upload_file(agent_list_out_path, creds["R2_BUCKET"], "reports/agent_list.json")
+
     # Per-date snapshot of Analytics' Reactivation/VIP Upgrade/Retention/
     # Premium Active sections -- these are single "as of today" computations,
     # overwritten every run, so browsing to a past date on the Analytics page

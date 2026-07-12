@@ -3264,15 +3264,15 @@ export default {
           headers: { "content-type": "application/json" },
         });
       }
-      const reportObj = await env.USERLIST_BUCKET.get("reports/deposit_report.json");
-      if (!reportObj) {
-        return new Response(JSON.stringify({ error: "Report not generated yet" }), {
+      const listObj = await env.USERLIST_BUCKET.get("reports/agent_list.json");
+      if (!listObj) {
+        return new Response(JSON.stringify({ error: "Agent list not generated yet -- run the pipeline once after this deploy" }), {
           status: 404,
           headers: { "content-type": "application/json" },
         });
       }
-      const report = await reportObj.json();
-      const names = (report.agent_list || []).filter(n => n && n !== "Un-Assigned");
+      const listData = await listObj.json();
+      const names = (listData.agent_list || []).filter(n => n && n !== "Un-Assigned");
       const base = url.origin;
       const links = [];
       for (const name of names) {
