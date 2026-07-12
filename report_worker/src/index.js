@@ -3076,6 +3076,39 @@ async function agentAccessToken(env, agentName) {
   return await hmacSign(env.SESSION_SECRET, "agent-access:" + agentName);
 }
 
+// Per-agent login password: first 2 letters of the agent's name (letters
+// only, ignoring any "(WFH)"/"(SL)" tag) + "0987", e.g. "Amar (WFH)" ->
+// "AM0987". Auto-bumps to 3 letters for any agent whose 2-letter prefix
+// collides with another agent's (e.g. "Sahana (SL)"/"Sathya (WFH)" both
+// start "SA" -> "SAH0987"/"SAT0987"), so two different agents never end up
+// with the same password. Computed fresh from the current agent list on
+// every login/admin-links request -- nothing stored, so it stays correct
+// automatically as agents are added, renamed, or removed.
+function agentNameLetters(name) {
+  return name.split("(")[0].replace(/[^a-zA-Z]/g, "").toUpperCase();
+}
+
+function computeAgentPasswords(agentNames) {
+  const withLetters = agentNames.map(n => ({ name: n, letters: agentNameLetters(n) }));
+  const byPrefix2 = new Map();
+  for (const a of withLetters) {
+    const p = a.letters.slice(0, 2);
+    if (!byPrefix2.has(p)) byPrefix2.set(p, []);
+    byPrefix2.get(p).push(a);
+  }
+  const passwordToAgent = new Map();
+  const agentToPassword = new Map();
+  for (const a of withLetters) {
+    const p2 = a.letters.slice(0, 2);
+    const collides = byPrefix2.get(p2).length > 1;
+    const prefix = collides ? a.letters.slice(0, 3) : p2;
+    const password = prefix + "0987";
+    passwordToAgent.set(password, a.name);
+    agentToPassword.set(a.name, password);
+  }
+  return { passwordToAgent, agentToPassword };
+}
+
 function getCookie(request, name) {
   const header = request.headers.get("Cookie") || "";
   const match = header.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -3094,19 +3127,43 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/login") {
       const form = await request.formData();
-      if (form.get("password") !== env.DASHBOARD_PASSWORD) {
-        return new Response(LOGIN_PAGE.replace("__ERROR__", '<div class="err">Incorrect password</div>'), {
-          status: 401,
-          headers: { "content-type": "text/html; charset=utf-8" },
+      const submitted = (form.get("password") || "").toString();
+
+      if (submitted === env.DASHBOARD_PASSWORD) {
+        const cookieValue = await makeSessionCookieValue(env, null);
+        return new Response(null, {
+          status: 302,
+          headers: {
+            "Location": "/",
+            "Set-Cookie": `session=${encodeURIComponent(cookieValue)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DURATION_MS / 1000}`,
+          },
         });
       }
-      const cookieValue = await makeSessionCookieValue(env, null);
-      return new Response(null, {
-        status: 302,
-        headers: {
-          "Location": "/",
-          "Set-Cookie": `session=${encodeURIComponent(cookieValue)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DURATION_MS / 1000}`,
-        },
+
+      // Not the admin password -- check it against the per-agent password
+      // scheme (see computeAgentPasswords). Case-insensitive since agents
+      // may type lowercase.
+      const listObj = await env.USERLIST_BUCKET.get("reports/agent_list.json");
+      if (listObj) {
+        const listData = await listObj.json();
+        const names = (listData.agent_list || []).filter(n => n && n !== "Un-Assigned");
+        const { passwordToAgent } = computeAgentPasswords(names);
+        const matchedAgent = passwordToAgent.get(submitted.toUpperCase());
+        if (matchedAgent) {
+          const cookieValue = await makeSessionCookieValue(env, matchedAgent);
+          return new Response(null, {
+            status: 302,
+            headers: {
+              "Location": "/agent/" + encodeURIComponent(matchedAgent),
+              "Set-Cookie": `session=${encodeURIComponent(cookieValue)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DURATION_MS / 1000}`,
+            },
+          });
+        }
+      }
+
+      return new Response(LOGIN_PAGE.replace("__ERROR__", '<div class="err">Incorrect password</div>'), {
+        status: 401,
+        headers: { "content-type": "text/html; charset=utf-8" },
       });
     }
 
@@ -3273,11 +3330,17 @@ export default {
       }
       const listData = await listObj.json();
       const names = (listData.agent_list || []).filter(n => n && n !== "Un-Assigned");
+      const { agentToPassword } = computeAgentPasswords(names);
       const base = url.origin;
       const links = [];
       for (const name of names) {
         const token = await agentAccessToken(env, name);
-        links.push({ agent: name, url: `${base}/agent-access?name=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}` });
+        links.push({
+          agent: name,
+          password: agentToPassword.get(name),
+          login_url: `${base}/login`,
+          direct_link: `${base}/agent-access?name=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}`,
+        });
       }
       links.sort((a, b) => a.agent.localeCompare(b.agent));
       return new Response(JSON.stringify({ links }, null, 2), {
