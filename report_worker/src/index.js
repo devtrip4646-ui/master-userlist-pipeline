@@ -3233,10 +3233,29 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/data.json") {
-      // An agent session always gets its OWN report, ignoring whatever
-      // ?agent= query string was actually sent -- prevents an agent from
-      // requesting another agent's (or the full) report directly.
-      const agentParam = sessionAgent || url.searchParams.get("agent");
+      // Agent-scoped pages fetch /data.json TWICE and merge the results:
+      // once bare (for shared structural fields like amount_ranges, dates,
+      // agent_list -- fields that live only in the full report) and once
+      // with ?agent=<name> (for that agent's own precomputed aggregates,
+      // in reports/agent/<slug>.json). Only the SECOND kind is forced to
+      // the session's own agent here -- forcing it on the bare request too
+      // (an earlier version of this fix did) breaks that merge, since the
+      // small per-agent file doesn't have those structural fields at all.
+      //
+      // The full report itself is NOT filtered server-side for a bare
+      // request from an agent session: at 100MB+ it can't be safely
+      // parsed and re-filtered in a Worker (confirmed via an actual OOM
+      // crash on a similar endpoint -- see /admin/agent-links). The actual
+      // security boundary for agent sessions is enforced at the PAGE level
+      // (redirected to their own /agent/<name>, never shown the full
+      // dashboard UI) and at the ?agent= parameter here, not at the raw
+      // bare-JSON layer -- an agent deliberately opening devtools/curl
+      // could still pull the full report this way. Closing that fully
+      // would need the pipeline to also publish a "safe global" file with
+      // sensitive per-agent rows stripped, which is a real follow-up, not
+      // something to improvise while this was actively broken.
+      const requestedAgentParam = url.searchParams.get("agent");
+      const agentParam = requestedAgentParam ? (sessionAgent || requestedAgentParam) : null;
       const key = agentParam ? `reports/agent/${slugifyAgentName(agentParam)}.json` : "reports/deposit_report.json";
       const obj = await env.USERLIST_BUCKET.get(key);
       if (!obj) {
