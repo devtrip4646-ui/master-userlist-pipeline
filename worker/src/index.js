@@ -313,8 +313,9 @@ async function triggerIngest(env, fileType, key) {
   return dispatchWorkflow(env, "ingest.yml", { file_type: fileType, key });
 }
 
-async function triggerReassign(env, userId, agent) {
-  return dispatchWorkflow(env, "reassign_agent.yml", { user_id: String(userId), agent: agent || "" });
+async function triggerReassign(env, userIds, agent) {
+  const ids = Array.isArray(userIds) ? userIds : [userIds];
+  return dispatchWorkflow(env, "reassign_agent.yml", { user_ids: ids.join(","), agent: agent || "" });
 }
 
 async function triggerBanUser(env, userId) {
@@ -519,19 +520,30 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/reassign-agent") {
       try {
-        const { user_id, agent, password } = await request.json();
+        const { user_id, user_ids, agent, password } = await request.json();
         if (password !== env.ACTION_PASSWORD) {
           return jsonError("Access Denied", 403, CORS_HEADERS);
-        }
-        const userId = Number(user_id);
-        if (!user_id || !Number.isInteger(userId) || userId <= 0) {
-          return jsonError("user_id must be a positive integer", 400, CORS_HEADERS);
         }
         if (agent != null && typeof agent !== "string") {
           return jsonError("agent must be a string (or empty to un-assign)", 400, CORS_HEADERS);
         }
-        await triggerReassign(env, userId, agent);
-        return new Response(JSON.stringify({ ok: true }), {
+
+        let userIds;
+        if (Array.isArray(user_ids)) {
+          userIds = user_ids.map((x) => Number(x));
+          if (!userIds.length || userIds.some((n) => !Number.isInteger(n) || n <= 0)) {
+            return jsonError("user_ids must be a non-empty array of positive integers", 400, CORS_HEADERS);
+          }
+        } else {
+          const userId = Number(user_id);
+          if (!user_id || !Number.isInteger(userId) || userId <= 0) {
+            return jsonError("user_id must be a positive integer", 400, CORS_HEADERS);
+          }
+          userIds = [userId];
+        }
+
+        await triggerReassign(env, userIds, agent);
+        return new Response(JSON.stringify({ ok: true, count: userIds.length }), {
           headers: { "content-type": "application/json", ...CORS_HEADERS },
         });
       } catch (err) {

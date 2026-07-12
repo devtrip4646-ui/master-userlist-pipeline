@@ -70,6 +70,11 @@ const PAGE = `<!DOCTYPE html>
   .su-reassign-msg.ok { color: #059669; }
   .su-reassign-msg.err { color: #991b1b; }
 
+  .su-bulk-card { max-width: 640px; }
+  .su-bulk-note { font-size: 12px; color: #6b7280; margin-bottom: 10px; max-width: 640px; }
+  .su-bulk-textarea { width: 100%; min-height: 110px; border: 1px solid #d8dce5; border-radius: 8px; padding: 10px 12px; font-size: 13px; font-family: ui-monospace, monospace; resize: vertical; box-sizing: border-box; }
+  .su-bulk-count { font-size: 12px; color: #6b7280; }
+
   .su-ban-card { border-color: #fecdd3; background: #fff5f5; }
   .su-ban-card .su-reassign-title .badge { background: #fecdd3; }
   .su-ban-note { font-size: 12px; color: #9f1239; margin-bottom: 10px; max-width: 480px; }
@@ -1953,6 +1958,20 @@ if (IS_SEARCH_USER) {
       <div id="reassign-msg" class="su-reassign-msg"></div>
     </div>
 
+    <div class="su-reassign-card su-bulk-card">
+      <div class="su-reassign-title"><span class="badge">&#128203;</span> Bulk Reassign Agent</div>
+      <div class="su-bulk-note">Copy a column of User IDs straight from Excel and paste them below &mdash; one ID per line (or comma/tab separated works too).</div>
+      <textarea id="bulk-reassign-ids" class="su-bulk-textarea" placeholder="903039&#10;978483&#10;87434"></textarea>
+      <div class="su-reassign-row" style="margin-top:10px;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <select id="bulk-reassign-agent-select"><option value="">Un-Assigned</option></select>
+          <span id="bulk-reassign-count" class="su-bulk-count">0 IDs detected</span>
+        </div>
+        <button id="bulk-reassign-save-btn">&#128190; Apply to all</button>
+      </div>
+      <div id="bulk-reassign-msg" class="su-reassign-msg"></div>
+    </div>
+
     <div class="su-reassign-card su-ban-card">
       <div class="su-reassign-title"><span class="badge">&#128683;</span> Ban / Unban User</div>
       <div class="su-ban-note">Banning hides this user from every report, listing, export, and search on the dashboard -- their records are NOT deleted and keep updating normally in the background. Unban to make them visible again immediately, with full history intact.</div>
@@ -1979,16 +1998,66 @@ if (IS_SEARCH_USER) {
       const res = await fetch('/data.json');
       const reportData = await res.json();
       const select = document.getElementById('reassign-agent-select');
+      const bulkSelect = document.getElementById('bulk-reassign-agent-select');
       (reportData.agent_list || []).forEach(name => {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        select.appendChild(opt);
+        [select, bulkSelect].forEach(el => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          el.appendChild(opt);
+        });
       });
     } catch (e) {
       // Dropdown just falls back to "Un-Assigned" only -- not fatal.
     }
   })();
+
+  // Bulk Reassign: parses one ID per line (or comma/tab separated, matching
+  // whatever a pasted Excel column looks like), de-duped, non-numeric
+  // entries silently dropped from the count/apply.
+  function parseBulkUserIds() {
+    const raw = document.getElementById('bulk-reassign-ids').value;
+    const ids = raw.split(/[\\s,]+/).map(s => s.trim()).filter(Boolean).map(Number)
+      .filter(n => Number.isInteger(n) && n > 0);
+    return Array.from(new Set(ids));
+  }
+  const bulkTextarea = document.getElementById('bulk-reassign-ids');
+  const bulkCountEl = document.getElementById('bulk-reassign-count');
+  bulkTextarea.addEventListener('input', () => {
+    bulkCountEl.textContent = parseBulkUserIds().length + ' IDs detected';
+  });
+
+  document.getElementById('bulk-reassign-save-btn').addEventListener('click', async () => {
+    const select = document.getElementById('bulk-reassign-agent-select');
+    const btn = document.getElementById('bulk-reassign-save-btn');
+    const msg = document.getElementById('bulk-reassign-msg');
+    const userIds = parseBulkUserIds();
+    if (!userIds.length) {
+      msg.textContent = 'Paste at least one valid numeric User ID.';
+      msg.className = 'su-reassign-msg err';
+      return;
+    }
+    const reassignPassword = promptActionPassword('bulk reassign ' + userIds.length + ' user(s)');
+    if (reassignPassword === null) return;
+    btn.disabled = true;
+    msg.textContent = 'Saving ' + userIds.length + ' user(s)...';
+    msg.className = 'su-reassign-msg';
+    try {
+      const res = await fetch(REASSIGN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ user_ids: userIds, agent: select.value, password: reassignPassword }),
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || res.status);
+      msg.textContent = 'Saved - ' + userIds.length + ' user(s) will show as ' + (select.value || 'Un-Assigned') + ' within a minute or two.';
+      msg.className = 'su-reassign-msg ok';
+    } catch (err) {
+      msg.textContent = 'Error: ' + err.message;
+      msg.className = 'su-reassign-msg err';
+    }
+    btn.disabled = false;
+  });
 
   document.getElementById('reassign-save-btn').addEventListener('click', async () => {
     const userInput = document.getElementById('reassign-user-input');

@@ -3,8 +3,8 @@ name: Reassign agent
 on:
   workflow_dispatch:
     inputs:
-      user_id:
-        description: "User ID to reassign"
+      user_ids:
+        description: "Comma-separated User ID(s) to reassign"
         required: true
       agent:
         description: "Agent name, or empty to un-assign"
@@ -35,7 +35,7 @@ jobs:
           R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          python3 reassign_agent.py --user-id "${{ inputs.user_id }}" --agent "${{ inputs.agent }}"
+          python3 reassign_agent.py --user-ids "${{ inputs.user_ids }}" --agent "${{ inputs.agent }}"
 
       - name: Refresh deposit report
         env:
