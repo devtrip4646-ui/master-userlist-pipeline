@@ -53,6 +53,48 @@ const UPLOAD_FORM = `<!DOCTYPE html>
 </form>
 <div id="tokenMsg" style="margin-top:10px;font-size:14px;"></div>
 
+<hr style="margin:40px 0;border:none;border-top:1px solid #eee;">
+
+<h1>Agent Logins</h1>
+<p>Every agent currently in the agent list, with their dashboard login password (first 2 letters of their name + "0987", bumped to 3 letters for any agent whose 2-letter prefix collides with another). Computed fresh from the current list every time -- a newly added agent shows up here automatically, nothing to separately create.</p>
+<button id="agentLoginsBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:14px;cursor:pointer;">Show Agent Logins</button>
+<div id="agentLoginsMsg" style="margin-top:10px;font-size:14px;"></div>
+<div id="agentLoginsTable" style="margin-top:12px;"></div>
+
+<script>
+document.getElementById('agentLoginsBtn').addEventListener('click', async () => {
+  const password = prompt('Enter password to view agent logins:');
+  if (password === null) return;
+  const btn = document.getElementById('agentLoginsBtn');
+  const msg = document.getElementById('agentLoginsMsg');
+  const tableEl = document.getElementById('agentLoginsTable');
+  btn.disabled = true;
+  msg.textContent = 'Loading...';
+  msg.className = '';
+  tableEl.innerHTML = '';
+  try {
+    const res = await fetch('/agent-logins', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.status);
+    msg.textContent = data.logins.length + ' agents';
+    msg.className = 'ok';
+    tableEl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+      '<thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd;">Agent</th><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd;">Password</th></tr></thead><tbody>' +
+      data.logins.map(l => '<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">' + l.agent +
+        '</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-family:monospace;">' + l.password + '</td></tr>').join('') +
+      '</tbody></table>';
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.className = 'err';
+  }
+  btn.disabled = false;
+});
+</script>
+
 <script>
 async function refreshTokenStatus() {
   try {
@@ -193,6 +235,33 @@ async function dispatchWorkflow(env, workflowFile, inputs) {
   }
 }
 
+// Same scheme as report_worker's login: first 2 letters of the agent's name
+// (letters only, ignoring any "(WFH)"/"(SL)" tag) + "0987", bumped to 3
+// letters for any 2-letter prefix collision. Kept in sync with the copy in
+// report_worker/src/index.js -- deliberately duplicated rather than shared,
+// since these are two separate Worker deployments with no common module.
+function agentNameLetters(name) {
+  return name.split("(")[0].replace(/[^a-zA-Z]/g, "").toUpperCase();
+}
+
+function computeAgentPasswords(agentNames) {
+  const withLetters = agentNames.map((n) => ({ name: n, letters: agentNameLetters(n) }));
+  const byPrefix2 = new Map();
+  for (const a of withLetters) {
+    const p = a.letters.slice(0, 2);
+    if (!byPrefix2.has(p)) byPrefix2.set(p, []);
+    byPrefix2.get(p).push(a);
+  }
+  const agentToPassword = new Map();
+  for (const a of withLetters) {
+    const p2 = a.letters.slice(0, 2);
+    const collides = byPrefix2.get(p2).length > 1;
+    const prefix = collides ? a.letters.slice(0, 3) : p2;
+    agentToPassword.set(a.name, prefix + "0987");
+  }
+  return { agentToPassword };
+}
+
 async function triggerIngest(env, fileType, key) {
   return dispatchWorkflow(env, "ingest.yml", { file_type: fileType, key });
 }
@@ -320,6 +389,30 @@ export default {
         // Restart the pipeline right away instead of waiting for the next scheduled tick.
         await dispatchWorkflow(env, "api_pull.yml", {});
         return new Response(JSON.stringify({ ok: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      } catch (err) {
+        return jsonError(err.message || "Unknown error", 500);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/agent-logins") {
+      try {
+        const { password } = await request.json();
+        if (password !== env.ACTION_PASSWORD) {
+          return jsonError("Access Denied", 403);
+        }
+        const listObj = await env.USERLIST_BUCKET.get("reports/agent_list.json");
+        if (!listObj) {
+          return jsonError("Agent list not generated yet", 404);
+        }
+        const listData = await listObj.json();
+        const names = (listData.agent_list || []).filter((n) => n && n !== "Un-Assigned");
+        const { agentToPassword } = computeAgentPasswords(names);
+        const logins = names
+          .map((name) => ({ agent: name, password: agentToPassword.get(name) }))
+          .sort((a, b) => a.agent.localeCompare(b.agent));
+        return new Response(JSON.stringify({ logins }), {
           headers: { "content-type": "application/json" },
         });
       } catch (err) {
