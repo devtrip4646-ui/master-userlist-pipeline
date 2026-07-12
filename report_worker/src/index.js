@@ -1491,12 +1491,11 @@ if (IS_ANALYTICS) {
 
 if (IS_PLATFORM_ANALYSIS) {
   (async () => {
-    const appEl = document.getElementById('platform-analysis-app');
-    const entered = prompt('Enter password to access Platform Analysis:');
-    if (entered !== ACTION_PASSWORD) {
-      appEl.textContent = 'Access Denied';
-      return;
-    }
+    // No extra password prompt here -- the server already gates this page
+    // to admin sessions only (session auth + /platform-analysis is never
+    // reachable from an agent session, which always gets redirected to its
+    // own /agent/<name> page regardless of URL). This client-side prompt
+    // was a redundant second gate on top of that.
     const res = await fetch('/data.json');
     if (!res.ok) {
       document.getElementById('platform-analysis-app').textContent = 'Failed to load report data (' + res.status + ')';
