@@ -871,6 +871,54 @@ def yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user
     return rows
 
 
+def no_return_fd_users(deposit_rows, all_withdrawal_full, agent_by_user, today):
+    """Users whose first-ever deposit (source system's is_first_deposit flag)
+    landed 2-4 days ago -- e.g. today=12th July -> FD on 10th/9th/8th -- and
+    who have made NO COMPLETE deposit on any day AFTER that FD date since.
+    The 2-day buffer before the window starts (skipping today and
+    yesterday) gives every included user at least one full day where a
+    return deposit COULD have happened, so this reads as "genuinely
+    one-and-done," not just "hasn't come back yet" noise from someone whose
+    FD was only yesterday."""
+    window_start = today - timedelta(days=4)
+    window_end = today - timedelta(days=2)
+
+    fd_date_by_user = {}
+    deposit_dates_by_user = defaultdict(set)
+    deposit_amount_by_user_date = defaultdict(float)
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        d = dt.date()
+        deposit_dates_by_user[user_id].add(d)
+        deposit_amount_by_user_date[(user_id, d)] += order_amount or 0.0
+        if is_first_deposit == 1 and window_start <= d <= window_end:
+            fd_date_by_user[user_id] = d
+
+    withdraw_by_user = defaultdict(float)
+    for r in all_withdrawal_full:
+        if r["status"] in ACTIVE_WITHDRAW_STATUSES and r["user_id"] is not None:
+            withdraw_by_user[r["user_id"]] += r["amount"] or 0.0
+
+    rows = []
+    for user_id, fd_date in fd_date_by_user.items():
+        returned = any(d > fd_date for d in deposit_dates_by_user.get(user_id, ()))
+        if returned:
+            continue
+        rows.append({
+            "user_id": user_id,
+            "agent": agent_for(agent_by_user, user_id),
+            "fd_date": fd_date.isoformat(),
+            "total_deposit": round(deposit_amount_by_user_date.get((user_id, fd_date), 0.0), 2),
+            "total_withdraw": round(withdraw_by_user.get(user_id, 0.0), 2),
+        })
+    rows.sort(key=lambda r: r["fd_date"])
+    return rows
+
+
 DEPOSIT_CHALLENGE_RULES = {
     1: ("Rule 1 (+Rs10) - FD+1 Auto Bonus", 10),
     2: ("Rule 2 (+Rs20) - Deposited on FD+1", 20),
@@ -2389,7 +2437,7 @@ def main():
     deposit_challenge_bonus_rows = deposit_challenge_bonus(deposit_rows, build_deposit_day_stats(deposit_rows), now.date(), agent_by_user)
     action_center_extra = {
         "yesterday_first_deposit_users": yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user, city_by_user, now.date(), agent_by_user),
-        "deposit_challenge_bonus": deposit_challenge_bonus_rows,
+        "no_return_fd_users": no_return_fd_users(deposit_rows, all_withdrawal_full, agent_by_user, now.date()),
     }
 
     retention = {

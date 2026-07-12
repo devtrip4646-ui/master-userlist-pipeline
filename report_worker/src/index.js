@@ -471,7 +471,7 @@ function scopeReportToAgent(data, agentName) {
     scoped.action_center_extra = {
       ...scoped.action_center_extra,
       yesterday_first_deposit_users: filterRows(scoped.action_center_extra.yesterday_first_deposit_users),
-      deposit_challenge_bonus: filterRows(scoped.action_center_extra.deposit_challenge_bonus),
+      no_return_fd_users: filterRows(scoped.action_center_extra.no_return_fd_users),
     };
   }
 
@@ -671,8 +671,8 @@ if (IS_ACTION_CENTER) {
       { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
       { label: 'FD Date', render: r => shortDate(r.fd_date), raw: r => r.fd_date },
-      { label: 'Bonus Rule', render: r => r.rule },
-      { label: 'Bonus Amount', render: r => money(r.bonus_amount), raw: r => r.bonus_amount, num: true },
+      { label: 'Total Deposit', render: r => money(r.total_deposit), raw: r => r.total_deposit, num: true },
+      { label: 'Withdraw', render: r => money(r.total_withdraw), raw: r => r.total_withdraw, num: true },
     ];
 
     const nearCols = [
@@ -790,10 +790,10 @@ if (IS_ACTION_CENTER) {
         </section>
         <section class="acc-cyan">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-cyan">&#127942;</div><h2>3-Day Deposit Challenge Bonus</h2></div>
+            <div class="sec-title"><div class="badge b-cyan">&#127942;</div><h2>No-Return First Deposit Users</h2></div>
             <button class="download-btn-sm" id="btn-dl-bonus">&#128190; Excel</button>
           </div>
-          <div class="ac-note">Bonuses payable today &middot; \${acx.deposit_challenge_bonus.length.toLocaleString('en-IN')} entries</div>
+          <div class="ac-note">First deposit 2-4 days ago, no deposit since &middot; \${acx.no_return_fd_users.length.toLocaleString('en-IN')} users</div>
           <div id="bonus-table"></div>
           <div class="ac-pagination" id="bonus-pagination"></div>
         </section>
@@ -852,11 +852,11 @@ if (IS_ACTION_CENTER) {
 
     if (acx) {
       paginatedTable('new-users-table', 'new-users-pagination', acx.yesterday_first_deposit_users, newUserCols, 10);
-      paginatedTable('bonus-table', 'bonus-pagination', acx.deposit_challenge_bonus, bonusCols, 10);
+      paginatedTable('bonus-table', 'bonus-pagination', acx.no_return_fd_users, bonusCols, 10);
       document.getElementById('btn-dl-new-users').addEventListener('click', () =>
         downloadExcel(acx.yesterday_first_deposit_users, newUserCols, 'Yesterday First Deposit Users', 'yesterday-first-deposit-users.xlsx'));
       document.getElementById('btn-dl-bonus').addEventListener('click', () =>
-        downloadExcel(acx.deposit_challenge_bonus, bonusCols, '3-Day Deposit Challenge Bonus', 'deposit-challenge-bonus.xlsx'));
+        downloadExcel(acx.no_return_fd_users, bonusCols, 'No-Return First Deposit Users', 'no-return-fd-users.xlsx'));
     }
   })();
 }
