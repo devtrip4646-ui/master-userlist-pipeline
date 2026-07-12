@@ -3036,21 +3036,44 @@ async function hmacSign(secret, message) {
 
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-async function makeSessionCookieValue(env) {
-  const payload = String(Date.now() + SESSION_DURATION_MS);
+// Session payload is "<expiryMs>|<encodedAgentNameOrEmpty>" -- the agent
+// identity is signed INTO the cookie at login time (either via the admin
+// /login password, which always yields agent="", or via a per-agent
+// /agent-access link, which yields agent=<name>). Every later request is
+// scoped from this server-verified value, never re-derived from the URL --
+// closing the hole where an agent could edit the URL path to reach the
+// full, unscoped dashboard.
+async function makeSessionCookieValue(env, agentName) {
+  const payload = String(Date.now() + SESSION_DURATION_MS) + "|" + (agentName ? encodeURIComponent(agentName) : "");
   const sig = await hmacSign(env.SESSION_SECRET, payload);
   return `${payload}.${sig}`;
 }
 
+// Returns null if invalid/expired, otherwise { agent: string|null } --
+// agent is null for an admin session (full access), or the agent name for
+// an agent session (server-enforced scoping applies to every route below).
 async function verifySessionCookieValue(env, value) {
-  if (!value) return false;
+  if (!value) return null;
   const dot = value.lastIndexOf(".");
-  if (dot < 0) return false;
+  if (dot < 0) return null;
   const payload = value.slice(0, dot);
   const sig = value.slice(dot + 1);
-  if (!payload || !sig || Number(payload) < Date.now()) return false;
+  if (!payload || !sig) return null;
+  const barIdx = payload.indexOf("|");
+  const expiryStr = barIdx < 0 ? payload : payload.slice(0, barIdx);
+  const agentEncoded = barIdx < 0 ? "" : payload.slice(barIdx + 1);
+  if (!expiryStr || Number(expiryStr) < Date.now()) return null;
   const expected = await hmacSign(env.SESSION_SECRET, payload);
-  return expected === sig;
+  if (expected !== sig) return null;
+  return { agent: agentEncoded ? decodeURIComponent(agentEncoded) : null };
+}
+
+// Deterministic per-agent access token -- an HMAC of the agent's name under
+// the same server secret used to sign sessions, so any current or future
+// agent_assignments name automatically has a valid link with no separate
+// per-agent secret to generate or store.
+async function agentAccessToken(env, agentName) {
+  return await hmacSign(env.SESSION_SECRET, "agent-access:" + agentName);
 }
 
 function getCookie(request, name) {
@@ -3077,7 +3100,7 @@ export default {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }
-      const cookieValue = await makeSessionCookieValue(env);
+      const cookieValue = await makeSessionCookieValue(env, null);
       return new Response(null, {
         status: 302,
         headers: {
@@ -3087,8 +3110,34 @@ export default {
       });
     }
 
-    const authed = await verifySessionCookieValue(env, getCookie(request, "session"));
-    if (!authed) {
+    // Per-agent login link: /agent-access?name=<agent>&token=<hmac>. Visiting
+    // this (bookmarked, given privately to that agent) is the ONLY way to
+    // get an agent-scoped session -- the shared admin password no longer
+    // grants agent access, only a full admin session. The token is
+    // deterministic per agent name (see agentAccessToken), so no separate
+    // per-agent secret needs to be generated or stored anywhere.
+    if (request.method === "GET" && url.pathname === "/agent-access") {
+      const name = url.searchParams.get("name");
+      const token = url.searchParams.get("token");
+      if (!name || !token) {
+        return new Response("Missing name or token.", { status: 400 });
+      }
+      const expected = await agentAccessToken(env, name);
+      if (token !== expected) {
+        return new Response("Invalid access link. Contact your admin for a new link.", { status: 403 });
+      }
+      const cookieValue = await makeSessionCookieValue(env, name);
+      return new Response(null, {
+        status: 302,
+        headers: {
+          "Location": "/agent/" + encodeURIComponent(name),
+          "Set-Cookie": `session=${encodeURIComponent(cookieValue)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DURATION_MS / 1000}`,
+        },
+      });
+    }
+
+    const session = await verifySessionCookieValue(env, getCookie(request, "session"));
+    if (!session) {
       if (url.pathname.startsWith("/api/") || url.pathname === "/data.json") {
         return new Response(JSON.stringify({ error: "Not authenticated" }), {
           status: 401,
@@ -3107,13 +3156,30 @@ export default {
     // Performance and Platform Analysis are never agent-scoped (no
     // /agent/<name>/performance or /agent/<name>/platform-analysis route).
     const agentPageMatch = url.pathname.match(/^\/agent\/([^/]+)(\/(action-center|analytics|search-user))?\/?$/);
+    const sessionAgent = session.agent; // null = admin session, full access
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/action-center" || url.pathname === "/performance" || url.pathname === "/analytics" || url.pathname === "/platform-analysis" || url.pathname === "/search-user" || agentPageMatch)) {
+      if (sessionAgent) {
+        // An agent session may ONLY render its own /agent/<name>... pages,
+        // plus the shared (unscoped) /performance page -- everything else,
+        // including bare "/" and any OTHER agent's /agent/<other> URL, gets
+        // redirected back to their own page. This is what actually closes
+        // the "strip /agent/<name> from the URL" hole: the redirect target
+        // comes from the signed session, never from the requested URL.
+        const ownPage = agentPageMatch && decodeURIComponent(agentPageMatch[1]) === sessionAgent;
+        const sharedPerformance = url.pathname === "/performance";
+        if (!ownPage && !sharedPerformance) {
+          return new Response(null, { status: 302, headers: { "Location": "/agent/" + encodeURIComponent(sessionAgent) } });
+        }
+      }
       return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
 
     if (request.method === "GET" && url.pathname === "/data.json") {
-      const agentParam = url.searchParams.get("agent");
+      // An agent session always gets its OWN report, ignoring whatever
+      // ?agent= query string was actually sent -- prevents an agent from
+      // requesting another agent's (or the full) report directly.
+      const agentParam = sessionAgent || url.searchParams.get("agent");
       const key = agentParam ? `reports/agent/${slugifyAgentName(agentParam)}.json` : "reports/deposit_report.json";
       const obj = await env.USERLIST_BUCKET.get(key);
       if (!obj) {
@@ -3151,7 +3217,10 @@ export default {
       }
       const shardData = await obj.json();
       const profile = shardData[String(userId)];
-      if (!profile) {
+      // An agent session can only look up its own users -- same "not found"
+      // response either way so this doesn't leak whether a given user_id
+      // exists under a different agent.
+      if (!profile || (sessionAgent && profile.agent !== sessionAgent)) {
         return new Response(JSON.stringify({ error: "User not found" }), {
           status: 404,
           headers: { "content-type": "application/json" },
@@ -3179,6 +3248,40 @@ export default {
       }
       return new Response(obj.body, {
         headers: { "content-type": "application/json", "cache-control": "public, max-age=300" },
+      });
+    }
+
+    // Admin-only: generates every current agent's private access link,
+    // computed from the same server secret /agent-access verifies against
+    // -- so any agent already in agent_list (including brand-new ones from
+    // the next pipeline run) automatically gets a valid link with nothing
+    // to separately provision. Not linked from the UI; visit directly while
+    // logged in as admin.
+    if (request.method === "GET" && url.pathname === "/admin/agent-links") {
+      if (sessionAgent) {
+        return new Response(JSON.stringify({ error: "Admin only" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const reportObj = await env.USERLIST_BUCKET.get("reports/deposit_report.json");
+      if (!reportObj) {
+        return new Response(JSON.stringify({ error: "Report not generated yet" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const report = await reportObj.json();
+      const names = (report.agent_list || []).filter(n => n && n !== "Un-Assigned");
+      const base = url.origin;
+      const links = [];
+      for (const name of names) {
+        const token = await agentAccessToken(env, name);
+        links.push({ agent: name, url: `${base}/agent-access?name=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}` });
+      }
+      links.sort((a, b) => a.agent.localeCompare(b.agent));
+      return new Response(JSON.stringify({ links }, null, 2), {
+        headers: { "content-type": "application/json" },
       });
     }
 
