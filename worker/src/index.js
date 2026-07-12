@@ -56,42 +56,76 @@ const UPLOAD_FORM = `<!DOCTYPE html>
 <hr style="margin:40px 0;border:none;border-top:1px solid #eee;">
 
 <h1>Agent Logins</h1>
-<p>Every agent currently in the agent list, with their dashboard login password (first 2 letters of their name + "0987", bumped to 3 letters for any agent whose 2-letter prefix collides with another). Computed fresh from the current list every time -- a newly added agent shows up here automatically, nothing to separately create.</p>
+<p>Every agent currently in the agent list, with their dashboard login password (first 2 letters of their name + "0987", bumped to 3 letters for any agent whose 2-letter prefix collides with another -- or a custom password, if you've changed one). Computed fresh from the current list every time -- a newly added agent shows up here automatically, nothing to separately create. Use "Change" to set a custom password for any agent; it replaces their default one.</p>
 <button id="agentLoginsBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:14px;cursor:pointer;">Show Agent Logins</button>
 <div id="agentLoginsMsg" style="margin-top:10px;font-size:14px;"></div>
 <div id="agentLoginsTable" style="margin-top:12px;"></div>
 
 <script>
-document.getElementById('agentLoginsBtn').addEventListener('click', async () => {
-  const password = prompt('Enter password to view agent logins:');
-  if (password === null) return;
+let adminActionPassword = null;
+async function loadAgentLogins() {
   const btn = document.getElementById('agentLoginsBtn');
   const msg = document.getElementById('agentLoginsMsg');
   const tableEl = document.getElementById('agentLoginsTable');
   btn.disabled = true;
   msg.textContent = 'Loading...';
   msg.className = '';
-  tableEl.innerHTML = '';
   try {
     const res = await fetch('/agent-logins', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password: adminActionPassword }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.status);
     msg.textContent = data.logins.length + ' agents';
     msg.className = 'ok';
     tableEl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
-      '<thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd;">Agent</th><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd;">Password</th></tr></thead><tbody>' +
-      data.logins.map(l => '<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">' + l.agent +
-        '</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-family:monospace;">' + l.password + '</td></tr>').join('') +
+      '<thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd;">Agent</th><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd;">Password</th><th style="border-bottom:2px solid #ddd;"></th></tr></thead><tbody>' +
+      data.logins.map((l, i) => '<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">' + l.agent +
+        '</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-family:monospace;">' + l.password +
+        '</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">' +
+        '<button data-agent-idx="' + i + '" class="change-pw-btn" style="background:#eee;color:#333;border:none;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;">Change</button>' +
+        '</td></tr>').join('') +
       '</tbody></table>';
+    tableEl.querySelectorAll('.change-pw-btn').forEach((b) => {
+      b.addEventListener('click', () => changeAgentPassword(data.logins[Number(b.dataset.agentIdx)].agent));
+    });
   } catch (err) {
     msg.textContent = 'Error: ' + err.message;
     msg.className = 'err';
   }
   btn.disabled = false;
+}
+
+async function changeAgentPassword(agent) {
+  const newPassword = prompt('New password for ' + agent + ':');
+  if (!newPassword) return;
+  const msg = document.getElementById('agentLoginsMsg');
+  msg.textContent = 'Saving...';
+  msg.className = '';
+  try {
+    const res = await fetch('/set-agent-password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agent, newPassword, password: adminActionPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.status);
+    msg.textContent = 'Password updated for ' + agent + '.';
+    msg.className = 'ok';
+    await loadAgentLogins();
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.className = 'err';
+  }
+}
+
+document.getElementById('agentLoginsBtn').addEventListener('click', async () => {
+  const password = prompt('Enter password to view agent logins:');
+  if (password === null) return;
+  adminActionPassword = password;
+  await loadAgentLogins();
 });
 </script>
 
@@ -262,6 +296,19 @@ function computeAgentPasswords(agentNames) {
   return { agentToPassword };
 }
 
+// Admin-set custom passwords, written by /set-agent-password below and read
+// by report_worker's /login too (same R2 object, kept in sync via the
+// shared bucket -- no cross-Worker call needed).
+async function applyAgentPasswordOverrides(env, names, agentToPassword) {
+  const overridesObj = await env.USERLIST_BUCKET.get("config/agent_password_overrides.json");
+  if (!overridesObj) return;
+  const overrides = await overridesObj.json();
+  for (const [agentName, customPassword] of Object.entries(overrides)) {
+    if (!names.includes(agentName) || !customPassword) continue;
+    agentToPassword.set(agentName, customPassword.toUpperCase());
+  }
+}
+
 async function triggerIngest(env, fileType, key) {
   return dispatchWorkflow(env, "ingest.yml", { file_type: fileType, key });
 }
@@ -409,10 +456,41 @@ export default {
         const listData = await listObj.json();
         const names = (listData.agent_list || []).filter((n) => n && n !== "Un-Assigned");
         const { agentToPassword } = computeAgentPasswords(names);
+        await applyAgentPasswordOverrides(env, names, agentToPassword);
         const logins = names
           .map((name) => ({ agent: name, password: agentToPassword.get(name) }))
           .sort((a, b) => a.agent.localeCompare(b.agent));
         return new Response(JSON.stringify({ logins }), {
+          headers: { "content-type": "application/json" },
+        });
+      } catch (err) {
+        return jsonError(err.message || "Unknown error", 500);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/set-agent-password") {
+      try {
+        const { agent, newPassword, password } = await request.json();
+        if (password !== env.ACTION_PASSWORD) {
+          return jsonError("Access Denied", 403);
+        }
+        if (!agent || typeof agent !== "string") {
+          return jsonError("Missing agent", 400);
+        }
+        if (!newPassword || typeof newPassword !== "string" || newPassword.trim().length < 4) {
+          return jsonError("Password must be at least 4 characters", 400);
+        }
+        const listObj = await env.USERLIST_BUCKET.get("reports/agent_list.json");
+        const listData = listObj ? await listObj.json() : { agent_list: [] };
+        const names = (listData.agent_list || []).filter((n) => n && n !== "Un-Assigned");
+        if (!names.includes(agent)) {
+          return jsonError("Unknown agent", 400);
+        }
+        const overridesObj = await env.USERLIST_BUCKET.get("config/agent_password_overrides.json");
+        const overrides = overridesObj ? await overridesObj.json() : {};
+        overrides[agent] = newPassword.trim().toUpperCase();
+        await env.USERLIST_BUCKET.put("config/agent_password_overrides.json", JSON.stringify(overrides));
+        return new Response(JSON.stringify({ ok: true }), {
           headers: { "content-type": "application/json" },
         });
       } catch (err) {

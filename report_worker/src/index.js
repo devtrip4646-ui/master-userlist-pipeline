@@ -3115,6 +3115,26 @@ function computeAgentPasswords(agentNames) {
   return { passwordToAgent, agentToPassword };
 }
 
+// Admin-set custom passwords (from the upload page's Agent Logins section)
+// live in a small R2 object as { "Agent Name": "CUSTOMPASS", ... } and
+// REPLACE that agent's default formula-based password entirely -- once
+// changed, the old default stops working. Written by the upload worker's
+// /set-agent-password; read here and by /admin/agent-links.
+async function applyAgentPasswordOverrides(env, names, passwordToAgent, agentToPassword) {
+  const overridesObj = await env.USERLIST_BUCKET.get("config/agent_password_overrides.json");
+  if (!overridesObj) return;
+  const overrides = await overridesObj.json();
+  for (const [agentName, customPassword] of Object.entries(overrides)) {
+    if (!names.includes(agentName) || !customPassword) continue;
+    const stale = [];
+    for (const [pw, name] of passwordToAgent) if (name === agentName) stale.push(pw);
+    for (const pw of stale) passwordToAgent.delete(pw);
+    const upper = customPassword.toUpperCase();
+    passwordToAgent.set(upper, agentName);
+    agentToPassword.set(agentName, upper);
+  }
+}
+
 function getCookie(request, name) {
   const header = request.headers.get("Cookie") || "";
   const match = header.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -3153,7 +3173,8 @@ export default {
       if (listObj) {
         const listData = await listObj.json();
         const names = (listData.agent_list || []).filter(n => n && n !== "Un-Assigned");
-        const { passwordToAgent } = computeAgentPasswords(names);
+        const { passwordToAgent, agentToPassword } = computeAgentPasswords(names);
+        await applyAgentPasswordOverrides(env, names, passwordToAgent, agentToPassword);
         const matchedAgent = passwordToAgent.get(submitted.toUpperCase());
         if (matchedAgent) {
           const cookieValue = await makeSessionCookieValue(env, matchedAgent);
@@ -3355,7 +3376,8 @@ export default {
       }
       const listData = await listObj.json();
       const names = (listData.agent_list || []).filter(n => n && n !== "Un-Assigned");
-      const { agentToPassword } = computeAgentPasswords(names);
+      const { passwordToAgent, agentToPassword } = computeAgentPasswords(names);
+      await applyAgentPasswordOverrides(env, names, passwordToAgent, agentToPassword);
       const base = url.origin;
       const links = [];
       for (const name of names) {
