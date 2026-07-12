@@ -1882,12 +1882,12 @@ WEEKLY_CASHBACK_MAX_LOSS = 500000.0
 WEEKLY_CASHBACK_MIN_VIP = 2
 
 # A separate, smaller-loss tier: Rs 500 up to (not including) the Rs 5,000
-# floor above gets a flat 1% cashback -- but only if that loss is ALSO at
+# floor above gets a flat 1.5% cashback -- but only if that loss is ALSO at
 # least 80% of that week's deposit (a stricter bar than the 50% floor used
 # by the 3 tiers above).
 WEEKLY_CASHBACK_SMALL_LOSS_MIN = 500.0
 WEEKLY_CASHBACK_SMALL_LOSS_MIN_PCT = 80.0
-WEEKLY_CASHBACK_SMALL_LOSS_PCT = 0.01
+WEEKLY_CASHBACK_SMALL_LOSS_PCT = 0.015
 
 
 def weekly_cashback_week_range(now):
