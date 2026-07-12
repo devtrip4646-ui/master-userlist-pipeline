@@ -500,7 +500,7 @@ function scopeReportToAgent(data, agentName) {
 
   if (scoped.retention) {
     const out = { ...scoped.retention };
-    for (const sub of ['first_deposit', 'bonus_claimer']) {
+    for (const sub of ['first_deposit', 'no_return_fd_conversion']) {
       if (!scoped.retention[sub]) continue;
       const rows = filterRows(scoped.retention[sub].rows);
       out[sub] = { ...scoped.retention[sub], rows, converted_count: rows.length };
@@ -1311,15 +1311,15 @@ if (IS_ANALYTICS) {
         </section>
         <section class="acc-emerald">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-emerald">&#127793;</div><h2>Bonus Claimer Retention (Rs30/Rs60)</h2></div>
+            <div class="sec-title"><div class="badge b-emerald">&#127793;</div><h2>No-Return FD Conversion</h2></div>
             <button class="download-btn-sm" id="btn-dl-retention-bonus">&#128190; Excel</button>
           </div>
           <div class="reactivation-highlight">
-            <div class="rh-count">\${fmt(retention.bonus_claimer.converted_count)}<small>of \${fmt(retention.bonus_claimer.cohort_size)} Deposited Again</small></div>
-            <div class="rh-pct">\${retention.bonus_claimer.pct_converted}%<small>Conversion</small></div>
-            <div class="rh-pct">\${money(retention.bonus_claimer.avg_deposit_amount)}<small>Avg Deposit</small></div>
+            <div class="rh-count">\${fmt(retention.no_return_fd_conversion.converted_count)}<small>of \${fmt(retention.no_return_fd_conversion.cohort_size)} Deposited Again</small></div>
+            <div class="rh-pct">\${retention.no_return_fd_conversion.pct_converted}%<small>Conversion</small></div>
+            <div class="rh-pct">\${money(retention.no_return_fd_conversion.avg_deposit_amount)}<small>Avg Deposit</small></div>
           </div>
-          <div class="ac-note">\${retention.bonus_claimer.note}</div>
+          <div class="ac-note">\${retention.no_return_fd_conversion.note}</div>
           <div id="retention-bonus-table"></div>
           <div class="ac-pagination" id="retention-bonus-pagination"></div>
         </section>
@@ -1388,11 +1388,11 @@ if (IS_ANALYTICS) {
 
       if (retention) {
         paginatedTable('retention-fd-table', 'retention-fd-pagination', retention.first_deposit.rows, retentionCols, 5);
-        paginatedTable('retention-bonus-table', 'retention-bonus-pagination', retention.bonus_claimer.rows, retentionCols, 5);
+        paginatedTable('retention-bonus-table', 'retention-bonus-pagination', retention.no_return_fd_conversion.rows, retentionCols, 5);
         document.getElementById('btn-dl-retention-fd').addEventListener('click', () =>
           downloadExcel(retention.first_deposit.rows, retentionCols, 'First Deposit Retention', 'retention-first-deposit.xlsx'));
         document.getElementById('btn-dl-retention-bonus').addEventListener('click', () =>
-          downloadExcel(retention.bonus_claimer.rows, retentionCols, 'Bonus Claimer Retention', 'retention-bonus-claimer.xlsx'));
+          downloadExcel(retention.no_return_fd_conversion.rows, retentionCols, 'No-Return FD Conversion', 'no-return-fd-conversion.xlsx'));
       }
 
       if (premiumActive) {

@@ -1053,18 +1053,38 @@ def first_deposit_retention(deposit_rows, city_by_user, today, agent_by_user):
     )
 
 
-def bonus_claimer_retention(bonus_rows, deposit_rows, city_by_user, today, agent_by_user):
-    """Of users who claimed the 3-Day Deposit Challenge Bonus's Rule 3
-    (+Rs30, deposited FD+2) or Rule 4 (+Rs60, deposited FD+1 and FD+2) TODAY,
-    how many ALSO made a COMPLETE deposit TODAY. The bonus-qualifying
-    deposits are from FD+1/FD+2 (1-2 days ago), never today, so this is a
-    genuinely separate signal -- not circular with the bonus itself: are the
-    bigger-bonus earners still actively depositing, or was claiming the
-    bonus their last action?"""
-    claimers = {r["user_id"] for r in bonus_rows if r["bonus_amount"] in (30, 60)}
+def no_return_fd_conversion(deposit_rows, city_by_user, agent_by_user, today):
+    """Of users whose first-ever deposit landed 2-4 days ago and had NOT
+    made another COMPLETE deposit as of yesterday (the "No-Return First
+    Deposit Users" cohort -- see no_return_fd_users), how many made a
+    COMPLETE deposit TODAY. Cohort membership is evaluated using only
+    deposits strictly BEFORE today (not the live no_return_fd_users list,
+    which would already exclude anyone who deposited today) -- otherwise
+    today's converters would disqualify themselves from their own cohort."""
+    window_start = today - timedelta(days=4)
+    window_end = today - timedelta(days=2)
+
+    fd_date_by_user = {}
+    deposit_dates_before_today = defaultdict(set)
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        d = dt.date()
+        if d < today:
+            deposit_dates_before_today[user_id].add(d)
+        if is_first_deposit == 1 and window_start <= d <= window_end:
+            fd_date_by_user[user_id] = d
+
+    cohort = {
+        user_id for user_id, fd_date in fd_date_by_user.items()
+        if not any(d > fd_date for d in deposit_dates_before_today.get(user_id, ()))
+    }
     return _retention_report(
-        claimers, _today_deposit_activity(deposit_rows, today), city_by_user,
-        "Rule 3 (Rs30) / Rule 4 (Rs60) bonus claimers today who deposited again today", agent_by_user,
+        cohort, _today_deposit_activity(deposit_rows, today), city_by_user,
+        "No-Return First Deposit Users (FD 2-4 days ago, no deposit since) who deposited again today", agent_by_user,
     )
 
 
@@ -2442,7 +2462,7 @@ def main():
 
     retention = {
         "first_deposit": first_deposit_retention(deposit_rows, city_by_user, now.date(), agent_by_user),
-        "bonus_claimer": bonus_claimer_retention(deposit_challenge_bonus_rows, deposit_rows, city_by_user, now.date(), agent_by_user),
+        "no_return_fd_conversion": no_return_fd_conversion(deposit_rows, city_by_user, agent_by_user, now.date()),
     }
 
     premium_active = None
