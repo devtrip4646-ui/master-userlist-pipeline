@@ -13,15 +13,11 @@ import os
 import re
 import shutil
 import sqlite3
-import threading
-import time
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from datetime import time as dtime
 
 import boto3
-import requests
 
 import ban_utils
 
@@ -1828,110 +1824,6 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
     print(f"Uploaded {USER_SEARCH_SHARDS} user search shards covering {len(rows)} users")
 
 
-_D1_THREAD_LOCAL = threading.local()
-
-
-def _d1_session():
-    if not hasattr(_D1_THREAD_LOCAL, "session"):
-        _D1_THREAD_LOCAL.session = requests.Session()
-    return _D1_THREAD_LOCAL.session
-
-
-def sync_user_search_to_d1(recent_activity, agent_by_user, mconn):
-    """Additive, incremental mirror of the user_search shards into D1's
-    user_profiles table, purely to make report_worker's /api/user-search
-    fast (one indexed point lookup instead of downloading+parsing a whole
-    shard). The R2 shards built just above remain the full, authoritative
-    source -- if D1 is unset, unreachable, or errors on any row, this
-    function just logs and returns; nothing else in the pipeline depends on
-    it succeeding.
-
-    Only upserts users with activity in THIS run's recent_activity window
-    (deposits/withdrawals/games/bonuses) -- mirroring the full ~339K users
-    every run would be ~8M writes/day, well past D1's write quota. This
-    keeps writes proportional to actual daily activity (typically a few
-    thousand rows), same principle as the wallet_transactions backfill
-    watermark fix. A user who's never active after this feature ships simply
-    stays servable from the R2 shard fallback indefinitely -- not a bug, an
-    intentional trade-off of "fast path for active users, fallback for the
-    long tail."""
-    account_id = os.environ.get("R2_ACCOUNT_ID")
-    api_token = os.environ.get("CF_API_TOKEN")
-    database_id = os.environ.get("D1_USER_SEARCH_DATABASE_ID")
-    if not account_id or not api_token or not database_id:
-        print("D1 user-search sync: CF_API_TOKEN/D1_USER_SEARCH_DATABASE_ID not configured yet -- skipping (R2 shards remain fully authoritative)")
-        return
-
-    deposits_by_user, withdrawals_by_user, games_by_user, bonuses_by_user, deposit_count_7d = recent_activity
-    active_user_ids = set(deposits_by_user) | set(withdrawals_by_user) | set(games_by_user) | set(bonuses_by_user)
-    if not active_user_ids:
-        print("D1 user-search sync: no active users this run, nothing to sync")
-        return
-
-    placeholders = ",".join("?" * len(active_user_ids))
-    rows = mconn.execute(
-        "SELECT user_id, city, channel, total_recharge, total_withdrawal, vip_level, "
-        f"user_balance, last_active_time, create_time, recharge_count FROM users WHERE user_id IN ({placeholders})",
-        list(active_user_ids),
-    ).fetchall()
-
-    url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{database_id}/query"
-    headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
-    upsert_sql = (
-        "INSERT INTO user_profiles (user_id, agent, region, acquisition_channel, vip_level, "
-        "total_deposit, total_deposit_count, total_withdraw, wallet_balance, net_lifetime, "
-        "last_active_time, registered, recent_deposit_count_7d, recent_activity_json, synced_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
-        "ON CONFLICT(user_id) DO UPDATE SET agent=excluded.agent, region=excluded.region, "
-        "acquisition_channel=excluded.acquisition_channel, vip_level=excluded.vip_level, "
-        "total_deposit=excluded.total_deposit, total_deposit_count=excluded.total_deposit_count, "
-        "total_withdraw=excluded.total_withdraw, wallet_balance=excluded.wallet_balance, "
-        "net_lifetime=excluded.net_lifetime, last_active_time=excluded.last_active_time, "
-        "registered=excluded.registered, recent_deposit_count_7d=excluded.recent_deposit_count_7d, "
-        "recent_activity_json=excluded.recent_activity_json, synced_at=excluded.synced_at"
-    )
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    def upsert_one(row):
-        user_id, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time, recharge_count = row
-        recent_activity_json = json.dumps({
-            "recent_deposits": deposits_by_user.get(user_id, []),
-            "recent_withdrawals": withdrawals_by_user.get(user_id, []),
-            "recent_games": games_by_user.get(user_id, []),
-            "recent_bonuses": bonuses_by_user.get(user_id, []),
-        })
-        params = [
-            user_id, agent_for(agent_by_user, user_id), city, channel, vip_level,
-            round(total_recharge or 0.0, 2), recharge_count or 0, round(total_withdrawal or 0.0, 2),
-            round(user_balance or 0.0, 2), round((total_recharge or 0.0) - (total_withdrawal or 0.0), 2),
-            last_active_time, create_time, deposit_count_7d.get(user_id, 0), recent_activity_json, now_iso,
-        ]
-        try:
-            resp = _d1_session().post(url, headers=headers, json={"sql": upsert_sql, "params": params}, timeout=10)
-            return resp.ok and resp.json().get("success")
-        except Exception:
-            return False
-
-    # Each row is its own independent HTTP round-trip to Cloudflare's API
-    # (D1's REST endpoint doesn't accept a batch of DIFFERENT statements in
-    # one call, and its 100-bound-parameter limit only allows ~6 rows per
-    # multi-VALUES INSERT given this table's 15 columns -- not worth the
-    # complexity for a modest win). Sequential was originally ~0.2s/row --
-    # 8000+ active users in one run took 28 minutes and dominated the whole
-    # pipeline step. A small thread pool cuts wall-clock time roughly
-    # proportional to its worker count, since this is pure network-wait, not
-    # CPU-bound work.
-    sync_start = time.time()
-    synced = 0
-    with ThreadPoolExecutor(max_workers=20) as pool:
-        for ok in pool.map(upsert_one, rows):
-            if ok:
-                synced += 1
-    failed = len(rows) - synced
-    elapsed = time.time() - sync_start
-    print(f"D1 user-search sync: {synced} upserted, {failed} failed (out of {len(rows)} active users this run, {elapsed:.0f}s)")
-
-
 def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_rows, target_dates, agent_by_user):
     """All bonuses claimed on target_dates -- both wallet-sourced bonuses
     (Welcome Back, Loyalty, VIP tiers, Daily Active, etc., from
@@ -2455,7 +2347,6 @@ def main():
         performance = performance_history(mconn)
         profit_users = profit_users_of_the_day(mconn, deposit_rows, withdrawal_rows, now, agent_by_user)
         build_and_upload_user_search_index(mconn, recent_activity, load_creds(), agent_by_user)
-        sync_user_search_to_d1(recent_activity, agent_by_user, mconn)
 
         mconn.close()
 

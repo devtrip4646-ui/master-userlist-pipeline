@@ -40,11 +40,5 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          # Optional -- additive D1 user-search mirror (see
-          # sync_user_search_to_d1 in build_deposit_report.py). If either
-          # secret is unset, that step just logs and skips; the R2
-          # user_search shards above it are unaffected either way.
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          D1_USER_SEARCH_DATABASE_ID: "3794f67f-ae52-4f68-b07c-9844e9425036"
         run: |
           python3 build_deposit_report.py
