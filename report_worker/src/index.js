@@ -1491,6 +1491,20 @@ if (IS_ANALYTICS) {
     renderDateSwitch();
     renderCharts();
     wireSections(snapshotCache[selectedDate]);
+
+    // Every date besides "today" (seeded above from the main report) is a
+    // separate on-demand R2 fetch -- previously that happened lazily on
+    // first click, so switching to an older date always paid a fresh
+    // network round-trip and felt slow. Warm the cache for the rest of the
+    // visible date range in the background so by the time the user clicks,
+    // it's already there.
+    dates.filter(d => d !== selectedDate).forEach(d => {
+      if (d in snapshotCache) return;
+      fetch('/api/analytics-history?date=' + d)
+        .then(r => r.ok ? r.json() : null)
+        .then(json => { snapshotCache[d] = json ? scopeReportToAgent(json, AGENT_NAME) : null; })
+        .catch(() => { snapshotCache[d] = null; });
+    });
   })();
 }
 
@@ -3211,7 +3225,7 @@ function getCookie(request, name) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/login") {
@@ -3411,6 +3425,15 @@ export default {
           headers: { "content-type": "application/json" },
         });
       }
+      // Past-date snapshots are immutable once written (see build_deposit_report.py,
+      // only "today"'s object is overwritten each pipeline run) -- cache them at the
+      // edge for a full day so repeat/other-user requests skip the R2 round-trip
+      // entirely. Today's snapshot still refreshes hourly, so it gets a short TTL.
+      const edgeCache = caches.default;
+      const cacheKey = new Request(url.toString(), request);
+      const cached = await edgeCache.match(cacheKey);
+      if (cached) return cached;
+
       const obj = await env.USERLIST_BUCKET.get(`reports/analytics_history/${date}.json`);
       if (!obj) {
         return new Response(JSON.stringify({ error: "No snapshot for this date" }), {
@@ -3418,9 +3441,13 @@ export default {
           headers: { "content-type": "application/json" },
         });
       }
-      return new Response(obj.body, {
-        headers: { "content-type": "application/json", "cache-control": "public, max-age=300" },
+      const isToday = date === new Date().toISOString().slice(0, 10);
+      const maxAge = isToday ? 300 : 86400;
+      const response = new Response(obj.body, {
+        headers: { "content-type": "application/json", "cache-control": `public, max-age=${maxAge}` },
       });
+      ctx.waitUntil(edgeCache.put(cacheKey, response.clone()));
+      return response;
     }
 
     // Admin-only: generates every current agent's private access link,
