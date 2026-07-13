@@ -369,6 +369,14 @@ def classify_bonus(game_name, source, source_id):
     return None
 
 
+# Bump this whenever classify_bonus() gains or changes a rule -- it forces
+# ingest_wallet()'s backfill step to do one full re-scan of wallet_transactions
+# under the new rules, then fall back to only scanning genuinely new rows.
+# Without this, a rule change would only apply to rows inserted AFTER the
+# change; existing rows that now match would silently stay unclassified.
+CLASSIFY_BONUS_RULES_VERSION = 4
+
+
 def ingest_wallet(files):
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
@@ -427,16 +435,34 @@ def ingest_wallet(files):
     print(f"Wallet transactions: {added} rows added, {len(new_bonus_rows)} classified as bonuses")
 
     # Backfill: rows from files ingested in earlier runs (before classify_bonus()
-    # recognized "Daily Active Bonus" / "Daily Active Bonus Low" / "Elle Import
-    # Excel Add" as bonuses) never got a bonuses row, since the loop above only
-    # classifies newly-inserted rows per run. Re-scan the whole table (bounded
-    # to the 33-day retention window, so this stays cheap) for any row still
-    # missing from `bonuses` -- INSERT OR IGNORE on the shared id makes this a
-    # no-op once every row has been backfilled, so it's safe to run every time.
-    backfill_rows = cur.execute(
-        "SELECT id, game_name, user_id, change_value, change_after, create_time, source, source_id "
-        "FROM wallet_transactions WHERE id NOT IN (SELECT id FROM bonuses)"
-    ).fetchall()
+    # recognized their category) never got a bonuses row, since the loop above
+    # only classifies newly-inserted rows per run. Historically this re-scanned
+    # the ENTIRE table every single run (16.9M+ rows and growing) -- almost all
+    # of it wasted work re-checking rows already confirmed not-a-bonus under an
+    # unchanged rule set. Now watermarked: only rows with id > the last
+    # fully-checked id are scanned on a normal run. Whenever
+    # CLASSIFY_BONUS_RULES_VERSION changes (a new/changed rule shipped), the
+    # watermark is ignored for one run to fully re-scan under the new rules --
+    # INSERT OR IGNORE on the shared id makes repeat scans a no-op regardless.
+    cur.execute("CREATE TABLE IF NOT EXISTS backfill_state (key TEXT PRIMARY KEY, value TEXT)")
+    stored_version_row = cur.execute("SELECT value FROM backfill_state WHERE key = 'rules_version'").fetchone()
+    stored_version = int(stored_version_row[0]) if stored_version_row else None
+    last_id_row = cur.execute("SELECT value FROM backfill_state WHERE key = 'last_backfilled_id'").fetchone()
+    last_backfilled_id = int(last_id_row[0]) if last_id_row else 0
+
+    if stored_version != CLASSIFY_BONUS_RULES_VERSION:
+        print(f"Bonus classify rules changed ({stored_version} -> {CLASSIFY_BONUS_RULES_VERSION}) or first run with watermarking -- full backfill re-scan")
+        backfill_rows = cur.execute(
+            "SELECT id, game_name, user_id, change_value, change_after, create_time, source, source_id "
+            "FROM wallet_transactions WHERE id NOT IN (SELECT id FROM bonuses)"
+        ).fetchall()
+    else:
+        backfill_rows = cur.execute(
+            "SELECT id, game_name, user_id, change_value, change_after, create_time, source, source_id "
+            "FROM wallet_transactions WHERE id > ? AND id NOT IN (SELECT id FROM bonuses)",
+            (last_backfilled_id,),
+        ).fetchall()
+
     backfilled = []
     for _id, game_name, user_id, change_value, change_after, create_time, source, source_id in backfill_rows:
         matched = classify_bonus(game_name, source, source_id)
@@ -447,8 +473,18 @@ def ingest_wallet(files):
             "INSERT OR IGNORE INTO bonuses (id, user_id, bonus_name, matched_category, change_value, change_after, create_time, source) VALUES (?,?,?,?,?,?,?,?)",
             backfilled,
         )
-        conn.commit()
-    print(f"Bonus backfill: {len(backfilled)} previously-missed rows classified as bonuses")
+
+    new_max_id = cur.execute("SELECT MAX(id) FROM wallet_transactions").fetchone()[0] or last_backfilled_id
+    cur.execute(
+        "INSERT OR REPLACE INTO backfill_state (key, value) VALUES ('rules_version', ?)",
+        (str(CLASSIFY_BONUS_RULES_VERSION),),
+    )
+    cur.execute(
+        "INSERT OR REPLACE INTO backfill_state (key, value) VALUES ('last_backfilled_id', ?)",
+        (str(new_max_id),),
+    )
+    conn.commit()
+    print(f"Bonus backfill: {len(backfilled)} previously-missed rows classified as bonuses (scanned {len(backfill_rows)} candidates)")
     conn.close()
 
 
