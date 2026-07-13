@@ -3378,6 +3378,55 @@ export default {
           headers: { "content-type": "application/json" },
         });
       }
+
+      // D1 fast path: an indexed point lookup instead of downloading a
+      // ~4MB shard just to find one user in it. Additive only -- the R2
+      // shard lookup right below is unchanged and always runs whenever D1
+      // isn't bound, errors, or simply doesn't have this user yet (it only
+      // mirrors recently-active users, see sync_user_search_to_d1).
+      if (env.USER_SEARCH_DB) {
+        try {
+          const d1Row = await env.USER_SEARCH_DB
+            .prepare("SELECT * FROM user_profiles WHERE user_id = ?")
+            .bind(userId)
+            .first();
+          if (d1Row) {
+            const recentActivity = JSON.parse(d1Row.recent_activity_json || "{}");
+            const profile = {
+              user_id: d1Row.user_id,
+              agent: d1Row.agent,
+              region: d1Row.region,
+              acquisition_channel: d1Row.acquisition_channel,
+              vip_level: d1Row.vip_level,
+              total_deposit: d1Row.total_deposit,
+              total_deposit_count: d1Row.total_deposit_count,
+              total_withdraw: d1Row.total_withdraw,
+              wallet_balance: d1Row.wallet_balance,
+              net_lifetime: d1Row.net_lifetime,
+              last_active_time: d1Row.last_active_time,
+              registered: d1Row.registered,
+              recent_deposits: recentActivity.recent_deposits || [],
+              recent_deposit_count_7d: d1Row.recent_deposit_count_7d,
+              recent_withdrawals: recentActivity.recent_withdrawals || [],
+              recent_games: recentActivity.recent_games || [],
+              recent_bonuses: recentActivity.recent_bonuses || [],
+            };
+            if (sessionAgent && profile.agent !== sessionAgent) {
+              return new Response(JSON.stringify({ error: "User not found" }), {
+                status: 404,
+                headers: { "content-type": "application/json" },
+              });
+            }
+            return new Response(JSON.stringify(profile), {
+              headers: { "content-type": "application/json", "cache-control": "no-store", "x-source": "d1" },
+            });
+          }
+        } catch (e) {
+          // Any D1 problem (binding misconfigured, outage, bad row) --
+          // fall straight through to the R2 shard lookup below, silently.
+        }
+      }
+
       const shard = ((userId % 40) + 40) % 40;
       const key = `user_search/shard_${String(shard).padStart(2, "0")}.json`;
       const obj = await env.USERLIST_BUCKET.get(key);

@@ -1,0 +1,12 @@
+name = "04-project-performance"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[[r2_buckets]]
+binding = "USERLIST_BUCKET"
+bucket_name = "master-userlist-db"
+
+[[d1_databases]]
+binding = "USER_SEARCH_DB"
+database_name = "project04-user-search"
+database_id = "3794f67f-ae52-4f68-b07c-9844e9425036"
