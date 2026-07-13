@@ -13,7 +13,10 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
+import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from datetime import time as dtime
 
@@ -1825,6 +1828,15 @@ def build_and_upload_user_search_index(mconn, recent_activity, creds, agent_by_u
     print(f"Uploaded {USER_SEARCH_SHARDS} user search shards covering {len(rows)} users")
 
 
+_D1_THREAD_LOCAL = threading.local()
+
+
+def _d1_session():
+    if not hasattr(_D1_THREAD_LOCAL, "session"):
+        _D1_THREAD_LOCAL.session = requests.Session()
+    return _D1_THREAD_LOCAL.session
+
+
 def sync_user_search_to_d1(recent_activity, agent_by_user, mconn):
     """Additive, incremental mirror of the user_search shards into D1's
     user_profiles table, purely to make report_worker's /api/user-search
@@ -1879,9 +1891,9 @@ def sync_user_search_to_d1(recent_activity, agent_by_user, mconn):
         "recent_activity_json=excluded.recent_activity_json, synced_at=excluded.synced_at"
     )
     now_iso = datetime.now(timezone.utc).isoformat()
-    session = requests.Session()
-    synced, failed = 0, 0
-    for user_id, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time, recharge_count in rows:
+
+    def upsert_one(row):
+        user_id, city, channel, total_recharge, total_withdrawal, vip_level, user_balance, last_active_time, create_time, recharge_count = row
         recent_activity_json = json.dumps({
             "recent_deposits": deposits_by_user.get(user_id, []),
             "recent_withdrawals": withdrawals_by_user.get(user_id, []),
@@ -1895,14 +1907,29 @@ def sync_user_search_to_d1(recent_activity, agent_by_user, mconn):
             last_active_time, create_time, deposit_count_7d.get(user_id, 0), recent_activity_json, now_iso,
         ]
         try:
-            resp = session.post(url, headers=headers, json={"sql": upsert_sql, "params": params}, timeout=10)
-            if resp.ok and resp.json().get("success"):
-                synced += 1
-            else:
-                failed += 1
+            resp = _d1_session().post(url, headers=headers, json={"sql": upsert_sql, "params": params}, timeout=10)
+            return resp.ok and resp.json().get("success")
         except Exception:
-            failed += 1
-    print(f"D1 user-search sync: {synced} upserted, {failed} failed (out of {len(rows)} active users this run)")
+            return False
+
+    # Each row is its own independent HTTP round-trip to Cloudflare's API
+    # (D1's REST endpoint doesn't accept a batch of DIFFERENT statements in
+    # one call, and its 100-bound-parameter limit only allows ~6 rows per
+    # multi-VALUES INSERT given this table's 15 columns -- not worth the
+    # complexity for a modest win). Sequential was originally ~0.2s/row --
+    # 8000+ active users in one run took 28 minutes and dominated the whole
+    # pipeline step. A small thread pool cuts wall-clock time roughly
+    # proportional to its worker count, since this is pure network-wait, not
+    # CPU-bound work.
+    sync_start = time.time()
+    synced = 0
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        for ok in pool.map(upsert_one, rows):
+            if ok:
+                synced += 1
+    failed = len(rows) - synced
+    elapsed = time.time() - sync_start
+    print(f"D1 user-search sync: {synced} upserted, {failed} failed (out of {len(rows)} active users this run, {elapsed:.0f}s)")
 
 
 def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_rows, target_dates, agent_by_user):
