@@ -55,6 +55,40 @@ const UPLOAD_FORM = `<!DOCTYPE html>
 
 <hr style="margin:40px 0;border:none;border-top:1px solid #eee;">
 
+<h1>Manual Pipeline Run</h1>
+<p>Normally runs automatically every hour. Use this to pull fresh data and rebuild the dashboard report right now instead of waiting for the next scheduled run.</p>
+<button id="triggerPipelineBtn" style="background:#ea580c;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:14px;cursor:pointer;">&#9654; Trigger Pipeline Now</button>
+<div id="triggerPipelineMsg" style="margin-top:10px;font-size:14px;"></div>
+
+<script>
+document.getElementById('triggerPipelineBtn').addEventListener('click', async () => {
+  const password = prompt('Enter password to trigger a manual pipeline run:');
+  if (password === null) return;
+  const btn = document.getElementById('triggerPipelineBtn');
+  const msg = document.getElementById('triggerPipelineMsg');
+  btn.disabled = true;
+  msg.textContent = 'Triggering...';
+  msg.className = '';
+  try {
+    const res = await fetch('/trigger-pipeline', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.status);
+    msg.textContent = 'Pipeline run started -- the dashboard will reflect fresh data in a few minutes.';
+    msg.className = 'ok';
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.className = 'err';
+  }
+  btn.disabled = false;
+});
+</script>
+
+<hr style="margin:40px 0;border:none;border-top:1px solid #eee;">
+
 <h1>Agent Logins</h1>
 <p>Every agent currently in the agent list, with their dashboard login password (first 2 letters of their name + "0987", bumped to 3 letters for any agent whose 2-letter prefix collides with another -- or a custom password, if you've changed one). Computed fresh from the current list every time -- a newly added agent shows up here automatically, nothing to separately create. Use "Change" to set a custom password for any agent; it replaces their default one.</p>
 <button id="agentLoginsBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:14px;cursor:pointer;">Show Agent Logins</button>
@@ -491,6 +525,21 @@ export default {
         const overrides = overridesObj ? await overridesObj.json() : {};
         overrides[agent] = newPassword.trim().toUpperCase();
         await env.USERLIST_BUCKET.put("config/agent_password_overrides.json", JSON.stringify(overrides));
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      } catch (err) {
+        return jsonError(err.message || "Unknown error", 500);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/trigger-pipeline") {
+      try {
+        const { password } = await request.json();
+        if (password !== env.ACTION_PASSWORD) {
+          return jsonError("Access Denied", 403);
+        }
+        await dispatchWorkflow(env, "api_pull.yml", {});
         return new Response(JSON.stringify({ ok: true }), {
           headers: { "content-type": "application/json" },
         });
