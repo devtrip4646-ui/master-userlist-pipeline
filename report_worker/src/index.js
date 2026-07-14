@@ -706,6 +706,13 @@ if (IS_ACTION_CENTER) {
       { label: 'Wallet Balance', render: r => money(r.wallet_balance), raw: r => r.wallet_balance, num: true },
       { label: 'Inactive Days', render: r => fmt(r.inactive_days), raw: r => r.inactive_days, num: true },
     ];
+    // Older cached reports (before loss_pct was added to the backend row)
+    // won't have this field yet -- fall back to deriving it client-side
+    // until the next pipeline run backfills it.
+    function cashbackLossPct(r) {
+      if (r.loss_pct != null) return Number(r.loss_pct);
+      return r.total_deposit ? (r.verified_loss / r.total_deposit * 100) : 0;
+    }
     const cashbackCols = [
       { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
@@ -714,7 +721,8 @@ if (IS_ACTION_CENTER) {
       { label: 'Total Withdraw', render: r => money(r.total_withdraw), raw: r => r.total_withdraw, num: true },
       { label: 'User Balance', render: r => money(r.user_balance), raw: r => r.user_balance, num: true },
       { label: 'Verified Loss', render: r => money(r.verified_loss), raw: r => r.verified_loss, num: true },
-      { label: 'Eligible %', render: r => r.eligible_pct + '%', raw: r => r.eligible_pct, num: true },
+      { label: 'Loss %', render: r => cashbackLossPct(r).toFixed(2) + '%', raw: r => cashbackLossPct(r), num: true },
+      { label: 'Eligible %', render: r => Number(r.eligible_pct).toFixed(2) + '%', raw: r => r.eligible_pct, num: true },
       { label: 'Bonus Amount', render: r => money(r.bonus_amount), raw: r => r.bonus_amount, num: true },
     ];
     const wcs = data.weekly_cashback_shield;

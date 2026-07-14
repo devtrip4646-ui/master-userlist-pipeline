@@ -2064,6 +2064,7 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
             "total_withdraw": round(total_withdraw, 2),
             "user_balance": round(balance, 2),
             "verified_loss": round(verified_loss, 2),
+            "loss_pct": round(loss_pct, 2),
             "eligible_pct": round(cashback_pct * 100, 2),
             "bonus_amount": round(verified_loss * cashback_pct, 2),
         })
