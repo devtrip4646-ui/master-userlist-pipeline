@@ -1936,14 +1936,15 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
     }
 
 
-# Weekly Cashback Shield (Action Center): loss amount Rs 5,000-500,000, tiered
-# by what % of the week's deposit was "lost" (verified_loss / total_deposit).
-# Ordered highest-threshold-first so the first match in weekly_cashback_shield
-# below picks the correct (highest-earned) tier for a given loss_pct.
-WEEKLY_CASHBACK_TIERS = [
-    (100.0, 0.07),
-    (75.0, 0.04),
+# Weekly Cashback Shield (Action Center): loss amount Rs 5,000-500,000, rate
+# scales with what % of the week's deposit was "lost" (verified_loss /
+# total_deposit). Piecewise-linear between these anchor points -- e.g. a 65%
+# loss sits partway between the 50%->2% and 75%->4% anchors and earns ~3.2%,
+# not just the flat 2% floor tier. 100%+ is capped flat at the top anchor.
+WEEKLY_CASHBACK_ANCHORS = [
     (50.0, 0.02),
+    (75.0, 0.04),
+    (100.0, 0.07),
 ]
 WEEKLY_CASHBACK_MIN_LOSS = 5000.0
 WEEKLY_CASHBACK_MAX_LOSS = 500000.0
@@ -1956,6 +1957,22 @@ WEEKLY_CASHBACK_MIN_VIP = 2
 WEEKLY_CASHBACK_SMALL_LOSS_MIN = 500.0
 WEEKLY_CASHBACK_SMALL_LOSS_MIN_PCT = 80.0
 WEEKLY_CASHBACK_SMALL_LOSS_PCT = 0.015
+
+
+def weekly_cashback_tier_pct(loss_pct):
+    """Piecewise-linear cashback rate between the WEEKLY_CASHBACK_ANCHORS
+    points. Below the lowest anchor (50%) isn't eligible for this path
+    (returns None); at/above the highest anchor (100%) is capped flat at
+    the top rate."""
+    if loss_pct < WEEKLY_CASHBACK_ANCHORS[0][0]:
+        return None
+    if loss_pct >= WEEKLY_CASHBACK_ANCHORS[-1][0]:
+        return WEEKLY_CASHBACK_ANCHORS[-1][1]
+    for (lo_pct, lo_cb), (hi_pct, hi_cb) in zip(WEEKLY_CASHBACK_ANCHORS, WEEKLY_CASHBACK_ANCHORS[1:]):
+        if lo_pct <= loss_pct < hi_pct:
+            frac = (loss_pct - lo_pct) / (hi_pct - lo_pct)
+            return lo_cb + frac * (hi_cb - lo_cb)
+    return None
 
 
 def weekly_cashback_week_range(now):
@@ -1986,8 +2003,8 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
       - loss Rs 500-4,999.99: flat 1% cashback, but only if that's ALSO at
         least 80% of what they deposited that week.
       - loss Rs 5,000-500,000: needs to ALSO be at least 50% of what they
-        deposited that week -- higher loss-% tiers earn a higher cashback
-        rate (see WEEKLY_CASHBACK_TIERS).
+        deposited that week -- cashback rate scales linearly with loss % up
+        to a 7% cap at 100%+ loss (see WEEKLY_CASHBACK_ANCHORS).
     Only lists users who actually qualify this week, same convention as
     the other bonus/retention sections on this dashboard -- not a full
     audit of every depositor."""
@@ -2034,7 +2051,7 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
             cashback_pct = WEEKLY_CASHBACK_SMALL_LOSS_PCT
         elif WEEKLY_CASHBACK_MIN_LOSS <= verified_loss <= WEEKLY_CASHBACK_MAX_LOSS:
             loss_pct = (verified_loss / total_deposit * 100) if total_deposit else 0.0
-            cashback_pct = next((pct for threshold, pct in WEEKLY_CASHBACK_TIERS if loss_pct >= threshold), None)
+            cashback_pct = weekly_cashback_tier_pct(loss_pct)
             if cashback_pct is None:
                 continue
         else:
