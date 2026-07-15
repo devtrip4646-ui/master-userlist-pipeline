@@ -1936,18 +1936,17 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
     }
 
 
-# Weekly Cashback Shield (Action Center): loss amount Rs 5,000-500,000, rate
-# scales with what % of the week's deposit was "lost" (verified_loss /
-# total_deposit). Piecewise-linear between these anchor points -- e.g. a 65%
-# loss sits partway between the 50%->2% and 75%->4% anchors and earns ~3.2%,
-# not just the flat 2% floor tier. 100%+ is capped flat at the top anchor.
+# Weekly Cashback Shield (Action Center): loss amount Rs 5,000-2,500,000, rate
+# scales linearly with what % of the week's deposit was "lost" (verified_loss
+# / total_deposit) -- a single line from the 50%->2% anchor to the 100%->6%
+# anchor, e.g. a 65% loss earns 2 + (65-50)/50*4 = 3.2%. 100%+ is capped flat
+# at the top anchor.
 WEEKLY_CASHBACK_ANCHORS = [
     (50.0, 0.02),
-    (75.0, 0.04),
-    (100.0, 0.07),
+    (100.0, 0.06),
 ]
 WEEKLY_CASHBACK_MIN_LOSS = 5000.0
-WEEKLY_CASHBACK_MAX_LOSS = 500000.0
+WEEKLY_CASHBACK_MAX_LOSS = 2500000.0
 WEEKLY_CASHBACK_MIN_VIP = 2
 
 # A separate, smaller-loss tier: Rs 500 up to (not including) the Rs 5,000
@@ -2002,9 +2001,9 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
     above are eligible (WEEKLY_CASHBACK_MIN_VIP). Two eligibility paths:
       - loss Rs 500-4,999.99: flat 1% cashback, but only if that's ALSO at
         least 80% of what they deposited that week.
-      - loss Rs 5,000-500,000: needs to ALSO be at least 50% of what they
+      - loss Rs 5,000-2,500,000: needs to ALSO be at least 50% of what they
         deposited that week -- cashback rate scales linearly with loss % up
-        to a 7% cap at 100%+ loss (see WEEKLY_CASHBACK_ANCHORS).
+        to a 6% cap at 100%+ loss (see WEEKLY_CASHBACK_ANCHORS).
     Only lists users who actually qualify this week, same convention as
     the other bonus/retention sections on this dashboard -- not a full
     audit of every depositor."""
