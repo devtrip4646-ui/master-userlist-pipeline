@@ -1720,6 +1720,38 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
     return {"overall": overall, "by_date": by_date, "by_week": by_week, "by_month": by_month, "dates": all_dates}
 
 
+def region_vip_depositor_matrix(deposit_rows, city_by_user, vip_by_user, all_dates):
+    """Platform Analysis section below Game & Revenue Economics: rows =
+    Region, columns = VIP level, cell = how many DISTINCT users in that
+    Region+VIP combination made at least one COMPLETE deposit. Ships raw
+    per-day user-id lists (not pre-summed counts) so the frontend can do
+    genuine unique-depositor de-duplication across ANY combination of
+    selected dates it builds client-side -- a single day, an arbitrary
+    multi-select, a calendar week (Monday-Sunday), or a calendar month --
+    without a user who deposited on multiple selected days being
+    double-counted. Regions with no known city are grouped as "Unknown";
+    users with no VIP level on record are excluded (a VIP-level breakdown
+    can't place them)."""
+    depositors_by_date = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None:
+            continue
+        vip = vip_by_user.get(user_id)
+        if vip is None:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        region = city_by_user.get(user_id) or "Unknown"
+        depositors_by_date[dt.date().isoformat()][region][vip].add(user_id)
+
+    matrix_by_date = {
+        date_str: {region: {vip: sorted(ids) for vip, ids in vip_map.items()} for region, vip_map in region_map.items()}
+        for date_str, region_map in depositors_by_date.items()
+    }
+    return {"dates": all_dates, "matrix_by_date": matrix_by_date}
+
+
 def channel_performance_report(daily_conn, today):
     """Channel acquisition quality, last 4 days combined. Of users whose
     FIRST deposit (is_first_deposit=1) landed in the last 4 calendar days,
@@ -2663,6 +2695,8 @@ def main():
     if games_master_conn is not None:
         games_master_conn.close()
 
+    region_vip_matrix = region_vip_depositor_matrix(deposit_rows, city_by_user, vip_by_user, all_dates)
+
     # Persist today's per-agent performance, then read back the full rolling
     # window for the Performance page -- small enough (agents x 7 categories
     # x up to 35 days) to ship in full and let the frontend do date-range
@@ -2766,6 +2800,7 @@ def main():
         "bonus_claims_by_month": bonus_claims_by_month,
         "new_old_user_analysis": new_old_user_analysis,
         "new_users_games": new_users_games,
+        "region_vip_depositor_matrix": region_vip_matrix,
         # Distinct real agent names (never includes AGENT_UNASSIGNED) -- powers
         # the Reassign Agent dropdown on the Search User page and the
         # Performance leaderboard.

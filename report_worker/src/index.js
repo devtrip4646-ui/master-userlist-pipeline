@@ -1665,6 +1665,26 @@ if (IS_PLATFORM_ANALYSIS) {
           <div class="ac-pagination" id="suspicious-withdraw-pagination"></div>
         </section>
       </div>
+
+      <div class="analysis-heading deposit"><h2>Region vs VIP Depositor Matrix</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
+      <section class="acc-emerald">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-emerald">&#128506;&#65039;</div><h2>Region vs VIP Depositor Matrix</h2></div>
+          <button class="download-btn-sm" id="btn-dl-region-vip-matrix">&#128190; Excel</button>
+        </div>
+        <div class="ac-note">Rows = Region, columns = VIP level, each cell = how many DISTINCT users in that Region+VIP combination made at least one COMPLETE deposit within the selected range. A user active on multiple selected days is counted once, not once per day.</div>
+        <div class="date-switch" id="region-vip-range-switch">
+          <button data-range="day" class="active">Day</button>
+          <button data-range="multi">Multi-select Dates</button>
+          <button data-range="week">Week (Mon-Sun)</button>
+          <button data-range="month">Month</button>
+        </div>
+        <select class="range-date-select" id="region-vip-date-select"></select>
+        <select class="range-date-select" id="region-vip-date-multiselect" multiple size="6" style="display:none"></select>
+        <select class="range-date-select" id="region-vip-week-select" style="display:none"></select>
+        <select class="range-date-select" id="region-vip-month-select" style="display:none"></select>
+        <div id="region-vip-matrix-table" style="overflow-x:auto;margin-top:16px"></div>
+      </section>
     \`;
 
     // --- Profit Users of the Day ---
@@ -2051,6 +2071,163 @@ if (IS_PLATFORM_ANALYSIS) {
     });
 
     renderGamesTables();
+
+    // --- Region vs VIP Depositor Matrix ---
+    const rvMatrixData = data.region_vip_depositor_matrix || { dates: [], matrix_by_date: {} };
+    const rvDates = (rvMatrixData.dates || []).slice().sort();
+
+    function isoMonday(dateStr) {
+      const d = new Date(dateStr + 'T00:00:00Z');
+      const day = d.getUTCDay(); // 0=Sun..6=Sat
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() + diffToMonday);
+      const sunday = new Date(monday);
+      sunday.setUTCDate(monday.getUTCDate() + 6);
+      return { key: monday.toISOString().slice(0, 10), monday: monday.toISOString().slice(0, 10), sunday: sunday.toISOString().slice(0, 10) };
+    }
+
+    const rvWeeksMap = {};
+    rvDates.forEach(d => {
+      const { key, monday, sunday } = isoMonday(d);
+      if (!rvWeeksMap[key]) rvWeeksMap[key] = { monday, sunday, dates: [] };
+      rvWeeksMap[key].dates.push(d);
+    });
+    const rvWeekKeys = Object.keys(rvWeeksMap).sort();
+
+    const rvMonthsMap = {};
+    rvDates.forEach(d => {
+      const key = d.slice(0, 7);
+      if (!rvMonthsMap[key]) rvMonthsMap[key] = [];
+      rvMonthsMap[key].push(d);
+    });
+    const rvMonthKeys = Object.keys(rvMonthsMap).sort();
+    function monthLabel(key) {
+      const [y, m] = key.split('-');
+      return new Date(Date.UTC(Number(y), Number(m) - 1, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    }
+
+    let rvRange = 'day';
+    let rvSelectedDate = rvDates.length ? rvDates[rvDates.length - 1] : null;
+    let rvSelectedMultiDates = [];
+    let rvSelectedWeekKey = rvWeekKeys.length ? rvWeekKeys[rvWeekKeys.length - 1] : null;
+    let rvSelectedMonthKey = rvMonthKeys.length ? rvMonthKeys[rvMonthKeys.length - 1] : null;
+
+    const rvDateSelect = document.getElementById('region-vip-date-select');
+    rvDateSelect.innerHTML = rvDates.slice().reverse().map(d => '<option value="' + d + '">' + shortDate(d) + '</option>').join('');
+    if (rvSelectedDate) rvDateSelect.value = rvSelectedDate;
+
+    const rvMultiSelect = document.getElementById('region-vip-date-multiselect');
+    rvMultiSelect.innerHTML = rvDates.slice().reverse().map(d => '<option value="' + d + '">' + shortDate(d) + '</option>').join('');
+
+    const rvWeekSelect = document.getElementById('region-vip-week-select');
+    rvWeekSelect.innerHTML = rvWeekKeys.slice().reverse().map(k =>
+      '<option value="' + k + '">' + shortDate(rvWeeksMap[k].monday) + ' - ' + shortDate(rvWeeksMap[k].sunday) + '</option>').join('');
+    if (rvSelectedWeekKey) rvWeekSelect.value = rvSelectedWeekKey;
+
+    const rvMonthSelect = document.getElementById('region-vip-month-select');
+    rvMonthSelect.innerHTML = rvMonthKeys.slice().reverse().map(k => '<option value="' + k + '">' + monthLabel(k) + '</option>').join('');
+    if (rvSelectedMonthKey) rvMonthSelect.value = rvSelectedMonthKey;
+
+    function rvCurrentDates() {
+      if (rvRange === 'day') return rvSelectedDate ? [rvSelectedDate] : [];
+      if (rvRange === 'multi') return rvSelectedMultiDates;
+      if (rvRange === 'week') return rvSelectedWeekKey ? rvWeeksMap[rvSelectedWeekKey].dates : [];
+      if (rvRange === 'month') return rvSelectedMonthKey ? rvMonthsMap[rvSelectedMonthKey] : [];
+      return [];
+    }
+
+    function rvCombine(dateList) {
+      const combined = {}; // region -> vip -> Set(user_id)
+      dateList.forEach(d => {
+        const dayMatrix = rvMatrixData.matrix_by_date[d];
+        if (!dayMatrix) return;
+        Object.keys(dayMatrix).forEach(region => {
+          if (!combined[region]) combined[region] = {};
+          Object.keys(dayMatrix[region]).forEach(vip => {
+            if (!combined[region][vip]) combined[region][vip] = new Set();
+            dayMatrix[region][vip].forEach(uid => combined[region][vip].add(uid));
+          });
+        });
+      });
+      return combined;
+    }
+
+    function renderRegionVipMatrix() {
+      const combined = rvCombine(rvCurrentDates());
+      const regions = Object.keys(combined);
+      const vipSet = new Set();
+      regions.forEach(r => Object.keys(combined[r]).forEach(v => vipSet.add(v)));
+      const vips = Array.from(vipSet).sort((a, b) => Number(a) - Number(b));
+      const container = document.getElementById('region-vip-matrix-table');
+
+      if (!regions.length || !vips.length) {
+        container.innerHTML = '<div class="no-data">No data available for this selection.</div>';
+        document.getElementById('btn-dl-region-vip-matrix').onclick = null;
+        return;
+      }
+
+      const regionRows = regions.map(region => {
+        const total = vips.reduce((s, v) => s + (combined[region][v] ? combined[region][v].size : 0), 0);
+        return { region, total };
+      }).sort((a, b) => b.total - a.total);
+
+      const grandTotals = vips.map(v => regions.reduce((s, r) => s + (combined[r][v] ? combined[r][v].size : 0), 0));
+      const grandTotal = grandTotals.reduce((s, v) => s + v, 0);
+
+      let html = '<div class="table-wrap"><table><thead><tr><th>Region</th>' +
+        vips.map(v => '<th class="num">VIP ' + v + '</th>').join('') + '<th class="num">Total</th></tr></thead><tbody>';
+      regionRows.forEach(({ region, total }) => {
+        html += '<tr><td>' + region + '</td>' +
+          vips.map(v => '<td class="num">' + fmt(combined[region][v] ? combined[region][v].size : 0) + '</td>').join('') +
+          '<td class="num"><strong>' + fmt(total) + '</strong></td></tr>';
+      });
+      html += '<tr style="font-weight:700;background:#f9fafb"><td>Total</td>' +
+        grandTotals.map(v => '<td class="num">' + fmt(v) + '</td>').join('') + '<td class="num">' + fmt(grandTotal) + '</td></tr>';
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+
+      document.getElementById('btn-dl-region-vip-matrix').onclick = () => {
+        const rows = regionRows.map(({ region, total }) => {
+          const row = { region };
+          vips.forEach(v => { row['VIP ' + v] = combined[region][v] ? combined[region][v].size : 0; });
+          row.total = total;
+          return row;
+        });
+        const cols = [
+          { label: 'Region', render: r => r.region, raw: r => r.region },
+          ...vips.map(v => ({ label: 'VIP ' + v, render: r => fmt(r['VIP ' + v]), raw: r => r['VIP ' + v], num: true })),
+          { label: 'Total', render: r => fmt(r.total), raw: r => r.total, num: true },
+        ];
+        downloadExcel(rows, cols, 'Region vs VIP Depositor Matrix', 'region-vip-depositor-matrix-' + rvRange + '.xlsx');
+      };
+    }
+
+    function rvSetControlVisibility() {
+      document.getElementById('region-vip-date-select').style.display = rvRange === 'day' ? '' : 'none';
+      document.getElementById('region-vip-date-multiselect').style.display = rvRange === 'multi' ? '' : 'none';
+      document.getElementById('region-vip-week-select').style.display = rvRange === 'week' ? '' : 'none';
+      document.getElementById('region-vip-month-select').style.display = rvRange === 'month' ? '' : 'none';
+    }
+    rvSetControlVisibility();
+
+    document.querySelectorAll('#region-vip-range-switch button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        rvRange = btn.dataset.range;
+        document.querySelectorAll('#region-vip-range-switch button').forEach(b => b.classList.toggle('active', b === btn));
+        rvSetControlVisibility();
+        renderRegionVipMatrix();
+      });
+    });
+    rvDateSelect.addEventListener('change', () => { rvSelectedDate = rvDateSelect.value; renderRegionVipMatrix(); });
+    rvMultiSelect.addEventListener('change', () => {
+      rvSelectedMultiDates = Array.from(rvMultiSelect.selectedOptions).map(o => o.value);
+      renderRegionVipMatrix();
+    });
+    rvWeekSelect.addEventListener('change', () => { rvSelectedWeekKey = rvWeekSelect.value; renderRegionVipMatrix(); });
+    rvMonthSelect.addEventListener('change', () => { rvSelectedMonthKey = rvMonthSelect.value; renderRegionVipMatrix(); });
+
+    renderRegionVipMatrix();
   })();
 }
 
