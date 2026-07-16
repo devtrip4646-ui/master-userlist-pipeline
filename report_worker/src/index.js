@@ -1576,7 +1576,7 @@ if (IS_PLATFORM_ANALYSIS) {
       <div class="row2col">
         <section class="acc-blue">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-blue">&#127918;</div><h2>Top Games - New Users</h2></div>
+            <div class="sec-title"><div class="badge b-blue">&#127918;</div><h2>Top Games - New Users</h2><span class="today-tag" id="top-games-new-count">&mdash;</span></div>
             <button class="download-btn-sm" id="btn-dl-top-games-new">&#128190; Excel</button>
           </div>
           <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Bet-only (excludes win payouts), total wagered per user per game, highest first.</div>
@@ -1585,7 +1585,7 @@ if (IS_PLATFORM_ANALYSIS) {
         </section>
         <section class="acc-orange">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-orange">&#128176;</div><h2>Highest Single Bet - New Users</h2></div>
+            <div class="sec-title"><div class="badge b-orange">&#128176;</div><h2>Highest Single Bet - New Users</h2><span class="today-tag" id="highest-bet-new-count">&mdash;</span></div>
             <button class="download-btn-sm" id="btn-dl-highest-bet-new">&#128190; Excel</button>
           </div>
           <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Each user's single largest bet transaction and which game it was on.</div>
@@ -1597,7 +1597,7 @@ if (IS_PLATFORM_ANALYSIS) {
       <div class="row2col">
         <section class="acc-emerald">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-emerald">&#128142;</div><h2>High Roller Active</h2></div>
+            <div class="sec-title"><div class="badge b-emerald">&#128142;</div><h2>High Roller Active</h2><span class="today-tag" id="high-roller-count">&mdash;</span></div>
             <button class="download-btn-sm" id="btn-dl-high-roller">&#128190; Excel</button>
           </div>
           <div class="ac-note">VIP 7+, avg lifetime deposit &#8377;10,000+, 500+ lifetime deposits, &#8377;5,00,000+ lifetime total deposit, avg bet size (last 15 days) over &#8377;500, active within 15 days.</div>
@@ -1606,7 +1606,7 @@ if (IS_PLATFORM_ANALYSIS) {
         </section>
         <section class="acc-rose">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-rose">&#127183;</div><h2>Low Roller Active</h2></div>
+            <div class="sec-title"><div class="badge b-rose">&#127183;</div><h2>Low Roller Active</h2><span class="today-tag" id="low-roller-count">&mdash;</span></div>
             <button class="download-btn-sm" id="btn-dl-low-roller">&#128190; Excel</button>
           </div>
           <div class="ac-note">VIP 2-6, avg lifetime deposit under &#8377;10,000, under 500 lifetime deposits, under &#8377;5,00,000 lifetime total deposit, avg bet size (last 15 days) under &#8377;500, active within 10 days.</div>
@@ -2064,6 +2064,8 @@ if (IS_PLATFORM_ANALYSIS) {
     function renderGamesTables() {
       const gd = currentGamesData();
       const rangeLabel = gamesRange === 'overall' ? 'overall' : gamesRange + '-' + selectedGamesDate;
+      document.getElementById('top-games-new-count').textContent = fmt((gd.top_games || []).length);
+      document.getElementById('highest-bet-new-count').textContent = fmt((gd.highest_single_bet || []).length);
       if (gd.top_games && gd.top_games.length) {
         paginatedTable('top-games-new-table', 'top-games-new-pagination', gd.top_games, topGamesCols, 10);
         document.getElementById('btn-dl-top-games-new').onclick = () =>
@@ -2111,6 +2113,8 @@ if (IS_PLATFORM_ANALYSIS) {
       { label: 'Wallet Balance', render: r => money(r.wallet_balance), raw: r => r.wallet_balance, num: true },
       { label: 'Top Game Played', render: r => r.top_game_played || '&mdash;', raw: r => r.top_game_played || '' },
     ];
+    document.getElementById('high-roller-count').textContent = fmt((rollerReports.high_roller || []).length);
+    document.getElementById('low-roller-count').textContent = fmt((rollerReports.low_roller || []).length);
     if (rollerReports.high_roller && rollerReports.high_roller.length) {
       paginatedTable('high-roller-table', 'high-roller-pagination', rollerReports.high_roller, rollerCols, 10);
       document.getElementById('btn-dl-high-roller').addEventListener('click', () =>
