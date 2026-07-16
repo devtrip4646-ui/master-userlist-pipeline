@@ -2363,12 +2363,12 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
 
 # Weekly Cashback Shield (Action Center): loss amount Rs 5,000-2,500,000, rate
 # scales linearly with what % of the week's deposit was "lost" (verified_loss
-# / total_deposit) -- a single line from the 50%->1.6% anchor to the 100%->6%
-# anchor, e.g. a 65% loss earns 1.6 + (65-50)/50*4.4 = 2.92%. 100%+ is capped
-# flat at the top anchor.
+# / total_deposit) -- a single line from the 50%->1.51% anchor to the
+# 100%->5.00% anchor, e.g. a 65% loss earns 1.51 + (65-50)/50*3.49 = 2.56%.
+# 100%+ is capped flat at the top anchor.
 WEEKLY_CASHBACK_ANCHORS = [
-    (50.0, 0.016),
-    (100.0, 0.06),
+    (50.0, 0.0151),
+    (100.0, 0.05),
 ]
 WEEKLY_CASHBACK_MIN_LOSS = 5000.0
 WEEKLY_CASHBACK_MAX_LOSS = 2500000.0
