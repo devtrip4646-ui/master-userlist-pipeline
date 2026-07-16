@@ -1557,28 +1557,32 @@ if (IS_PLATFORM_ANALYSIS) {
     const newOldAnalysis = data.new_old_user_analysis || { daily: [], retention: [] };
 
     document.getElementById('platform-analysis-app').innerHTML = \`
-      <div class="analysis-heading deposit"><h2>Game &amp; Revenue Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
+      <div class="analysis-heading withdrawal"><h2>Games Activity &mdash; New Users</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
+      <div class="date-switch" id="new-games-range-switch">
+        <button data-range="overall" class="active">Overall</button>
+        <button data-range="day">Day</button>
+        <button data-range="week">Week</button>
+        <button data-range="month">Month</button>
+      </div>
+      <select class="range-date-select" id="new-games-date-select" style="display:none;margin-bottom:18px"></select>
       <div class="row2col">
+        <section class="acc-blue">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-blue">&#127918;</div><h2>Top Games - New Users</h2></div>
+            <button class="download-btn-sm" id="btn-dl-top-games-new">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Bet-only (excludes win payouts), total wagered per user per game, highest first.</div>
+          <div id="top-games-new-table"></div>
+          <div class="ac-pagination" id="top-games-new-pagination"></div>
+        </section>
         <section class="acc-orange">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-orange">&#128181;</div><h2>Profit Users of the Day</h2></div>
-            <div style="display:flex;gap:8px">
-              <button class="download-btn-sm" id="btn-profit-new-users" style="background:#f59e0b">&#127881; 3 Days New User</button>
-              <button class="download-btn-sm" id="btn-dl-profit-users">&#128190; Excel</button>
-            </div>
+            <div class="sec-title"><div class="badge b-orange">&#128176;</div><h2>Highest Single Bet - New Users</h2></div>
+            <button class="download-btn-sm" id="btn-dl-highest-bet-new">&#128190; Excel</button>
           </div>
-          <div class="ac-note">Top users by CURRENT wallet balance -- who's sitting on the most money right now. Last Dep/WD show "Today" or how many days ago, tracked permanently so it stays accurate even beyond the 33-day window.</div>
-          <div id="profit-users-table"></div>
-          <div class="ac-pagination" id="profit-users-pagination"></div>
-        </section>
-        <section class="acc-rose">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-rose">&#128680;</div><h2>Suspicious Withdraw Users</h2></div>
-            <button class="download-btn-sm" id="btn-dl-suspicious-withdraw">&#128190; Excel</button>
-          </div>
-          <div class="ac-note">Deposited &#8377;1,000+ AND requested a withdrawal (In-Review/Processing/Complete) within the last 3 days, while playing fewer than 50 games in that same window -- deposit-and-cash-out without genuine play.</div>
-          <div id="suspicious-withdraw-table"></div>
-          <div class="ac-pagination" id="suspicious-withdraw-pagination"></div>
+          <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Each user's single largest bet transaction and which game it was on.</div>
+          <div id="highest-bet-new-table"></div>
+          <div class="ac-pagination" id="highest-bet-new-pagination"></div>
         </section>
       </div>
 
@@ -1637,32 +1641,28 @@ if (IS_PLATFORM_ANALYSIS) {
         <div class="ac-pagination" id="new-old-pagination"></div>
       </section>
 
-      <div class="analysis-heading withdrawal"><h2>Games Activity &mdash; New Users</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
-      <div class="date-switch" id="new-games-range-switch">
-        <button data-range="overall" class="active">Overall</button>
-        <button data-range="day">Day</button>
-        <button data-range="week">Week</button>
-        <button data-range="month">Month</button>
-      </div>
-      <select class="range-date-select" id="new-games-date-select" style="display:none;margin-bottom:18px"></select>
+      <div class="analysis-heading deposit"><h2>Game &amp; Revenue Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
       <div class="row2col">
-        <section class="acc-blue">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-blue">&#127918;</div><h2>Top Games - New Users</h2></div>
-            <button class="download-btn-sm" id="btn-dl-top-games-new">&#128190; Excel</button>
-          </div>
-          <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Bet-only (excludes win payouts), total wagered per user per game, highest first.</div>
-          <div id="top-games-new-table"></div>
-          <div class="ac-pagination" id="top-games-new-pagination"></div>
-        </section>
         <section class="acc-orange">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-orange">&#128176;</div><h2>Highest Single Bet - New Users</h2></div>
-            <button class="download-btn-sm" id="btn-dl-highest-bet-new">&#128190; Excel</button>
+            <div class="sec-title"><div class="badge b-orange">&#128181;</div><h2>Profit Users of the Day</h2></div>
+            <div style="display:flex;gap:8px">
+              <button class="download-btn-sm" id="btn-profit-new-users" style="background:#f59e0b">&#127881; 3 Days New User</button>
+              <button class="download-btn-sm" id="btn-dl-profit-users">&#128190; Excel</button>
+            </div>
           </div>
-          <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Each user's single largest bet transaction and which game it was on.</div>
-          <div id="highest-bet-new-table"></div>
-          <div class="ac-pagination" id="highest-bet-new-pagination"></div>
+          <div class="ac-note">Top users by CURRENT wallet balance -- who's sitting on the most money right now. Last Dep/WD show "Today" or how many days ago, tracked permanently so it stays accurate even beyond the 33-day window.</div>
+          <div id="profit-users-table"></div>
+          <div class="ac-pagination" id="profit-users-pagination"></div>
+        </section>
+        <section class="acc-rose">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-rose">&#128680;</div><h2>Suspicious Withdraw Users</h2></div>
+            <button class="download-btn-sm" id="btn-dl-suspicious-withdraw">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">Deposited &#8377;1,000+ AND requested a withdrawal (In-Review/Processing/Complete) within the last 3 days, while playing fewer than 50 games in that same window -- deposit-and-cash-out without genuine play.</div>
+          <div id="suspicious-withdraw-table"></div>
+          <div class="ac-pagination" id="suspicious-withdraw-pagination"></div>
         </section>
       </div>
     \`;
