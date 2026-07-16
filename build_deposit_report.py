@@ -1745,59 +1745,75 @@ LOW_ROLLER_MAX_INACTIVE_DAYS = 10
 ROLLER_BET_WINDOW_DAYS = 15
 
 
+def _classify_roller(vip, total_recharge, avg_bet, avg_deposit, recharge_count):
+    """Priority waterfall deciding High vs Low Roller for a user whose
+    profile would otherwise match criteria on both sides -- checked in
+    this exact order (first decisive criterion wins, skipping any with no
+    data to evaluate): VIP Level, Total Deposit, Avg Bet Size (last 15
+    days), Avg Deposit Amount, Deposit Count. Returns None if none of the
+    5 have enough data to decide (excluded from both reports)."""
+    if vip is not None:
+        if vip >= HIGH_ROLLER_MIN_VIP:
+            return "high"
+        if LOW_ROLLER_MIN_VIP <= vip <= LOW_ROLLER_MAX_VIP:
+            return "low"
+    if total_recharge is not None:
+        return "high" if total_recharge >= HIGH_ROLLER_MIN_TOTAL_DEPOSIT else "low"
+    if avg_bet is not None:
+        return "high" if avg_bet > HIGH_ROLLER_MIN_AVG_BET else "low"
+    if avg_deposit is not None:
+        return "high" if avg_deposit >= HIGH_ROLLER_MIN_AVG_DEPOSIT else "low"
+    if recharge_count is not None:
+        return "high" if recharge_count >= HIGH_ROLLER_MIN_DEPOSIT_COUNT else "low"
+    return None
+
+
 def high_low_roller_reports(mconn, daily_conn, agent_by_user, today):
-    """Two rosters of currently-active depositors, segmented by LIFETIME
-    deposit behavior plus recent average bet size (see constants above).
-    "Active" (within 15 days for High, 10 for Low) is a required gate for
-    both -- but within that active population, a user qualifies by
-    matching ANY ONE of the other 5 criteria (not all 5):
-      High Roller Active (active <=15d AND any of: avg lifetime deposit
-        >= Rs 10,000 / >= 500 lifetime deposits / >= Rs 500,000 lifetime
-        total deposit / VIP 7+ / avg bet size in the last 15 days > Rs 500).
-      Low Roller Active (active <=10d AND any of: avg lifetime deposit
-        < Rs 10,000 / < 500 lifetime deposits / < Rs 500,000 lifetime
-        total deposit / VIP 2-6 / avg bet size in the last 15 days < Rs 500).
+    """Two MUTUALLY EXCLUSIVE rosters of currently-active depositors --
+    every qualifying user appears in exactly one of High Roller Active or
+    Low Roller Active, never both. Classification uses a priority
+    waterfall (see _classify_roller: VIP Level, Total Deposit, Avg Bet
+    Size, Avg Deposit Amount, Deposit Count -- first decisive criterion
+    wins) rather than "match any of 5 criteria" independently per report,
+    which previously let the same whale (huge total deposit, huge deposit
+    COUNT, low AVERAGE deposit) satisfy a criterion on both sides at once.
+    "Active" gates each side separately AFTER classification -- within 15
+    days for anyone classified High, within 10 days for anyone classified
+    Low -- so a user who'd classify High but hasn't been active in 15 days
+    is dropped entirely, not reassigned to Low.
     "Top Game Played" = the game of that user's single highest bet within
-    that same last-15-day window -- shown as blank for users who qualified
-    via a non-bet criterion (VIP/deposit) but placed no bets in the window."""
+    the last 15 days -- blank for users classified via a non-bet
+    criterion who placed no bets in that window."""
     users = mconn.execute(
         "SELECT user_id, vip_level, total_recharge, recharge_count, user_balance, last_active_time FROM users"
     ).fetchall()
 
-    high_active_ids, low_active_ids = set(), set()
+    # Widest possible window (15 days) so anyone who COULD end up in
+    # either roster is included -- narrowed to each side's own cutoff
+    # (15d high / 10d low) after classification, below.
+    scan_ids = set()
     base_by_user = {}
-    high_other_matched, low_other_matched = {}, {}
+    inactive_days_by_user = {}
+    vip_by_id, total_recharge_by_id, avg_deposit_by_id, recharge_count_by_id = {}, {}, {}, {}
     for user_id, vip, total_recharge, recharge_count, balance, last_active_time in users:
-        if vip is None:
-            continue
         dt = parse_dt(last_active_time)
         if not dt:
             continue
         inactive_days = (today - dt.date()).days
-        avg_deposit = (total_recharge or 0.0) / recharge_count if recharge_count else 0.0
+        if inactive_days > HIGH_ROLLER_MAX_INACTIVE_DAYS:
+            continue
+        scan_ids.add(user_id)
+        inactive_days_by_user[user_id] = inactive_days
         base_by_user[user_id] = {
             "total_deposit": round(total_recharge or 0.0, 2),
             "wallet_balance": round(balance or 0.0, 2),
         }
-        if inactive_days <= HIGH_ROLLER_MAX_INACTIVE_DAYS:
-            high_active_ids.add(user_id)
-            high_other_matched[user_id] = (
-                avg_deposit >= HIGH_ROLLER_MIN_AVG_DEPOSIT
-                or (recharge_count or 0) >= HIGH_ROLLER_MIN_DEPOSIT_COUNT
-                or (total_recharge or 0.0) >= HIGH_ROLLER_MIN_TOTAL_DEPOSIT
-                or vip >= HIGH_ROLLER_MIN_VIP
-            )
-        if inactive_days <= LOW_ROLLER_MAX_INACTIVE_DAYS:
-            low_active_ids.add(user_id)
-            low_other_matched[user_id] = (
-                avg_deposit < LOW_ROLLER_MAX_AVG_DEPOSIT
-                or (recharge_count or 0) < LOW_ROLLER_MAX_DEPOSIT_COUNT
-                or (total_recharge or 0.0) < LOW_ROLLER_MAX_TOTAL_DEPOSIT
-                or (LOW_ROLLER_MIN_VIP <= vip <= LOW_ROLLER_MAX_VIP)
-            )
+        vip_by_id[user_id] = vip
+        total_recharge_by_id[user_id] = total_recharge
+        avg_deposit_by_id[user_id] = (total_recharge or 0.0) / recharge_count if recharge_count else None
+        recharge_count_by_id[user_id] = recharge_count
 
-    candidate_ids = high_active_ids | low_active_ids
-    if not candidate_ids:
+    if not scan_ids:
         return {"high_roller": [], "low_roller": []}
 
     # Filtered by date range ONLY (not "AND user_id IN (...)") -- wallet_transactions
@@ -1816,7 +1832,7 @@ def high_low_roller_reports(mconn, daily_conn, agent_by_user, today):
         "WHERE direction = 1 AND game_name IS NOT NULL AND game_name != '' AND create_time >= ?",
         (window_start,),
     ):
-        if user_id not in candidate_ids:
+        if user_id not in scan_ids:
             continue
         amt = change_value or 0.0
         bet_sum[user_id] += amt
@@ -1824,28 +1840,28 @@ def high_low_roller_reports(mconn, daily_conn, agent_by_user, today):
         if user_id not in top_bet or amt > top_bet[user_id][0]:
             top_bet[user_id] = (amt, game_name)
 
-    def build_rows(active_ids, other_matched, avg_bet_ok):
-        out = []
-        for uid in active_ids:
-            has_bets = bet_count.get(uid, 0) > 0
-            avg_bet_matched = has_bets and avg_bet_ok(bet_sum[uid] / bet_count[uid])
-            if not (other_matched[uid] or avg_bet_matched):
-                continue
-            base = base_by_user[uid]
-            out.append({
-                "user_id": uid,
-                "agent": agent_for(agent_by_user, uid),
-                "total_deposit": base["total_deposit"],
-                "wallet_balance": base["wallet_balance"],
-                "top_game_played": top_bet[uid][1] if uid in top_bet else None,
-            })
-        out.sort(key=lambda r: -r["total_deposit"])
-        return out[:ACTION_CENTER_LIST_CAP]
+    high_roller, low_roller = [], []
+    for uid in scan_ids:
+        avg_bet = (bet_sum[uid] / bet_count[uid]) if bet_count.get(uid) else None
+        cls = _classify_roller(vip_by_id[uid], total_recharge_by_id[uid], avg_bet, avg_deposit_by_id[uid], recharge_count_by_id[uid])
+        if cls is None:
+            continue
+        max_days = HIGH_ROLLER_MAX_INACTIVE_DAYS if cls == "high" else LOW_ROLLER_MAX_INACTIVE_DAYS
+        if inactive_days_by_user[uid] > max_days:
+            continue
+        base = base_by_user[uid]
+        row = {
+            "user_id": uid,
+            "agent": agent_for(agent_by_user, uid),
+            "total_deposit": base["total_deposit"],
+            "wallet_balance": base["wallet_balance"],
+            "top_game_played": top_bet[uid][1] if uid in top_bet else None,
+        }
+        (high_roller if cls == "high" else low_roller).append(row)
 
-    high_roller = build_rows(high_active_ids, high_other_matched, lambda avg: avg > HIGH_ROLLER_MIN_AVG_BET)
-    low_roller = build_rows(low_active_ids, low_other_matched, lambda avg: avg < LOW_ROLLER_MAX_AVG_BET)
-
-    return {"high_roller": high_roller, "low_roller": low_roller}
+    high_roller.sort(key=lambda r: -r["total_deposit"])
+    low_roller.sort(key=lambda r: -r["total_deposit"])
+    return {"high_roller": high_roller[:ACTION_CENTER_LIST_CAP], "low_roller": low_roller[:ACTION_CENTER_LIST_CAP]}
 
 
 # Raw "city" values on user records are a messy mix of actual state/region
