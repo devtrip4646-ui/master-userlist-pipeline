@@ -222,6 +222,7 @@ const PAGE = `<!DOCTYPE html>
   .date-switch { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
   .date-switch button { padding: 8px 16px; border-radius: 20px; border: 1px solid #d8dce5; background: #fff; font-size: 13px; cursor: pointer; font-weight: 600; color: #444; }
   .date-switch button.active { background: #4338ca; color: #fff; border-color: #4338ca; }
+  .range-date-select { padding: 8px 12px; border-radius: 20px; border: 1px solid #d8dce5; background: #fff; font-size: 13px; font-weight: 600; color: #444; cursor: pointer; }
 
   .perf-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; }
   .perf-controls input[type=date] { border: 1px solid #d8dce5; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
@@ -1636,6 +1637,14 @@ if (IS_PLATFORM_ANALYSIS) {
         <div class="ac-pagination" id="new-old-pagination"></div>
       </section>
 
+      <div class="analysis-heading withdrawal"><h2>Games Activity &mdash; New Users</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
+      <div class="date-switch" id="new-games-range-switch">
+        <button data-range="overall" class="active">Overall</button>
+        <button data-range="day">Day</button>
+        <button data-range="week">Week</button>
+        <button data-range="month">Month</button>
+      </div>
+      <select class="range-date-select" id="new-games-date-select" style="display:none;margin-bottom:18px"></select>
       <div class="row2col">
         <section class="acc-blue">
           <div class="section-head">
@@ -1975,33 +1984,74 @@ if (IS_PLATFORM_ANALYSIS) {
     }
 
     // --- Top Games / Highest Single Bet -- New Users (same "new" population as above) ---
-    const newUsersGames = data.new_users_games || { top_games: [], highest_single_bet: [] };
+    const newUsersGames = data.new_users_games || { overall: { top_games: [], highest_single_bet: [] }, by_date: {}, by_week: {}, by_month: {}, dates: [] };
+    const gamesEmpty = { top_games: [], highest_single_bet: [] };
+    const gamesDates = (newUsersGames.dates || []).slice().sort();
+    let gamesRange = 'overall';
+    let selectedGamesDate = gamesDates.length ? gamesDates[gamesDates.length - 1] : null;
+
     const topGamesCols = [
       { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
       { label: 'Game Name', render: r => r.game_name, raw: r => r.game_name },
       { label: 'Total Bet Amount', render: r => money(r.total_bet_amount), raw: r => r.total_bet_amount, num: true },
+      { label: 'Total Wagering Times', render: r => fmt(r.wagering_times), raw: r => r.wagering_times, num: true },
+      { label: 'Last Active', render: r => lastActivityPill(r.last_active), raw: r => r.last_active },
     ];
     const highestBetCols = [
       { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
       { label: 'Highest Bet', render: r => money(r.highest_bet), raw: r => r.highest_bet, num: true },
       { label: 'Game Name', render: r => r.game_name, raw: r => r.game_name },
+      { label: 'Last Active', render: r => lastActivityPill(r.last_active), raw: r => r.last_active },
     ];
-    if (newUsersGames.top_games && newUsersGames.top_games.length) {
-      paginatedTable('top-games-new-table', 'top-games-new-pagination', newUsersGames.top_games, topGamesCols, 10);
-      document.getElementById('btn-dl-top-games-new').addEventListener('click', () =>
-        downloadExcel(newUsersGames.top_games, topGamesCols, 'Top Games - New Users', 'top-games-new-users.xlsx'));
-    } else {
-      document.getElementById('top-games-new-table').innerHTML = '<div class="no-data">No data available yet.</div>';
+
+    function currentGamesData() {
+      if (gamesRange === 'overall') return newUsersGames.overall || gamesEmpty;
+      if (!selectedGamesDate) return gamesEmpty;
+      const source = gamesRange === 'day' ? newUsersGames.by_date : gamesRange === 'week' ? newUsersGames.by_week : newUsersGames.by_month;
+      return (source && source[selectedGamesDate]) || gamesEmpty;
     }
-    if (newUsersGames.highest_single_bet && newUsersGames.highest_single_bet.length) {
-      paginatedTable('highest-bet-new-table', 'highest-bet-new-pagination', newUsersGames.highest_single_bet, highestBetCols, 10);
-      document.getElementById('btn-dl-highest-bet-new').addEventListener('click', () =>
-        downloadExcel(newUsersGames.highest_single_bet, highestBetCols, 'Highest Single Bet - New Users', 'highest-single-bet-new-users.xlsx'));
-    } else {
-      document.getElementById('highest-bet-new-table').innerHTML = '<div class="no-data">No data available yet.</div>';
+
+    function renderGamesTables() {
+      const gd = currentGamesData();
+      const rangeLabel = gamesRange === 'overall' ? 'overall' : gamesRange + '-' + selectedGamesDate;
+      if (gd.top_games && gd.top_games.length) {
+        paginatedTable('top-games-new-table', 'top-games-new-pagination', gd.top_games, topGamesCols, 10);
+        document.getElementById('btn-dl-top-games-new').onclick = () =>
+          downloadExcel(gd.top_games, topGamesCols, 'Top Games - New Users', 'top-games-new-users-' + rangeLabel + '.xlsx');
+      } else {
+        document.getElementById('top-games-new-table').innerHTML = '<div class="no-data">No data available yet.</div>';
+        document.getElementById('top-games-new-pagination').innerHTML = '';
+      }
+      if (gd.highest_single_bet && gd.highest_single_bet.length) {
+        paginatedTable('highest-bet-new-table', 'highest-bet-new-pagination', gd.highest_single_bet, highestBetCols, 10);
+        document.getElementById('btn-dl-highest-bet-new').onclick = () =>
+          downloadExcel(gd.highest_single_bet, highestBetCols, 'Highest Single Bet - New Users', 'highest-single-bet-new-users-' + rangeLabel + '.xlsx');
+      } else {
+        document.getElementById('highest-bet-new-table').innerHTML = '<div class="no-data">No data available yet.</div>';
+        document.getElementById('highest-bet-new-pagination').innerHTML = '';
+      }
     }
+
+    const gamesDateSelect = document.getElementById('new-games-date-select');
+    gamesDateSelect.innerHTML = gamesDates.slice().reverse().map(d => '<option value="' + d + '">' + shortDate(d) + '</option>').join('');
+    if (selectedGamesDate) gamesDateSelect.value = selectedGamesDate;
+    gamesDateSelect.addEventListener('change', () => {
+      selectedGamesDate = gamesDateSelect.value;
+      renderGamesTables();
+    });
+
+    document.querySelectorAll('#new-games-range-switch button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        gamesRange = btn.dataset.range;
+        document.querySelectorAll('#new-games-range-switch button').forEach(b => b.classList.toggle('active', b === btn));
+        gamesDateSelect.style.display = gamesRange === 'overall' ? 'none' : '';
+        renderGamesTables();
+      });
+    });
+
+    renderGamesTables();
   })();
 }
 

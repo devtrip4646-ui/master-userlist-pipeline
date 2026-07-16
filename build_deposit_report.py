@@ -1602,46 +1602,32 @@ def new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, today):
     return {"daily": daily_rows, "retention": retention_rows}
 
 
-def top_games_new_users(daily_conn, deposit_rows, agent_by_user):
-    """Two Platform Analysis reports below New vs Old User Analysis, both
-    scoped to "new" users -- anyone whose FIRST-EVER deposit
-    (is_first_deposit=1) landed within the current 33-day retention window,
-    same population new_vs_old_user_analysis's daily new_ids union to. Both
-    built from bet-only wallet_transactions rows (direction=1, same Bet/Win
-    convention as recent_activity() above; win payouts are excluded since
-    these are spend reports):
-      - "Top Games": per (user, game), total amount wagered on that game.
-      - "Highest Single Bet": for each user, their single largest bet
-        transaction and which game it was on.
-    Capped at ACTION_CENTER_LIST_CAP like the other exploratory Platform
-    Analysis lists (not a definitive/payout list)."""
-    new_user_ids = {
-        user_id
-        for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows
-        if status == "COMPLETE" and user_id is not None and is_first_deposit == 1
-    }
-    if not new_user_ids:
-        return {"top_games": [], "highest_single_bet": []}
-
-    placeholders = ",".join("?" * len(new_user_ids))
-    rows = daily_conn.execute(
-        "SELECT user_id, game_name, change_value FROM wallet_transactions "
-        "WHERE direction = 1 AND game_name IS NOT NULL AND game_name != '' "
-        f"AND user_id IN ({placeholders})",
-        list(new_user_ids),
-    ).fetchall()
-
+def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user):
+    """Shared aggregation for top_games_new_users' Overall/Day/Week/Month
+    views -- `rows` is a (user_id, game_name, change_value) subset already
+    filtered to the desired date range. Total Wagering Times = count of bet
+    transactions for that (user, game) pairing (Top Games only -- Highest
+    Single Bet is about one transaction, not a count)."""
     game_totals = defaultdict(float)  # (user_id, game_name) -> total wagered
+    game_counts = defaultdict(int)  # (user_id, game_name) -> bet count
     highest_bet = {}  # user_id -> (amount, game_name)
     for user_id, game_name, change_value in rows:
         amt = change_value or 0.0
         game_totals[(user_id, game_name)] += amt
+        game_counts[(user_id, game_name)] += 1
         if user_id not in highest_bet or amt > highest_bet[user_id][0]:
             highest_bet[user_id] = (amt, game_name)
 
     top_games = sorted(
         (
-            {"user_id": uid, "agent": agent_for(agent_by_user, uid), "game_name": game, "total_bet_amount": round(total, 2)}
+            {
+                "user_id": uid,
+                "agent": agent_for(agent_by_user, uid),
+                "game_name": game,
+                "total_bet_amount": round(total, 2),
+                "wagering_times": game_counts[(uid, game)],
+                "last_active": last_active_label_by_user.get(uid),
+            }
             for (uid, game), total in game_totals.items()
         ),
         key=lambda r: -r["total_bet_amount"],
@@ -1649,13 +1635,94 @@ def top_games_new_users(daily_conn, deposit_rows, agent_by_user):
 
     highest_single_bet = sorted(
         (
-            {"user_id": uid, "agent": agent_for(agent_by_user, uid), "highest_bet": round(amt, 2), "game_name": game}
+            {
+                "user_id": uid,
+                "agent": agent_for(agent_by_user, uid),
+                "highest_bet": round(amt, 2),
+                "game_name": game,
+                "last_active": last_active_label_by_user.get(uid),
+            }
             for uid, (amt, game) in highest_bet.items()
         ),
         key=lambda r: -r["highest_bet"],
     )[:ACTION_CENTER_LIST_CAP]
 
     return {"top_games": top_games, "highest_single_bet": highest_single_bet}
+
+
+def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, all_dates, today):
+    """Two Platform Analysis reports below New vs Old User Analysis, both
+    scoped to "new" users -- anyone whose FIRST-EVER deposit
+    (is_first_deposit=1) landed within the current 33-day retention window,
+    same population new_vs_old_user_analysis's daily new_ids union to. Both
+    built from bet-only wallet_transactions rows (direction=1, same Bet/Win
+    convention as recent_activity() above; win payouts are excluded since
+    these are spend reports):
+      - "Top Games": per (user, game), total amount wagered + how many bets.
+      - "Highest Single Bet": for each user, their single largest bet
+        transaction and which game it was on.
+    Each ships 4 views -- "overall" (the full 33-day window, no date
+    filter), "by_date" (one calendar day), "by_week" (rolling 7 days ending
+    that date), "by_month" (rolling 30 days ending that date, clipped to
+    all_dates like bonus_claims_by_week/month) -- so the frontend can offer
+    the same Overall/Day/Week/Month switch as Bonus Claim Report. Capped at
+    ACTION_CENTER_LIST_CAP like the other exploratory Platform Analysis
+    lists (not a definitive/payout list)."""
+    empty = {"top_games": [], "highest_single_bet": []}
+    new_user_ids = {
+        user_id
+        for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows
+        if status == "COMPLETE" and user_id is not None and is_first_deposit == 1
+    }
+    if not new_user_ids:
+        return {"overall": empty, "by_date": {}, "by_week": {}, "by_month": {}, "dates": all_dates}
+
+    placeholders = ",".join("?" * len(new_user_ids))
+    rows = daily_conn.execute(
+        "SELECT user_id, game_name, change_value, create_time FROM wallet_transactions "
+        "WHERE direction = 1 AND game_name IS NOT NULL AND game_name != '' "
+        f"AND user_id IN ({placeholders})",
+        list(new_user_ids),
+    ).fetchall()
+
+    last_active_label_by_user = {}
+    if master_conn is not None:
+        placeholders2 = ",".join("?" * len(new_user_ids))
+        for user_id, last_active_time in master_conn.execute(
+            f"SELECT user_id, last_active_time FROM users WHERE user_id IN ({placeholders2})", list(new_user_ids)
+        ).fetchall():
+            dt = parse_dt(last_active_time)
+            if not dt:
+                continue
+            gap = (today - dt.date()).days
+            last_active_label_by_user[user_id] = "Today" if gap <= 0 else f"{gap}d ago"
+
+    rows_by_date = defaultdict(list)
+    all_rows = []
+    for user_id, game_name, change_value, create_time in rows:
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        triple = (user_id, game_name, change_value)
+        rows_by_date[dt.date().isoformat()].append(triple)
+        all_rows.append(triple)
+
+    all_dates_set = set(all_dates)
+
+    def rolling_window(end_date_str, days):
+        end_d = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+        return {(end_d - timedelta(days=i)).isoformat() for i in range(days)} & all_dates_set
+
+    overall = _aggregate_games_reports(all_rows, agent_by_user, last_active_label_by_user)
+    by_date, by_week, by_month = {}, {}, {}
+    for date_str in all_dates:
+        by_date[date_str] = _aggregate_games_reports(rows_by_date.get(date_str, []), agent_by_user, last_active_label_by_user)
+        week_rows = [r for d in rolling_window(date_str, 7) for r in rows_by_date.get(d, [])]
+        by_week[date_str] = _aggregate_games_reports(week_rows, agent_by_user, last_active_label_by_user)
+        month_rows = [r for d in rolling_window(date_str, 30) for r in rows_by_date.get(d, [])]
+        by_month[date_str] = _aggregate_games_reports(month_rows, agent_by_user, last_active_label_by_user)
+
+    return {"overall": overall, "by_date": by_date, "by_week": by_week, "by_month": by_month, "dates": all_dates}
 
 
 def channel_performance_report(daily_conn, today):
@@ -2595,8 +2662,11 @@ def main():
     new_old_user_analysis = new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, now.date())
 
     games_daily_conn = sqlite3.connect(report_daily_db_path)
-    new_users_games = top_games_new_users(games_daily_conn, deposit_rows, agent_by_user)
+    games_master_conn = sqlite3.connect(report_master_db_path) if report_master_db_path else None
+    new_users_games = top_games_new_users(games_daily_conn, games_master_conn, deposit_rows, agent_by_user, all_dates, now.date())
     games_daily_conn.close()
+    if games_master_conn is not None:
+        games_master_conn.close()
 
     # Persist today's per-agent performance, then read back the full rolling
     # window for the Performance page -- small enough (agents x 7 categories
