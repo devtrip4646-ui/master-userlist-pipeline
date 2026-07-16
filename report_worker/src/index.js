@@ -1571,7 +1571,7 @@ if (IS_PLATFORM_ANALYSIS) {
             <div class="sec-title"><div class="badge b-blue">&#127918;</div><h2>Top Games - New Users</h2></div>
             <button class="download-btn-sm" id="btn-dl-top-games-new">&#128190; Excel</button>
           </div>
-          <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Bet-only (excludes win payouts), total wagered per user per game, highest first. Total Wagering Times = total bet &divide; deposit amount in the same period (e.g. 2.00x = wagered twice what they deposited).</div>
+          <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Bet-only (excludes win payouts), total wagered per user per game, highest first.</div>
           <div id="top-games-new-table"></div>
           <div class="ac-pagination" id="top-games-new-pagination"></div>
         </section>
@@ -1995,7 +1995,6 @@ if (IS_PLATFORM_ANALYSIS) {
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
       { label: 'Game Name', render: r => r.game_name, raw: r => r.game_name },
       { label: 'Total Bet Amount', render: r => money(r.total_bet_amount), raw: r => r.total_bet_amount, num: true },
-      { label: 'Total Wagering Times', render: r => r.wagering_times == null ? '&mdash;' : r.wagering_times.toFixed(2) + 'x', raw: r => r.wagering_times, num: true },
       { label: 'Last Active', render: r => lastActivityPill(r.last_active), raw: r => r.last_active },
     ];
     const highestBetCols = [
