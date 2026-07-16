@@ -1627,7 +1627,7 @@ def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user, vip
             for (uid, game), total in game_totals.items()
         ),
         key=lambda r: -r["total_bet_amount"],
-    )[:ACTION_CENTER_LIST_CAP]
+    )
 
     highest_single_bet = sorted(
         (
@@ -1642,7 +1642,7 @@ def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user, vip
             for uid, (amt, game) in highest_bet.items()
         ),
         key=lambda r: -r["highest_bet"],
-    )[:ACTION_CENTER_LIST_CAP]
+    )
 
     return {"top_games": top_games, "highest_single_bet": highest_single_bet}
 
@@ -1662,9 +1662,9 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
     filter), "by_date" (one calendar day), "by_week" (rolling 7 days ending
     that date), "by_month" (rolling 30 days ending that date, clipped to
     all_dates like bonus_claims_by_week/month) -- so the frontend can offer
-    the same Overall/Day/Week/Month switch as Bonus Claim Report. Capped at
-    ACTION_CENTER_LIST_CAP like the other exploratory Platform Analysis
-    lists (not a definitive/payout list)."""
+    the same Overall/Day/Week/Month switch as Bonus Claim Report.
+    UNCAPPED -- every qualifying row ships, not just a top-N slice, so both
+    the on-screen table and its Excel export are complete."""
     empty = {"top_games": [], "highest_single_bet": []}
     new_user_ids = {
         user_id
@@ -1866,7 +1866,7 @@ def high_low_roller_reports(mconn, daily_conn, agent_by_user, today):
 
     high_roller.sort(key=lambda r: -r["total_deposit"])
     low_roller.sort(key=lambda r: -r["total_deposit"])
-    return {"high_roller": high_roller[:ACTION_CENTER_LIST_CAP], "low_roller": low_roller[:ACTION_CENTER_LIST_CAP]}
+    return {"high_roller": high_roller, "low_roller": low_roller}
 
 
 # Raw "city" values on user records are a messy mix of actual state/region
