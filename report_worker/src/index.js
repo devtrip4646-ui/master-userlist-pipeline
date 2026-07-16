@@ -543,7 +543,8 @@ function scopeReportToAgent(data, agentName) {
 // doubles as the sort key when present, since it's the plain underlying
 // value rather than rendered HTML (badges/pills). Falls back to the
 // rendered string for columns with no raw().
-function paginatedTable(containerId, paginationId, rows, columns, pageSize) {
+function paginatedTable(containerId, paginationId, rows, columns, pageSize, opts) {
+  const jumpDropdown = opts && opts.jumpDropdown;
   let page = 0;
   let sortCol = null, sortDir = 1;
   function sortedRows() {
@@ -581,13 +582,20 @@ function paginatedTable(containerId, paginationId, rows, columns, pageSize) {
       });
     }
     const pag = document.getElementById(paginationId);
+    const jumpHtml = jumpDropdown
+      ? ' <select id="' + paginationId + '-jump" class="range-date-select" style="padding:4px 8px">' +
+        Array.from({ length: totalPages }, (_, i) => '<option value="' + i + '"' + (i === page ? ' selected' : '') + '>Page ' + (i + 1) + '</option>').join('') +
+        '</select>'
+      : '';
     pag.innerHTML = 'Page ' + (page + 1) + ' of ' + totalPages +
       ' <button id="' + paginationId + '-prev"' + (page === 0 ? ' disabled' : '') + '>&larr; Prev</button>' +
-      ' <button id="' + paginationId + '-next"' + (page >= totalPages - 1 ? ' disabled' : '') + '>Next &rarr;</button>';
+      ' <button id="' + paginationId + '-next"' + (page >= totalPages - 1 ? ' disabled' : '') + '>Next &rarr;</button>' + jumpHtml;
     const prevBtn = document.getElementById(paginationId + '-prev');
     const nextBtn = document.getElementById(paginationId + '-next');
     if (prevBtn) prevBtn.addEventListener('click', () => { page = Math.max(0, page - 1); render(); });
     if (nextBtn) nextBtn.addEventListener('click', () => { page = Math.min(totalPages - 1, page + 1); render(); });
+    const jumpSelect = document.getElementById(paginationId + '-jump');
+    if (jumpSelect) jumpSelect.addEventListener('change', () => { page = Number(jumpSelect.value); render(); });
   }
   render();
 }
@@ -838,15 +846,15 @@ if (IS_ACTION_CENTER) {
     \`;
 
     if (wcs) {
-      paginatedTable('cashback-table', 'cashback-pagination', wcs.rows, cashbackCols, 10);
+      paginatedTable('cashback-table', 'cashback-pagination', wcs.rows, cashbackCols, 6, { jumpDropdown: true });
       document.getElementById('btn-dl-cashback').addEventListener('click', () =>
         downloadExcel(wcs.rows, cashbackCols, 'Weekly Cashback Shield', 'weekly-cashback-shield-' + wcs.week_start + '.xlsx'));
     }
 
-    paginatedTable('near-low-table', 'near-low-pagination', ac.near_upgrade_low.rows, nearCols, 10);
-    paginatedTable('near-high-table', 'near-high-pagination', ac.near_upgrade_high.rows, nearCols, 10);
-    paginatedTable('inactive-high-table', 'inactive-high-pagination', ac.inactive_high.rows, inactiveCols, 10);
-    paginatedTable('inactive-low-table', 'inactive-low-pagination', ac.inactive_low.rows, inactiveCols, 10);
+    paginatedTable('near-low-table', 'near-low-pagination', ac.near_upgrade_low.rows, nearCols, 6, { jumpDropdown: true });
+    paginatedTable('near-high-table', 'near-high-pagination', ac.near_upgrade_high.rows, nearCols, 6, { jumpDropdown: true });
+    paginatedTable('inactive-high-table', 'inactive-high-pagination', ac.inactive_high.rows, inactiveCols, 6, { jumpDropdown: true });
+    paginatedTable('inactive-low-table', 'inactive-low-pagination', ac.inactive_low.rows, inactiveCols, 6, { jumpDropdown: true });
 
     document.getElementById('btn-dl-near-low').addEventListener('click', () =>
       downloadExcel(ac.near_upgrade_low.rows, nearCols, 'Low VIP Near Upgrade', 'low-vip-near-upgrade.xlsx'));
@@ -857,16 +865,16 @@ if (IS_ACTION_CENTER) {
     document.getElementById('btn-dl-inactive-low').addEventListener('click', () =>
       downloadExcel(ac.inactive_low.rows, inactiveCols, 'Inactive Users Low', 'inactive-users-low.xlsx'));
 
-    paginatedTable('active-low-table', 'active-low-pagination', ac.active_low.rows, activeCols, 10);
-    paginatedTable('active-high-table', 'active-high-pagination', ac.active_high.rows, activeCols, 10);
+    paginatedTable('active-low-table', 'active-low-pagination', ac.active_low.rows, activeCols, 6, { jumpDropdown: true });
+    paginatedTable('active-high-table', 'active-high-pagination', ac.active_high.rows, activeCols, 6, { jumpDropdown: true });
     document.getElementById('btn-dl-active-low').addEventListener('click', () =>
       downloadExcel(ac.active_low.rows, activeCols, 'Active Users Low', 'active-users-low.xlsx'));
     document.getElementById('btn-dl-active-high').addEventListener('click', () =>
       downloadExcel(ac.active_high.rows, activeCols, 'Active Users High', 'active-users-high.xlsx'));
 
     if (acx) {
-      paginatedTable('new-users-table', 'new-users-pagination', acx.yesterday_first_deposit_users, newUserCols, 10);
-      paginatedTable('bonus-table', 'bonus-pagination', acx.no_return_fd_users, bonusCols, 10);
+      paginatedTable('new-users-table', 'new-users-pagination', acx.yesterday_first_deposit_users, newUserCols, 6, { jumpDropdown: true });
+      paginatedTable('bonus-table', 'bonus-pagination', acx.no_return_fd_users, bonusCols, 6, { jumpDropdown: true });
       document.getElementById('btn-dl-new-users').addEventListener('click', () =>
         downloadExcel(acx.yesterday_first_deposit_users, newUserCols, 'Yesterday First Deposit Users', 'yesterday-first-deposit-users.xlsx'));
       document.getElementById('btn-dl-bonus').addEventListener('click', () =>
