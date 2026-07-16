@@ -1852,6 +1852,7 @@ def high_low_roller_reports(mconn, daily_conn, agent_by_user, today):
         base = base_by_user[uid]
         row = {
             "user_id": uid,
+            "vip_level": vip_by_id[uid],
             "agent": agent_for(agent_by_user, uid),
             "total_deposit": base["total_deposit"],
             "wallet_balance": base["wallet_balance"],

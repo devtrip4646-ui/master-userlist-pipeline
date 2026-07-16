@@ -2105,6 +2105,7 @@ if (IS_PLATFORM_ANALYSIS) {
     const rollerReports = data.roller_reports || { high_roller: [], low_roller: [] };
     const rollerCols = [
       { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
+      { label: 'VIP', render: r => r.vip_level == null ? '&mdash;' : r.vip_level, raw: r => r.vip_level, num: true },
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
       { label: 'Total Deposit', render: r => money(r.total_deposit), raw: r => r.total_deposit, num: true },
       { label: 'Wallet Balance', render: r => money(r.wallet_balance), raw: r => r.wallet_balance, num: true },
