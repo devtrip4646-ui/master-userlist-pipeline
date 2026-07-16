@@ -1848,6 +1848,130 @@ def high_low_roller_reports(mconn, daily_conn, agent_by_user, today):
     return {"high_roller": high_roller, "low_roller": low_roller}
 
 
+# Raw "city" values on user records are a messy mix of actual state/region
+# names and individual city names (some with inconsistent casing) --
+# REGION_MAPPING (from State_and_City_Mapping.xlsx) normalizes every known
+# raw value to its correct State/Region so the Region vs VIP Depositor
+# Matrix collapses cities into their parent region instead of listing them
+# as separate rows. Keys are lowercased for case-insensitive lookup.
+REGION_MAPPING = {
+    'tamil nadu': 'Tamil Nadu',
+    'karnataka': 'Karnataka',
+    'andhra pradesh': 'Andhra Pradesh',
+    'uttar pradesh': 'Uttar Pradesh',
+    'kerala': 'Kerala',
+    'maharashtra': 'Maharashtra',
+    'gujarat belt': 'Gujarat Belt',
+    'madhya pradesh': 'Madhya Pradesh',
+    'bihar belt': 'Bihar Belt',
+    'odisha': 'Odisha',
+    'delhi ncr': 'Delhi NCR',
+    'west bengal': 'West Bengal',
+    'rajasthan': 'Rajasthan',
+    'punjab': 'Punjab',
+    'haryana': 'Haryana',
+    'chennai': 'Tamil Nadu',
+    'bengaluru': 'Karnataka',
+    'mumbai': 'Maharashtra',
+    'assam': 'Assam',
+    'delhi': 'Delhi NCR',
+    'indore': 'Madhya Pradesh',
+    'ahmedabad': 'Gujarat',
+    'pune': 'Maharashtra',
+    'mysuru': 'Karnataka',
+    'jammu kashmir': 'Jammu Kashmir',
+    'himachal pradesh': 'Himachal Pradesh',
+    'lucknow': 'Uttar Pradesh',
+    'rājkot': 'Gujarat',
+    'northeast': 'Northeast',
+    'jaipur': 'Rajasthan',
+    'hyderabad': 'Andhra Pradesh',
+    'vadodara': 'Gujarat',
+    'durgapur': 'West Bengal',
+    'morādābād': 'Uttar Pradesh',
+    'shimla': 'Himachal Pradesh',
+    'mūlki': 'Karnataka',
+    'thiruvananthapuram': 'Kerala',
+    'raipur': 'Chhattisgarh',
+    'coimbatore': 'Tamil Nadu',
+    'madgaon': 'Goa',
+    'ludhiana': 'Punjab',
+    'rasapūdipalem': 'Andhra Pradesh',
+    'ghāziābād': 'Uttar Pradesh',
+    'durg': 'Chhattisgarh',
+    'tadepalligudem': 'Andhra Pradesh',
+    'nashik': 'Maharashtra',
+    'vijayawada': 'Andhra Pradesh',
+    'pimpri': 'Maharashtra',
+    'kanpur': 'Uttar Pradesh',
+    'virār': 'Maharashtra',
+    'imphal': 'Manipur',
+    'gurugram': 'Haryana',
+    'dharmapuri': 'Tamil Nadu',
+    'faridabad': 'Haryana',
+    'nellore': 'Andhra Pradesh',
+    'amsterdam': 'Netherlands',
+    'gorakhpur': 'Uttar Pradesh',
+    'varanasi': 'Uttar Pradesh',
+    'latur': 'Maharashtra',
+    'kota': 'Rajasthan',
+    'kalyān': 'Maharashtra',
+    'tiruppur': 'Tamil Nadu',
+    'payyanur': 'Kerala',
+    'madurai': 'Tamil Nadu',
+    'alīgarh': 'Uttar Pradesh',
+    'bhubaneswar': 'Odisha',
+    'panipat': 'Haryana',
+    'salem': 'Tamil Nadu',
+    'tiruchirappalli': 'Tamil Nadu',
+    'rohtak': 'Haryana',
+    'jaunpur': 'Uttar Pradesh',
+    'jamshedpur': 'Jharkhand',
+    'saugor': 'Madhya Pradesh',
+    'tirupati': 'Andhra Pradesh',
+    'agra': 'Uttar Pradesh',
+    'meerut': 'Uttar Pradesh',
+    'aurangabad': 'Maharashtra',
+    'patna': 'Bihar',
+    'ambarnath': 'Maharashtra',
+    'srinagar': 'Jammu & Kashmir',
+    'mangaluru': 'Karnataka',
+    'siliguri': 'West Bengal',
+    'kumarapalayam': 'Tamil Nadu',
+    'tamilnadu': 'Tamil Nadu',
+    'nanded': 'Maharashtra',
+    'kanayannur': 'Kerala',
+    'sahāranpur': 'Uttar Pradesh',
+    'kolkata': 'West Bengal',
+    'muzaffarnagar': 'Uttar Pradesh',
+    'dewas': 'Madhya Pradesh',
+    'jammu': 'Jammu & Kashmir',
+    'solan': 'Himachal Pradesh',
+    'dubai': 'UAE',
+    'hisar': 'Haryana',
+    'new york city': 'USA',
+    'bahraigh': 'Uttar Pradesh',
+    'kozhikode': 'Kerala',
+    'surat': 'Gujarat',
+    'kallakurichi': 'Tamil Nadu',
+    'pathānkot': 'Punjab',
+    'davangere': 'Karnataka',
+    'bāola': 'Gujarat',
+    'shāhpur': 'Unknown',
+    'dehradun': 'Uttarakhand',
+    'pollachi': 'Tamil Nadu',
+}
+
+
+def map_region(raw_city):
+    """Normalize a raw city/region string via REGION_MAPPING; unmapped or
+    blank values fall back to "Unknown" rather than showing raw, possibly
+    duplicated city names as their own region rows."""
+    if not raw_city:
+        return "Unknown"
+    return REGION_MAPPING.get(str(raw_city).strip().lower(), "Unknown")
+
+
 def region_vip_depositor_matrix(deposit_rows, city_by_user, vip_by_user, all_dates):
     """Platform Analysis section below Game & Revenue Economics: rows =
     Region, columns = VIP level, cell = how many DISTINCT users in that
@@ -1857,8 +1981,10 @@ def region_vip_depositor_matrix(deposit_rows, city_by_user, vip_by_user, all_dat
     selected dates it builds client-side -- a single day, an arbitrary
     multi-select, a calendar week (Monday-Sunday), or a calendar month --
     without a user who deposited on multiple selected days being
-    double-counted. Regions with no known city are grouped as "Unknown";
-    users with no VIP level on record are excluded (a VIP-level breakdown
+    double-counted. Region is compressed via map_region() (REGION_MAPPING)
+    so individual cities collapse into their parent state/region instead of
+    showing as separate rows -- unmapped/blank values group as "Unknown".
+    Users with no VIP level on record are excluded (a VIP-level breakdown
     can't place them)."""
     depositors_by_date = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
     for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
@@ -1870,7 +1996,7 @@ def region_vip_depositor_matrix(deposit_rows, city_by_user, vip_by_user, all_dat
         dt = parse_dt(create_time)
         if not dt:
             continue
-        region = city_by_user.get(user_id) or "Unknown"
+        region = map_region(city_by_user.get(user_id))
         depositors_by_date[dt.date().isoformat()][region][vip].add(user_id)
 
     matrix_by_date = {
