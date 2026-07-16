@@ -1594,6 +1594,27 @@ if (IS_PLATFORM_ANALYSIS) {
         </section>
       </div>
 
+      <div class="row2col">
+        <section class="acc-emerald">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-emerald">&#128142;</div><h2>High Roller Active</h2></div>
+            <button class="download-btn-sm" id="btn-dl-high-roller">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">VIP 7+, avg lifetime deposit &#8377;10,000+, 500+ lifetime deposits, &#8377;5,00,000+ lifetime total deposit, avg bet size (last 15 days) over &#8377;500, active within 15 days.</div>
+          <div id="high-roller-table"></div>
+          <div class="ac-pagination" id="high-roller-pagination"></div>
+        </section>
+        <section class="acc-rose">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-rose">&#127183;</div><h2>Low Roller Active</h2></div>
+            <button class="download-btn-sm" id="btn-dl-low-roller">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">VIP 2-6, avg lifetime deposit under &#8377;10,000, under 500 lifetime deposits, under &#8377;5,00,000 lifetime total deposit, avg bet size (last 15 days) under &#8377;500, active within 10 days.</div>
+          <div id="low-roller-table"></div>
+          <div class="ac-pagination" id="low-roller-pagination"></div>
+        </section>
+      </div>
+
       <div class="analysis-heading withdrawal"><h2>Acquisition &amp; Bonus Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
       <div class="row2col">
         <section class="acc-blue">
@@ -2079,6 +2100,30 @@ if (IS_PLATFORM_ANALYSIS) {
     });
 
     renderGamesTables();
+
+    // --- High Roller Active / Low Roller Active ---
+    const rollerReports = data.roller_reports || { high_roller: [], low_roller: [] };
+    const rollerCols = [
+      { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
+      { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
+      { label: 'Total Deposit', render: r => money(r.total_deposit), raw: r => r.total_deposit, num: true },
+      { label: 'Wallet Balance', render: r => money(r.wallet_balance), raw: r => r.wallet_balance, num: true },
+      { label: 'Top Game Played', render: r => r.top_game_played || '&mdash;', raw: r => r.top_game_played || '' },
+    ];
+    if (rollerReports.high_roller && rollerReports.high_roller.length) {
+      paginatedTable('high-roller-table', 'high-roller-pagination', rollerReports.high_roller, rollerCols, 10);
+      document.getElementById('btn-dl-high-roller').addEventListener('click', () =>
+        downloadExcel(rollerReports.high_roller, rollerCols, 'High Roller Active', 'high-roller-active.xlsx'));
+    } else {
+      document.getElementById('high-roller-table').innerHTML = '<div class="no-data">No users match this criteria yet.</div>';
+    }
+    if (rollerReports.low_roller && rollerReports.low_roller.length) {
+      paginatedTable('low-roller-table', 'low-roller-pagination', rollerReports.low_roller, rollerCols, 10);
+      document.getElementById('btn-dl-low-roller').addEventListener('click', () =>
+        downloadExcel(rollerReports.low_roller, rollerCols, 'Low Roller Active', 'low-roller-active.xlsx'));
+    } else {
+      document.getElementById('low-roller-table').innerHTML = '<div class="no-data">No users match this criteria yet.</div>';
+    }
 
     // --- Region vs VIP Depositor Matrix ---
     const rvMatrixData = data.region_vip_depositor_matrix || { dates: [], matrix_by_date: {} };
