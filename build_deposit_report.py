@@ -1602,21 +1602,27 @@ def new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, today):
     return {"daily": daily_rows, "retention": retention_rows}
 
 
-def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user):
+def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user, deposit_by_user):
     """Shared aggregation for top_games_new_users' Overall/Day/Week/Month
     views -- `rows` is a (user_id, game_name, change_value) subset already
-    filtered to the desired date range. Total Wagering Times = count of bet
-    transactions for that (user, game) pairing (Top Games only -- Highest
-    Single Bet is about one transaction, not a count)."""
+    filtered to the desired date range, `deposit_by_user` is that SAME
+    user's total COMPLETE deposit amount over that SAME date range. Total
+    Wagering Times = a turnover multiple, total wagered on that game divided
+    by the user's total deposit in the period (e.g. 5.2x = wagered 5.2 times
+    what they deposited) -- Top Games only, since it's a per-game breakdown;
+    Highest Single Bet is about one transaction, not a ratio. None (shown as
+    a dash) when the user has no COMPLETE deposit in the period to divide by."""
     game_totals = defaultdict(float)  # (user_id, game_name) -> total wagered
-    game_counts = defaultdict(int)  # (user_id, game_name) -> bet count
     highest_bet = {}  # user_id -> (amount, game_name)
     for user_id, game_name, change_value in rows:
         amt = change_value or 0.0
         game_totals[(user_id, game_name)] += amt
-        game_counts[(user_id, game_name)] += 1
         if user_id not in highest_bet or amt > highest_bet[user_id][0]:
             highest_bet[user_id] = (amt, game_name)
+
+    def wagering_times(uid, total):
+        dep = deposit_by_user.get(uid, 0.0)
+        return round(total / dep, 2) if dep else None
 
     top_games = sorted(
         (
@@ -1625,7 +1631,7 @@ def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user):
                 "agent": agent_for(agent_by_user, uid),
                 "game_name": game,
                 "total_bet_amount": round(total, 2),
-                "wagering_times": game_counts[(uid, game)],
+                "wagering_times": wagering_times(uid, total),
                 "last_active": last_active_label_by_user.get(uid),
             }
             for (uid, game), total in game_totals.items()
@@ -1658,7 +1664,8 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
     built from bet-only wallet_transactions rows (direction=1, same Bet/Win
     convention as recent_activity() above; win payouts are excluded since
     these are spend reports):
-      - "Top Games": per (user, game), total amount wagered + how many bets.
+      - "Top Games": per (user, game), total amount wagered + turnover
+        multiple of that period's deposit (see _aggregate_games_reports).
       - "Highest Single Bet": for each user, their single largest bet
         transaction and which game it was on.
     Each ships 4 views -- "overall" (the full 33-day window, no date
@@ -1707,20 +1714,47 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
         rows_by_date[dt.date().isoformat()].append(triple)
         all_rows.append(triple)
 
+    # Same "new" users' COMPLETE deposits, bucketed by date -- the wagering
+    # ratio's denominator, always matching the SAME date range as the bet
+    # total it's dividing (day view -> that day's deposits, week -> that
+    # week's, etc.), so the ratio stays coherent with what's on screen.
+    deposits_by_date = defaultdict(lambda: defaultdict(float))
+    all_deposits_by_user = defaultdict(float)
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id not in new_user_ids:
+            continue
+        dt = parse_dt(create_time)
+        if not dt:
+            continue
+        amt = order_amount or 0.0
+        deposits_by_date[dt.date().isoformat()][user_id] += amt
+        all_deposits_by_user[user_id] += amt
+
     all_dates_set = set(all_dates)
 
     def rolling_window(end_date_str, days):
         end_d = datetime.strptime(end_date_str, "%Y-%m-%d").date()
         return {(end_d - timedelta(days=i)).isoformat() for i in range(days)} & all_dates_set
 
-    overall = _aggregate_games_reports(all_rows, agent_by_user, last_active_label_by_user)
+    def deposit_sum_for(dates):
+        out = defaultdict(float)
+        for d in dates:
+            for uid, amt in deposits_by_date.get(d, {}).items():
+                out[uid] += amt
+        return out
+
+    overall = _aggregate_games_reports(all_rows, agent_by_user, last_active_label_by_user, all_deposits_by_user)
     by_date, by_week, by_month = {}, {}, {}
     for date_str in all_dates:
-        by_date[date_str] = _aggregate_games_reports(rows_by_date.get(date_str, []), agent_by_user, last_active_label_by_user)
-        week_rows = [r for d in rolling_window(date_str, 7) for r in rows_by_date.get(d, [])]
-        by_week[date_str] = _aggregate_games_reports(week_rows, agent_by_user, last_active_label_by_user)
-        month_rows = [r for d in rolling_window(date_str, 30) for r in rows_by_date.get(d, [])]
-        by_month[date_str] = _aggregate_games_reports(month_rows, agent_by_user, last_active_label_by_user)
+        by_date[date_str] = _aggregate_games_reports(
+            rows_by_date.get(date_str, []), agent_by_user, last_active_label_by_user, deposits_by_date.get(date_str, {})
+        )
+        week_dates = rolling_window(date_str, 7)
+        week_rows = [r for d in week_dates for r in rows_by_date.get(d, [])]
+        by_week[date_str] = _aggregate_games_reports(week_rows, agent_by_user, last_active_label_by_user, deposit_sum_for(week_dates))
+        month_dates = rolling_window(date_str, 30)
+        month_rows = [r for d in month_dates for r in rows_by_date.get(d, [])]
+        by_month[date_str] = _aggregate_games_reports(month_rows, agent_by_user, last_active_label_by_user, deposit_sum_for(month_dates))
 
     return {"overall": overall, "by_date": by_date, "by_week": by_week, "by_month": by_month, "dates": all_dates}
 
