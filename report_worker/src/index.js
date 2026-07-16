@@ -2041,6 +2041,7 @@ if (IS_PLATFORM_ANALYSIS) {
 
     const topGamesCols = [
       { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
+      { label: 'VIP', render: r => r.vip_level == null ? '&mdash;' : r.vip_level, raw: r => r.vip_level, num: true },
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
       { label: 'Game Name', render: r => r.game_name, raw: r => r.game_name },
       { label: 'Total Bet Amount', render: r => money(r.total_bet_amount), raw: r => r.total_bet_amount, num: true },
@@ -2048,6 +2049,7 @@ if (IS_PLATFORM_ANALYSIS) {
     ];
     const highestBetCols = [
       { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
+      { label: 'VIP', render: r => r.vip_level == null ? '&mdash;' : r.vip_level, raw: r => r.vip_level, num: true },
       { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
       { label: 'Highest Bet', render: r => money(r.highest_bet), raw: r => r.highest_bet, num: true },
       { label: 'Game Name', render: r => r.game_name, raw: r => r.game_name },

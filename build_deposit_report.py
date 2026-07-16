@@ -1602,7 +1602,7 @@ def new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, today):
     return {"daily": daily_rows, "retention": retention_rows}
 
 
-def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user):
+def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user, vip_by_id):
     """Shared aggregation for top_games_new_users' Overall/Day/Week/Month
     views -- `rows` is a (user_id, game_name, change_value) subset already
     filtered to the desired date range."""
@@ -1618,6 +1618,7 @@ def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user):
         (
             {
                 "user_id": uid,
+                "vip_level": vip_by_id.get(uid),
                 "agent": agent_for(agent_by_user, uid),
                 "game_name": game,
                 "total_bet_amount": round(total, 2),
@@ -1632,6 +1633,7 @@ def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user):
         (
             {
                 "user_id": uid,
+                "vip_level": vip_by_id.get(uid),
                 "agent": agent_for(agent_by_user, uid),
                 "highest_bet": round(amt, 2),
                 "game_name": game,
@@ -1681,11 +1683,13 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
     ).fetchall()
 
     last_active_label_by_user = {}
+    vip_by_id = {}
     if master_conn is not None:
         placeholders2 = ",".join("?" * len(new_user_ids))
-        for user_id, last_active_time in master_conn.execute(
-            f"SELECT user_id, last_active_time FROM users WHERE user_id IN ({placeholders2})", list(new_user_ids)
+        for user_id, vip_level, last_active_time in master_conn.execute(
+            f"SELECT user_id, vip_level, last_active_time FROM users WHERE user_id IN ({placeholders2})", list(new_user_ids)
         ).fetchall():
+            vip_by_id[user_id] = vip_level
             dt = parse_dt(last_active_time)
             if not dt:
                 continue
@@ -1708,14 +1712,14 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
         end_d = datetime.strptime(end_date_str, "%Y-%m-%d").date()
         return {(end_d - timedelta(days=i)).isoformat() for i in range(days)} & all_dates_set
 
-    overall = _aggregate_games_reports(all_rows, agent_by_user, last_active_label_by_user)
+    overall = _aggregate_games_reports(all_rows, agent_by_user, last_active_label_by_user, vip_by_id)
     by_date, by_week, by_month = {}, {}, {}
     for date_str in all_dates:
-        by_date[date_str] = _aggregate_games_reports(rows_by_date.get(date_str, []), agent_by_user, last_active_label_by_user)
+        by_date[date_str] = _aggregate_games_reports(rows_by_date.get(date_str, []), agent_by_user, last_active_label_by_user, vip_by_id)
         week_rows = [r for d in rolling_window(date_str, 7) for r in rows_by_date.get(d, [])]
-        by_week[date_str] = _aggregate_games_reports(week_rows, agent_by_user, last_active_label_by_user)
+        by_week[date_str] = _aggregate_games_reports(week_rows, agent_by_user, last_active_label_by_user, vip_by_id)
         month_rows = [r for d in rolling_window(date_str, 30) for r in rows_by_date.get(d, [])]
-        by_month[date_str] = _aggregate_games_reports(month_rows, agent_by_user, last_active_label_by_user)
+        by_month[date_str] = _aggregate_games_reports(month_rows, agent_by_user, last_active_label_by_user, vip_by_id)
 
     return {"overall": overall, "by_date": by_date, "by_week": by_week, "by_month": by_month, "dates": all_dates}
 
