@@ -1602,6 +1602,62 @@ def new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, today):
     return {"daily": daily_rows, "retention": retention_rows}
 
 
+def top_games_new_users(daily_conn, deposit_rows, agent_by_user):
+    """Two Platform Analysis reports below New vs Old User Analysis, both
+    scoped to "new" users -- anyone whose FIRST-EVER deposit
+    (is_first_deposit=1) landed within the current 33-day retention window,
+    same population new_vs_old_user_analysis's daily new_ids union to. Both
+    built from bet-only wallet_transactions rows (direction=1, same Bet/Win
+    convention as recent_activity() above; win payouts are excluded since
+    these are spend reports):
+      - "Top Games": per (user, game), total amount wagered on that game.
+      - "Highest Single Bet": for each user, their single largest bet
+        transaction and which game it was on.
+    Capped at ACTION_CENTER_LIST_CAP like the other exploratory Platform
+    Analysis lists (not a definitive/payout list)."""
+    new_user_ids = {
+        user_id
+        for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows
+        if status == "COMPLETE" and user_id is not None and is_first_deposit == 1
+    }
+    if not new_user_ids:
+        return {"top_games": [], "highest_single_bet": []}
+
+    placeholders = ",".join("?" * len(new_user_ids))
+    rows = daily_conn.execute(
+        "SELECT user_id, game_name, change_value FROM wallet_transactions "
+        "WHERE direction = 1 AND game_name IS NOT NULL AND game_name != '' "
+        f"AND user_id IN ({placeholders})",
+        list(new_user_ids),
+    ).fetchall()
+
+    game_totals = defaultdict(float)  # (user_id, game_name) -> total wagered
+    highest_bet = {}  # user_id -> (amount, game_name)
+    for user_id, game_name, change_value in rows:
+        amt = change_value or 0.0
+        game_totals[(user_id, game_name)] += amt
+        if user_id not in highest_bet or amt > highest_bet[user_id][0]:
+            highest_bet[user_id] = (amt, game_name)
+
+    top_games = sorted(
+        (
+            {"user_id": uid, "agent": agent_for(agent_by_user, uid), "game_name": game, "total_bet_amount": round(total, 2)}
+            for (uid, game), total in game_totals.items()
+        ),
+        key=lambda r: -r["total_bet_amount"],
+    )[:ACTION_CENTER_LIST_CAP]
+
+    highest_single_bet = sorted(
+        (
+            {"user_id": uid, "agent": agent_for(agent_by_user, uid), "highest_bet": round(amt, 2), "game_name": game}
+            for uid, (amt, game) in highest_bet.items()
+        ),
+        key=lambda r: -r["highest_bet"],
+    )[:ACTION_CENTER_LIST_CAP]
+
+    return {"top_games": top_games, "highest_single_bet": highest_single_bet}
+
+
 def channel_performance_report(daily_conn, today):
     """Channel acquisition quality, last 4 days combined. Of users whose
     FIRST deposit (is_first_deposit=1) landed in the last 4 calendar days,
@@ -2538,6 +2594,10 @@ def main():
 
     new_old_user_analysis = new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, now.date())
 
+    games_daily_conn = sqlite3.connect(report_daily_db_path)
+    new_users_games = top_games_new_users(games_daily_conn, deposit_rows, agent_by_user)
+    games_daily_conn.close()
+
     # Persist today's per-agent performance, then read back the full rolling
     # window for the Performance page -- small enough (agents x 7 categories
     # x up to 35 days) to ship in full and let the frontend do date-range
@@ -2640,6 +2700,7 @@ def main():
         "bonus_claims_by_week": bonus_claims_by_week,
         "bonus_claims_by_month": bonus_claims_by_month,
         "new_old_user_analysis": new_old_user_analysis,
+        "new_users_games": new_users_games,
         # Distinct real agent names (never includes AGENT_UNASSIGNED) -- powers
         # the Reassign Agent dropdown on the Search User page and the
         # Performance leaderboard.

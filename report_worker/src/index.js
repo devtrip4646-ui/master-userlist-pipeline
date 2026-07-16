@@ -1635,6 +1635,27 @@ if (IS_PLATFORM_ANALYSIS) {
         <div id="new-old-table"></div>
         <div class="ac-pagination" id="new-old-pagination"></div>
       </section>
+
+      <div class="row2col">
+        <section class="acc-blue">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-blue">&#127918;</div><h2>Top Games - New Users</h2></div>
+            <button class="download-btn-sm" id="btn-dl-top-games-new">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Bet-only (excludes win payouts), total wagered per user per game, highest first.</div>
+          <div id="top-games-new-table"></div>
+          <div class="ac-pagination" id="top-games-new-pagination"></div>
+        </section>
+        <section class="acc-orange">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-orange">&#128176;</div><h2>Highest Single Bet - New Users</h2></div>
+            <button class="download-btn-sm" id="btn-dl-highest-bet-new">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">New = users whose first-ever deposit landed within the last 33 days. Each user's single largest bet transaction and which game it was on.</div>
+          <div id="highest-bet-new-table"></div>
+          <div class="ac-pagination" id="highest-bet-new-pagination"></div>
+        </section>
+      </div>
     \`;
 
     // --- Profit Users of the Day ---
@@ -1951,6 +1972,35 @@ if (IS_PLATFORM_ANALYSIS) {
         downloadExcel(newOldRows(), newOldCols(), newOldView === 'daily' ? 'New vs Old Daily' : 'New User Retention', 'new-old-user-analysis-' + newOldView + '.xlsx'));
     } else {
       document.getElementById('new-old-table').innerHTML = '<div class="no-data">No data available yet.</div>';
+    }
+
+    // --- Top Games / Highest Single Bet -- New Users (same "new" population as above) ---
+    const newUsersGames = data.new_users_games || { top_games: [], highest_single_bet: [] };
+    const topGamesCols = [
+      { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
+      { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
+      { label: 'Game Name', render: r => r.game_name, raw: r => r.game_name },
+      { label: 'Total Bet Amount', render: r => money(r.total_bet_amount), raw: r => r.total_bet_amount, num: true },
+    ];
+    const highestBetCols = [
+      { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
+      { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
+      { label: 'Highest Bet', render: r => money(r.highest_bet), raw: r => r.highest_bet, num: true },
+      { label: 'Game Name', render: r => r.game_name, raw: r => r.game_name },
+    ];
+    if (newUsersGames.top_games && newUsersGames.top_games.length) {
+      paginatedTable('top-games-new-table', 'top-games-new-pagination', newUsersGames.top_games, topGamesCols, 10);
+      document.getElementById('btn-dl-top-games-new').addEventListener('click', () =>
+        downloadExcel(newUsersGames.top_games, topGamesCols, 'Top Games - New Users', 'top-games-new-users.xlsx'));
+    } else {
+      document.getElementById('top-games-new-table').innerHTML = '<div class="no-data">No data available yet.</div>';
+    }
+    if (newUsersGames.highest_single_bet && newUsersGames.highest_single_bet.length) {
+      paginatedTable('highest-bet-new-table', 'highest-bet-new-pagination', newUsersGames.highest_single_bet, highestBetCols, 10);
+      document.getElementById('btn-dl-highest-bet-new').addEventListener('click', () =>
+        downloadExcel(newUsersGames.highest_single_bet, highestBetCols, 'Highest Single Bet - New Users', 'highest-single-bet-new-users.xlsx'));
+    } else {
+      document.getElementById('highest-bet-new-table').innerHTML = '<div class="no-data">No data available yet.</div>';
     }
   })();
 }
