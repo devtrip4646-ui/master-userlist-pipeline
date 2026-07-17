@@ -1653,9 +1653,20 @@ def weekly_performance_report(new_old_daily, new_old_retention, today):
     many days have elapsed so far) against the most recent FULLY COMPLETE
     prior week (exactly 7 retained days) -- so the comparison is always
     "this week's pace so far" vs "last week's final result," never two
-    partial weeks against each other. Returns None if there's no current-
-    week data yet or no complete prior week to compare against (e.g. right
-    after the 33-day retention window rolls past a boundary)."""
+    partial weeks against each other.
+
+    On Monday/Tuesday, "current week" instead means the week that JUST
+    ENDED (still shown as a full, final 7-vs-7 report) rather than the
+    brand-new week that's only 1-2 days old -- same "grace period before
+    cutover" idea as weekly_cashback_week_range() above (which holds the
+    display on the just-completed week through Sunday evening), just a
+    2-day window instead of a same-day time cutoff, so admins get Monday
+    and Tuesday to review last week's finished numbers before the section
+    flips to tracking the new week's early pace on Wednesday.
+
+    Returns None if there's no data for the displayed week yet or no
+    complete prior week to compare against (e.g. right after the 33-day
+    retention window rolls past a boundary)."""
     def week_start(date_str):
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         return d - timedelta(days=d.weekday())
@@ -1664,7 +1675,8 @@ def weekly_performance_report(new_old_daily, new_old_retention, today):
     for row in new_old_daily:
         by_week[week_start(row["date"])].append(row)
 
-    current_week_start = today - timedelta(days=today.weekday())
+    real_week_start = today - timedelta(days=today.weekday())
+    current_week_start = real_week_start - timedelta(days=7) if today.weekday() < 2 else real_week_start
     current_week_rows = sorted(by_week.get(current_week_start, []), key=lambda r: r["date"])
     if not current_week_rows:
         return None
