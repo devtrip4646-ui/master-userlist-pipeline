@@ -1542,12 +1542,22 @@ if (IS_PLATFORM_ANALYSIS) {
     // reachable from an agent session, which always gets redirected to its
     // own /agent/<name> page regardless of URL). This client-side prompt
     // was a redundant second gate on top of that.
-    const res = await fetch('/data.json');
+    // Fetched in parallel: /data.json (shared fields also used by other
+    // pages) and /api/platform-analysis.json (the heavier fields exclusive
+    // to this page -- games/bonus/roller/region-vip/weekly-performance --
+    // split into their own file so every OTHER page doesn't have to
+    // download them too; see build_deposit_report.py's
+    // platform_analysis_extra). Merged into one "data" object so every
+    // reference below is unchanged either way.
+    const [res, paRes] = await Promise.all([fetch('/data.json'), fetch('/api/platform-analysis.json')]);
     if (!res.ok) {
       document.getElementById('platform-analysis-app').textContent = 'Failed to load report data (' + res.status + ')';
       return;
     }
     const data = await res.json();
+    if (paRes.ok) {
+      Object.assign(data, await paRes.json());
+    }
     document.getElementById('updated-badge').innerHTML =
       '<span class="dot"></span> Records updated through ' +
       (data.latest_record_time ? new Date(data.latest_record_time).toLocaleString() : 'n/a');
@@ -3887,6 +3897,23 @@ export default {
       const obj = await env.USERLIST_BUCKET.get(key);
       if (!obj) {
         return new Response(JSON.stringify({ error: agentParam ? "Agent report not generated yet" : "Report not generated yet" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(obj.body, {
+        headers: { "content-type": "application/json", "cache-control": "public, max-age=60" },
+      });
+    }
+
+    // Platform Analysis-only data, split out of the main report so every
+    // OTHER page doesn't have to download it (see build_deposit_report.py's
+    // platform_analysis_extra for why). No agent-scoping needed here --
+    // Platform Analysis is admin-only, enforced at the page level above.
+    if (request.method === "GET" && url.pathname === "/api/platform-analysis.json") {
+      const obj = await env.USERLIST_BUCKET.get("reports/platform_analysis.json");
+      if (!obj) {
+        return new Response(JSON.stringify({ error: "Report not generated yet" }), {
           status: 404,
           headers: { "content-type": "application/json" },
         });

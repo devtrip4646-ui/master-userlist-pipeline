@@ -1771,10 +1771,11 @@ def weekly_performance_report(new_old_daily, new_old_retention, today):
     }
 
 
-def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user, vip_by_id):
+def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user, vip_by_id, cap=None):
     """Shared aggregation for top_games_new_users' Overall/Day/Week/Month
     views -- `rows` is a (user_id, game_name, change_value) subset already
-    filtered to the desired date range."""
+    filtered to the desired date range. `cap` truncates the sorted output
+    (used for Week/Month -- see top_games_new_users for why)."""
     game_totals = defaultdict(float)  # (user_id, game_name) -> total wagered
     highest_bet = {}  # user_id -> (amount, game_name)
     for user_id, game_name, change_value in rows:
@@ -1796,7 +1797,7 @@ def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user, vip
             for (uid, game), total in game_totals.items()
         ),
         key=lambda r: -r["total_bet_amount"],
-    )
+    )[:cap]
 
     highest_single_bet = sorted(
         (
@@ -1811,7 +1812,7 @@ def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user, vip
             for uid, (amt, game) in highest_bet.items()
         ),
         key=lambda r: -r["highest_bet"],
-    )
+    )[:cap]
 
     return {"top_games": top_games, "highest_single_bet": highest_single_bet}
 
@@ -1881,14 +1882,23 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
         end_d = datetime.strptime(end_date_str, "%Y-%m-%d").date()
         return {(end_d - timedelta(days=i)).isoformat() for i in range(days)} & all_dates_set
 
+    # Overall and Day are shipped uncapped -- Day view is genuinely bounded
+    # (one calendar day's worth of activity), Overall is the single
+    # headline view. Week/Month are capped at ACTION_CENTER_LIST_CAP:
+    # precomputed for EVERY retained date so the date-switch works
+    # instantly, but adjacent dates' 7/30-day windows heavily overlap, so
+    # uncapped week/month duplicated ~95% of their rows across dates --
+    # measured at 53MB combined (of a 110MB report) before this cap, the
+    # single largest contributor to Platform Analysis failing to load in a
+    # browser tab. Same fix as bonus_claims_by_week/month's claim_details.
     overall = _aggregate_games_reports(all_rows, agent_by_user, last_active_label_by_user, vip_by_id)
     by_date, by_week, by_month = {}, {}, {}
     for date_str in all_dates:
         by_date[date_str] = _aggregate_games_reports(rows_by_date.get(date_str, []), agent_by_user, last_active_label_by_user, vip_by_id)
         week_rows = [r for d in rolling_window(date_str, 7) for r in rows_by_date.get(d, [])]
-        by_week[date_str] = _aggregate_games_reports(week_rows, agent_by_user, last_active_label_by_user, vip_by_id)
+        by_week[date_str] = _aggregate_games_reports(week_rows, agent_by_user, last_active_label_by_user, vip_by_id, cap=ACTION_CENTER_LIST_CAP)
         month_rows = [r for d in rolling_window(date_str, 30) for r in rows_by_date.get(d, [])]
-        by_month[date_str] = _aggregate_games_reports(month_rows, agent_by_user, last_active_label_by_user, vip_by_id)
+        by_month[date_str] = _aggregate_games_reports(month_rows, agent_by_user, last_active_label_by_user, vip_by_id, cap=ACTION_CENTER_LIST_CAP)
 
     return {"overall": overall, "by_date": by_date, "by_week": by_week, "by_month": by_month, "dates": all_dates}
 
@@ -3306,14 +3316,7 @@ def main():
         "channel_performance": channel_performance,
         "suspicious_withdraw_users": suspicious_withdraw,
         "bonus_claims": bonus_claims,
-        "bonus_claims_by_date": bonus_claims_by_date,
-        "bonus_claims_by_week": bonus_claims_by_week,
-        "bonus_claims_by_month": bonus_claims_by_month,
         "new_old_user_analysis": new_old_user_analysis,
-        "weekly_performance": weekly_performance,
-        "new_users_games": new_users_games,
-        "region_vip_depositor_matrix": region_vip_matrix,
-        "roller_reports": roller_reports,
         # Distinct real agent names (never includes AGENT_UNASSIGNED) -- powers
         # the Reassign Agent dropdown on the Search User page and the
         # Performance leaderboard.
@@ -3341,6 +3344,28 @@ def main():
     )
     s3.upload_file(out_path, creds["R2_BUCKET"], "reports/deposit_report.json")
     print(f"Uploaded reports/deposit_report.json -> r2://{creds['R2_BUCKET']}/reports/deposit_report.json")
+
+    # Platform Analysis-only data, split into its own file -- these fields
+    # are never read by Home/Action Center/Performance/Analytics/Search
+    # User (confirmed: every reference to them in report_worker/src/index.js
+    # sits inside the IS_PLATFORM_ANALYSIS block), so bundling them into the
+    # main deposit_report.json forced every OTHER page to download and parse
+    # ~80MB+ of data it never uses. The Platform Analysis page fetches this
+    # as a second request alongside /data.json (see report_worker).
+    platform_analysis_extra = {
+        "bonus_claims_by_date": bonus_claims_by_date,
+        "bonus_claims_by_week": bonus_claims_by_week,
+        "bonus_claims_by_month": bonus_claims_by_month,
+        "weekly_performance": weekly_performance,
+        "new_users_games": new_users_games,
+        "region_vip_depositor_matrix": region_vip_matrix,
+        "roller_reports": roller_reports,
+    }
+    pa_out_path = os.path.join(BASE, "platform_analysis.json")
+    with open(pa_out_path, "w") as f:
+        json.dump(platform_analysis_extra, f)
+    s3.upload_file(pa_out_path, creds["R2_BUCKET"], "reports/platform_analysis.json")
+    print(f"Uploaded reports/platform_analysis.json -> r2://{creds['R2_BUCKET']}/reports/platform_analysis.json ({os.path.getsize(pa_out_path)/1e6:.1f} MB)")
 
     # Per-agent dashboards: small supplementary JSON per real agent (never
     # "Un-Assigned"), for the Home page's aggregate charts and the Analytics
