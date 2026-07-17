@@ -2011,7 +2011,7 @@ if (IS_PLATFORM_ANALYSIS) {
           wsUsers.addRows(detailRows);
         } else if (bonusRange !== 'day') {
           wsUsers.columns = [{ header: 'Note', key: 'note', width: 90 }];
-          wsUsers.addRow({ note: 'Per-user detail is only available for the Day view -- switch to Day to export individual claim rows. Week/Month only ship the category summary (see the Summary sheet) to keep the dashboard\'s report file a manageable size.' });
+          wsUsers.addRow({ note: 'Per-user detail is only available for the Day view -- switch to Day to export individual claim rows. Week/Month only ship the category summary (see the Summary sheet) to keep the report file a manageable size.' });
         }
         styleHeaderRow(wsUsers);
         await saveWorkbook(wb, 'bonus-claims-' + bonusView + '-' + bonusRange + '-' + selectedBonusDate + '.xlsx');
