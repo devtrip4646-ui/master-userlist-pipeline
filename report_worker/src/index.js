@@ -121,6 +121,16 @@ const PAGE = `<!DOCTYPE html>
   .su-pill-red { background: #fee2e2; color: #991b1b; }
   .su-pill-grey { background: #e5e7eb; color: #374151; }
 
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 760px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+  .stat-tile { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; }
+  .stat-tile .st-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; }
+  .stat-tile .st-value { font-size: 22px; font-weight: 800; color: #1f2937; margin: 4px 0 2px; letter-spacing: -0.01em; }
+  .stat-tile .st-delta { font-size: 12px; font-weight: 700; }
+  .stat-tile .st-delta.up { color: #16a34a; }
+  .stat-tile .st-delta.down { color: #dc2626; }
+  .stat-tile .st-delta.flat { color: #9ca3af; }
+
   .reactivation-highlight { display: flex; align-items: baseline; gap: 18px; background: #ecfeff; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; flex-wrap: wrap; }
   .reactivation-highlight .rh-count { font-size: 28px; font-weight: 800; color: #0e7490; letter-spacing: -0.01em; }
   .reactivation-highlight .rh-count small { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #0e7490; margin-left: 6px; }
@@ -1695,6 +1705,19 @@ if (IS_PLATFORM_ANALYSIS) {
         </section>
       </div>
 
+      <div class="analysis-heading deposit"><h2>Weekly Performance</h2><div class="line"></div><span class="today-tag" id="weekly-perf-range-tag">&mdash;</span><span class="tag">PLATFORM</span></div>
+      <section class="acc-blue" id="weekly-perf-section">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-blue">&#128200;</div><h2>This Week vs Last Week</h2></div>
+          <button class="download-btn-sm" id="btn-dl-weekly-perf">&#128190; Excel</button>
+        </div>
+        <div class="ac-note">Current calendar week (Monday-Sunday, however many days have elapsed) vs the most recent FULLY COMPLETE prior week -- same daily data as New vs Old User Analysis below, just compared week-on-week. Read the current week as "pace so far," not a final result until Sunday.</div>
+        <div class="stat-row" id="weekly-perf-stats"></div>
+        <div id="weekly-perf-table" style="margin-top:18px"></div>
+        <div id="weekly-perf-retention" style="margin-top:22px"></div>
+        <div id="weekly-perf-target" style="margin-top:22px"></div>
+      </section>
+
       <div class="analysis-heading deposit"><h2>Region vs VIP Depositor Matrix</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
       <section class="acc-emerald">
         <div class="section-head">
@@ -2030,6 +2053,97 @@ if (IS_PLATFORM_ANALYSIS) {
         downloadExcel(newOldRows(), newOldCols(), newOldView === 'daily' ? 'New vs Old Daily' : 'New User Retention', 'new-old-user-analysis-' + newOldView + '.xlsx'));
     } else {
       document.getElementById('new-old-table').innerHTML = '<div class="no-data">No data available yet.</div>';
+    }
+
+    // --- Weekly Performance: this week (so far) vs last complete week ---
+    const weeklyPerf = data.weekly_performance;
+    function pctDeltaHtml(pct) {
+      if (pct == null) return '<span class="st-delta flat">&mdash;</span>';
+      const cls = pct > 0 ? 'up' : (pct < 0 ? 'down' : 'flat');
+      const arrow = pct > 0 ? '&#9650;' : (pct < 0 ? '&#9660;' : '');
+      return '<span class="st-delta ' + cls + '">' + arrow + ' ' + Math.abs(pct).toFixed(2) + '%</span>';
+    }
+    const WEEKLY_PERF_MONEY_KEYS = new Set([
+      'old_users_avg_deposit', 'new_users_avg_deposit', 'old_users_avg_withdraw', 'new_users_avg_withdraw', 'total_deposit',
+    ]);
+    function weeklyPerfMetricValue(v, key) {
+      return WEEKLY_PERF_MONEY_KEYS.has(key) ? money(v) : fmt(Math.round(v * 100) / 100);
+    }
+    if (weeklyPerf) {
+      document.getElementById('weekly-perf-range-tag').textContent =
+        shortDate(weeklyPerf.prior_week_start) + '-' + shortDate(weeklyPerf.prior_week_end) + ' vs ' +
+        shortDate(weeklyPerf.current_week_start) + '-' + shortDate(weeklyPerf.current_week_end) + ' (' + weeklyPerf.current_week_days + 'd so far)';
+
+      const headline = ['old_users_count', 'new_users_count', 'total_deposit', 'total_depositor_count'];
+      const byKey = {};
+      weeklyPerf.comparison.forEach(r => { byKey[r.key] = r; });
+      document.getElementById('weekly-perf-stats').innerHTML = headline.map(k => {
+        const r = byKey[k];
+        return '<div class="stat-tile"><div class="st-label">' + r.metric + '</div>' +
+          '<div class="st-value">' + weeklyPerfMetricValue(r.current, k) + '</div>' +
+          pctDeltaHtml(r.pct_change) + '</div>';
+      }).join('');
+
+      let tableHtml = '<div class="table-wrap"><table><thead><tr><th>Metric</th><th class="num">Last Week (7d avg)</th>' +
+        '<th class="num">This Week (' + weeklyPerf.current_week_days + 'd avg)</th><th class="num">Change</th><th class="num">% Change</th></tr></thead><tbody>';
+      weeklyPerf.comparison.forEach(r => {
+        const deltaCls = r.pct_change > 0 ? 'up' : (r.pct_change < 0 ? 'down' : 'flat');
+        tableHtml += '<tr><td>' + r.metric + '</td>' +
+          '<td class="num">' + weeklyPerfMetricValue(r.prior, r.key) + '</td>' +
+          '<td class="num">' + weeklyPerfMetricValue(r.current, r.key) + '</td>' +
+          '<td class="num"><span class="st-delta ' + deltaCls + '">' + (r.change > 0 ? '+' : '') + weeklyPerfMetricValue(r.change, r.key) + '</span></td>' +
+          '<td class="num">' + pctDeltaHtml(r.pct_change) + '</td></tr>';
+      });
+      tableHtml += '</tbody></table></div>';
+      document.getElementById('weekly-perf-table').innerHTML = tableHtml;
+
+      document.getElementById('btn-dl-weekly-perf').onclick = () => {
+        const cols = [
+          { label: 'Metric', render: r => r.metric, raw: r => r.metric },
+          { label: 'Last Week (7d avg)', render: r => r.prior, raw: r => r.prior, num: true },
+          { label: 'This Week (' + weeklyPerf.current_week_days + 'd avg)', render: r => r.current, raw: r => r.current, num: true },
+          { label: 'Change', render: r => r.change, raw: r => r.change, num: true },
+          { label: '% Change', render: r => r.pct_change, raw: r => r.pct_change, num: true },
+        ];
+        downloadExcel(weeklyPerf.comparison, cols, 'Weekly Performance', 'weekly-performance-' + weeklyPerf.current_week_start + '.xlsx');
+      };
+
+      const rc = weeklyPerf.retention_comparison;
+      if (rc.prior || rc.current) {
+        let retHtml = '<h3 style="font-size:14px;margin:0 0 10px">New User 3-Day Retention</h3>' +
+          '<div class="ac-note" style="margin-bottom:12px">Only cohorts with a fully-elapsed 3-day window are included -- the current week may show fewer cohorts than days elapsed.</div>' +
+          '<div class="table-wrap"><table><thead><tr><th>Metric</th><th class="num">Last Week</th><th class="num">This Week</th></tr></thead><tbody>';
+        const p = rc.prior || {}, c = rc.current || {};
+        retHtml += '<tr><td>Cohorts Included</td><td class="num">' + (p.cohorts_included ?? '&mdash;') + '</td><td class="num">' + (c.cohorts_included ?? '&mdash;') + '</td></tr>';
+        retHtml += '<tr><td>Avg New Users / Cohort</td><td class="num">' + (p.new_users_avg ?? '&mdash;') + '</td><td class="num">' + (c.new_users_avg ?? '&mdash;') + '</td></tr>';
+        retHtml += '<tr><td>Withdrew, then Redeposited %</td><td class="num">' + (p.withdrew_retention_pct != null ? p.withdrew_retention_pct + '%' : '&mdash;') + '</td><td class="num">' + (c.withdrew_retention_pct != null ? c.withdrew_retention_pct + '%' : '&mdash;') + '</td></tr>';
+        retHtml += '<tr><td>Never Withdrew, then Redeposited %</td><td class="num">' + (p.never_withdrew_retention_pct != null ? p.never_withdrew_retention_pct + '%' : '&mdash;') + '</td><td class="num">' + (c.never_withdrew_retention_pct != null ? c.never_withdrew_retention_pct + '%' : '&mdash;') + '</td></tr>';
+        retHtml += '</tbody></table></div>';
+        document.getElementById('weekly-perf-retention').innerHTML = retHtml;
+      }
+
+      if (weeklyPerf.target && weeklyPerf.target.length) {
+        let targetHtml = '<h3 style="font-size:14px;margin:0 0 10px">Target vs Actual -- Week of ' + shortDate(weeklyPerf.current_week_start) + '-' + shortDate(weeklyPerf.current_week_end) + '</h3>' +
+          '<div class="ac-note" style="margin-bottom:12px">Actual is the ' + weeklyPerf.current_week_days + '-day average so far -- a pace read, not a final score until the week ends.</div>' +
+          '<div class="table-wrap"><table><thead><tr><th>Metric</th><th class="num">Target</th><th class="num">Actual</th><th class="num">Variance</th><th class="num">% of Target</th><th>Status</th></tr></thead><tbody>';
+        weeklyPerf.target.forEach(t => {
+          const isMoney = WEEKLY_PERF_MONEY_KEYS.has(t.key);
+          const pillCls = t.status === 'MET' ? 'su-pill-green' : 'su-pill-amber';
+          targetHtml += '<tr><td>' + t.metric + '</td>' +
+            '<td class="num">' + (isMoney ? money(t.target) : fmt(t.target)) + '</td>' +
+            '<td class="num">' + (isMoney ? money(t.actual) : fmt(t.actual)) + '</td>' +
+            '<td class="num">' + (t.variance > 0 ? '+' : '') + (isMoney ? money(t.variance) : fmt(t.variance)) + '</td>' +
+            '<td class="num">' + t.pct_of_target + '%</td>' +
+            '<td><span class="su-pill ' + pillCls + '">' + t.status + '</span></td></tr>';
+        });
+        targetHtml += '</tbody></table></div>';
+        document.getElementById('weekly-perf-target').innerHTML = targetHtml;
+      } else {
+        document.getElementById('weekly-perf-target').innerHTML = '';
+      }
+    } else {
+      document.getElementById('weekly-perf-section').innerHTML = '<div class="no-data">Not enough data yet -- need at least one fully complete prior week to compare against.</div>';
+      document.getElementById('weekly-perf-range-tag').textContent = 'No data';
     }
 
     // --- Top Games / Highest Single Bet -- New Users (same "new" population as above) ---

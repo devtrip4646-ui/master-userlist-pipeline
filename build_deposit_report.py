@@ -1602,6 +1602,149 @@ def new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, today):
     return {"daily": daily_rows, "retention": retention_rows}
 
 
+# Weekly Performance section (Platform Analysis, above Region vs VIP
+# Depositor Matrix): Target vs Actual only renders while the CURRENT
+# calendar week (Monday start) matches WEEKLY_TARGET_WEEK_START below --
+# these target figures are a manual business decision (see "Weekly Data
+# Comparison & Target" workbook's Target sheet), not derived from data, and
+# must be updated by hand each week a new target is set, same cadence as
+# the workbook itself. When the current week moves past this date without
+# an update, the section simply stops showing a target (rather than
+# comparing against a stale one) until refreshed.
+WEEKLY_TARGET_WEEK_START = "2026-07-13"
+WEEKLY_TARGET_VALUES = {
+    "old_users_count": 1800.0,
+    "old_users_avg_deposit": 1900.0,
+    "total_deposit": 3900000.0,
+    "total_depositor_count": 1900.0,
+}
+WEEKLY_TARGET_LABELS = {
+    "old_users_count": "Old Users Count",
+    "old_users_avg_deposit": "Avg Deposit of Old Users",
+    "total_deposit": "Avg Total Deposit (Day)",
+    "total_depositor_count": "Total Depositor Count (Day)",
+}
+
+_WEEKLY_PERF_METRIC_KEYS = [
+    "old_users_count", "new_users_count", "old_users_avg_deposit", "new_users_avg_deposit",
+    "old_users_withdraw_count", "old_users_avg_withdraw", "new_users_withdraw_count",
+    "new_users_avg_withdraw", "total_deposit", "total_depositor_count",
+]
+_WEEKLY_PERF_METRIC_LABELS = {
+    "old_users_count": "Old Users Count",
+    "new_users_count": "New Users Count",
+    "old_users_avg_deposit": "Avg Deposit — Old Users",
+    "new_users_avg_deposit": "Avg Deposit — New Users",
+    "old_users_withdraw_count": "Old Users Withdraw Count",
+    "old_users_avg_withdraw": "Avg Withdraw — Old Users",
+    "new_users_withdraw_count": "New Users Withdraw Count",
+    "new_users_avg_withdraw": "Avg Withdraw — New Users",
+    "total_deposit": "Total Deposit (Day)",
+    "total_depositor_count": "Total Depositor Count (Day)",
+}
+
+
+def weekly_performance_report(new_old_daily, new_old_retention, today):
+    """Live week-on-week performance section -- mirrors the recurring
+    "Weekly Data Comparison & Target" Excel report's Week-on-Week +
+    Target vs Actual sheets, computed fresh from the SAME daily new/old
+    rows already powering New vs Old User Analysis above (no extra
+    queries). Compares the CURRENT calendar week (Monday-Sunday, however
+    many days have elapsed so far) against the most recent FULLY COMPLETE
+    prior week (exactly 7 retained days) -- so the comparison is always
+    "this week's pace so far" vs "last week's final result," never two
+    partial weeks against each other. Returns None if there's no current-
+    week data yet or no complete prior week to compare against (e.g. right
+    after the 33-day retention window rolls past a boundary)."""
+    def week_start(date_str):
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        return d - timedelta(days=d.weekday())
+
+    by_week = defaultdict(list)
+    for row in new_old_daily:
+        by_week[week_start(row["date"])].append(row)
+
+    current_week_start = today - timedelta(days=today.weekday())
+    current_week_rows = sorted(by_week.get(current_week_start, []), key=lambda r: r["date"])
+    if not current_week_rows:
+        return None
+
+    prior_week_start = next(
+        (ws for ws in sorted(by_week.keys(), reverse=True) if ws < current_week_start and len(by_week[ws]) == 7),
+        None,
+    )
+    if prior_week_start is None:
+        return None
+    prior_week_rows = sorted(by_week[prior_week_start], key=lambda r: r["date"])
+
+    def week_avg(rows):
+        return {k: round(sum(r[k] for r in rows) / len(rows), 2) for k in _WEEKLY_PERF_METRIC_KEYS}
+
+    prior_avg = week_avg(prior_week_rows)
+    current_avg = week_avg(current_week_rows)
+
+    comparison = []
+    for k in _WEEKLY_PERF_METRIC_KEYS:
+        change = round(current_avg[k] - prior_avg[k], 2)
+        pct_change = round(change / prior_avg[k] * 100, 2) if prior_avg[k] else None
+        comparison.append({
+            "metric": _WEEKLY_PERF_METRIC_LABELS[k],
+            "key": k,
+            "prior": prior_avg[k],
+            "current": current_avg[k],
+            "change": change,
+            "pct_change": pct_change,
+        })
+
+    ret_by_date = {r["date"]: r for r in new_old_retention}
+
+    def retention_week_avg(rows):
+        dates = [r["date"] for r in rows if r["date"] in ret_by_date]
+        if not dates:
+            return None
+        withdrew_vals = [ret_by_date[d]["withdrew_group_retention_pct"] for d in dates if ret_by_date[d]["withdrew_group_retention_pct"] is not None]
+        never_vals = [ret_by_date[d]["never_withdrew_group_retention_pct"] for d in dates if ret_by_date[d]["never_withdrew_group_retention_pct"] is not None]
+        return {
+            "cohorts_included": len(dates),
+            "new_users_avg": round(sum(ret_by_date[d]["new_users"] for d in dates) / len(dates), 2),
+            "withdrew_retention_pct": round(sum(withdrew_vals) / len(withdrew_vals), 2) if withdrew_vals else None,
+            "never_withdrew_retention_pct": round(sum(never_vals) / len(never_vals), 2) if never_vals else None,
+        }
+
+    retention_comparison = {
+        "prior": retention_week_avg(prior_week_rows),
+        "current": retention_week_avg(current_week_rows),
+    }
+
+    target = None
+    if current_week_start.isoformat() == WEEKLY_TARGET_WEEK_START:
+        target = []
+        for k, t in WEEKLY_TARGET_VALUES.items():
+            actual = current_avg[k]
+            pct = round(actual / t * 100, 2) if t else None
+            target.append({
+                "metric": WEEKLY_TARGET_LABELS[k],
+                "key": k,
+                "target": t,
+                "actual": actual,
+                "variance": round(actual - t, 2),
+                "pct_of_target": pct,
+                "status": "MET" if pct is not None and pct >= 100 else "BEHIND",
+            })
+
+    return {
+        "prior_week_start": prior_week_start.isoformat(),
+        "prior_week_end": (prior_week_start + timedelta(days=6)).isoformat(),
+        "prior_week_days": len(prior_week_rows),
+        "current_week_start": current_week_start.isoformat(),
+        "current_week_end": (current_week_start + timedelta(days=6)).isoformat(),
+        "current_week_days": len(current_week_rows),
+        "comparison": comparison,
+        "retention_comparison": retention_comparison,
+        "target": target,
+    }
+
+
 def _aggregate_games_reports(rows, agent_by_user, last_active_label_by_user, vip_by_id):
     """Shared aggregation for top_games_new_users' Overall/Day/Week/Month
     views -- `rows` is a (user_id, game_name, change_value) subset already
@@ -2962,6 +3105,7 @@ def main():
         bonus_claims_by_month[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, month_dcb_rows, month_dates, agent_by_user)
 
     new_old_user_analysis = new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, now.date())
+    weekly_performance = weekly_performance_report(new_old_user_analysis["daily"], new_old_user_analysis["retention"], now.date())
 
     games_daily_conn = sqlite3.connect(report_daily_db_path)
     games_master_conn = sqlite3.connect(report_master_db_path) if report_master_db_path else None
@@ -3082,6 +3226,7 @@ def main():
         "bonus_claims_by_week": bonus_claims_by_week,
         "bonus_claims_by_month": bonus_claims_by_month,
         "new_old_user_analysis": new_old_user_analysis,
+        "weekly_performance": weekly_performance,
         "new_users_games": new_users_games,
         "region_vip_depositor_matrix": region_vip_matrix,
         "roller_reports": roller_reports,
