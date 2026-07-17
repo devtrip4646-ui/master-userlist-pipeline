@@ -1713,7 +1713,12 @@ if (IS_PLATFORM_ANALYSIS) {
         </div>
         <div class="ac-note">Current calendar week (Monday-Sunday, however many days have elapsed) vs the most recent FULLY COMPLETE prior week -- same daily data as New vs Old User Analysis below, just compared week-on-week. Read the current week as "pace so far," not a final result until Sunday.</div>
         <div class="stat-row" id="weekly-perf-stats"></div>
-        <div id="weekly-perf-table" style="margin-top:18px"></div>
+        <div class="date-switch" id="weekly-perf-view-switch" style="margin-top:18px">
+          <button data-view="wow" class="active">Week-on-Week</button>
+          <button data-view="daywise">Day-wise</button>
+        </div>
+        <div id="weekly-perf-table"></div>
+        <div id="weekly-perf-daywise" style="display:none"></div>
         <div id="weekly-perf-retention" style="margin-top:22px"></div>
         <div id="weekly-perf-target" style="margin-top:22px"></div>
       </section>
@@ -2097,15 +2102,66 @@ if (IS_PLATFORM_ANALYSIS) {
       tableHtml += '</tbody></table></div>';
       document.getElementById('weekly-perf-table').innerHTML = tableHtml;
 
-      document.getElementById('btn-dl-weekly-perf').onclick = () => {
-        const cols = [
-          { label: 'Metric', render: r => r.metric, raw: r => r.metric },
-          { label: 'Last Week (7d avg)', render: r => r.prior, raw: r => r.prior, num: true },
-          { label: 'This Week (' + weeklyPerf.current_week_days + 'd avg)', render: r => r.current, raw: r => r.current, num: true },
-          { label: 'Change', render: r => r.change, raw: r => r.change, num: true },
-          { label: '% Change', render: r => r.pct_change, raw: r => r.pct_change, num: true },
+      // Day-wise tab: every individual day from both weeks (prior week's
+      // full 7 + however many of the current week have completed), same
+      // rows New vs Old User Analysis already has -- just filtered to
+      // these two week ranges and labeled which week each belongs to.
+      const dwInRange = (dateStr, start, end) => dateStr >= start && dateStr <= end;
+      const dayWiseRows = (newOldAnalysis.daily || [])
+        .filter(r => dwInRange(r.date, weeklyPerf.prior_week_start, weeklyPerf.prior_week_end) || dwInRange(r.date, weeklyPerf.current_week_start, weeklyPerf.current_week_end))
+        .map(r => Object.assign({ week: dwInRange(r.date, weeklyPerf.prior_week_start, weeklyPerf.prior_week_end) ? 'Last Week' : 'This Week' }, r))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const dayWiseCols = [
+        { label: 'Week', render: r => r.week, raw: r => r.week },
+        { label: 'Date', render: r => shortDate(r.date), raw: r => r.date },
+        { label: 'Old Users Count', render: r => fmt(r.old_users_count), raw: r => r.old_users_count, num: true },
+        { label: 'Avg Deposit of Old Users', render: r => money(r.old_users_avg_deposit), raw: r => r.old_users_avg_deposit, num: true },
+        { label: 'New Users Count', render: r => fmt(r.new_users_count), raw: r => r.new_users_count, num: true },
+        { label: 'Avg Deposit of New Users', render: r => money(r.new_users_avg_deposit), raw: r => r.new_users_avg_deposit, num: true },
+        { label: 'Old Users (Withdrew)', render: r => fmt(r.old_users_withdraw_count), raw: r => r.old_users_withdraw_count, num: true },
+        { label: 'Avg Withdraw - Old Users', render: r => money(r.old_users_avg_withdraw), raw: r => r.old_users_avg_withdraw, num: true },
+        { label: 'New Users (Withdrew)', render: r => fmt(r.new_users_withdraw_count), raw: r => r.new_users_withdraw_count, num: true },
+        { label: 'Avg Withdraw - New Users', render: r => money(r.new_users_avg_withdraw), raw: r => r.new_users_avg_withdraw, num: true },
+        { label: 'Total Deposit (Day)', render: r => money(r.total_deposit), raw: r => r.total_deposit, num: true },
+        { label: 'Total Depositor Count (Day)', render: r => fmt(r.total_depositor_count), raw: r => r.total_depositor_count, num: true },
+      ];
+      let dwHtml = '<div class="ac-note" style="margin-bottom:12px">Every retained day from both weeks -- Last Week is always the full 7 days, This Week is however many have fully completed so far.</div>';
+      dwHtml += '<div class="table-wrap"><table><thead><tr>' + dayWiseCols.map(c => '<th' + (c.num ? ' class="num"' : '') + '>' + c.label + '</th>').join('') + '</tr></thead><tbody>';
+      dayWiseRows.forEach(r => {
+        dwHtml += '<tr>' + dayWiseCols.map(c => '<td' + (c.num ? ' class="num"' : '') + '>' + c.render(r) + '</td>').join('') + '</tr>';
+      });
+      dwHtml += '</tbody></table></div>';
+      document.getElementById('weekly-perf-daywise').innerHTML = dwHtml;
+
+      document.querySelectorAll('#weekly-perf-view-switch button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#weekly-perf-view-switch button').forEach(b => b.classList.toggle('active', b === btn));
+          const showDaywise = btn.dataset.view === 'daywise';
+          document.getElementById('weekly-perf-table').style.display = showDaywise ? 'none' : '';
+          document.getElementById('weekly-perf-daywise').style.display = showDaywise ? '' : 'none';
+        });
+      });
+
+      document.getElementById('btn-dl-weekly-perf').onclick = async () => {
+        const wowCols = [
+          { label: 'Metric', raw: r => r.metric },
+          { label: 'Last Week (7d avg)', raw: r => r.prior },
+          { label: 'This Week (' + weeklyPerf.current_week_days + 'd avg)', raw: r => r.current },
+          { label: 'Change', raw: r => r.change },
+          { label: '% Change', raw: r => r.pct_change },
         ];
-        downloadExcel(weeklyPerf.comparison, cols, 'Weekly Performance', 'weekly-performance-' + weeklyPerf.current_week_start + '.xlsx');
+        const wb = new ExcelJS.Workbook();
+        const ws1 = wb.addWorksheet('Week-on-Week');
+        ws1.columns = wowCols.map(c => ({ header: c.label, key: c.label, width: 24 }));
+        ws1.addRows(weeklyPerf.comparison.map(r => wowCols.reduce((o, c) => { o[c.label] = c.raw(r); return o; }, {})));
+        styleHeaderRow(ws1);
+
+        const ws2 = wb.addWorksheet('Day-wise');
+        ws2.columns = dayWiseCols.map(c => ({ header: c.label, key: c.label, width: c.label === 'Date' ? 14 : 20 }));
+        ws2.addRows(dayWiseRows.map(r => dayWiseCols.reduce((o, c) => { o[c.label] = c.raw(r); return o; }, {})));
+        styleHeaderRow(ws2);
+
+        await saveWorkbook(wb, 'weekly-performance-' + weeklyPerf.current_week_start + '.xlsx');
       };
 
       const rc = weeklyPerf.retention_comparison;
