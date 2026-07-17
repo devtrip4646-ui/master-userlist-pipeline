@@ -3159,6 +3159,19 @@ def main():
         end_d = datetime.strptime(end_date_str, "%Y-%m-%d").date()
         return {(end_d - timedelta(days=i)).isoformat() for i in range(days)} & all_dates_set
 
+    # Week/Month bonus claims are precomputed for EVERY retained date (so the
+    # date-switch buttons can show any date instantly) -- but each date's
+    # 7/30-day window heavily overlaps the next date's, so the per-instance
+    # claim_details lists were duplicating ~97% of their rows across
+    # adjacent dates. Confirmed via measurement: wallet_claim_details alone
+    # was 171MB of a 401MB report (month view) plus another ~107MB in the
+    # week view, making the dashboard's main JSON too large to reliably
+    # parse in a browser tab. The on-screen table only ever reads the
+    # category-level summary rows (wallet_bonuses/deposit_challenge_bonuses)
+    # regardless of range -- per-instance detail is only used by the Day
+    # view's Excel export -- so Week/Month strip the detail lists here and
+    # keep only the summary, cutting the report back to a safe size. Day
+    # view (bonus_claims_by_date, below) is untouched and keeps full detail.
     bonus_claims_by_week = {}
     bonus_claims_by_month = {}
     for date_str in all_dates:
@@ -3166,8 +3179,14 @@ def main():
         month_dates = rolling_window(date_str, 30)
         week_dcb_rows = [r for d in week_dates for r in dcb_rows_by_date.get(d, [])]
         month_dcb_rows = [r for d in month_dates for r in dcb_rows_by_date.get(d, [])]
-        bonus_claims_by_week[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, week_dcb_rows, week_dates, agent_by_user)
-        bonus_claims_by_month[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, month_dcb_rows, month_dates, agent_by_user)
+        week_report = bonus_claim_report(bonus_rows_all, deposit_rows, week_dcb_rows, week_dates, agent_by_user)
+        month_report = bonus_claim_report(bonus_rows_all, deposit_rows, month_dcb_rows, month_dates, agent_by_user)
+        week_report["wallet_claim_details"] = []
+        week_report["deposit_challenge_bonus_claim_details"] = []
+        month_report["wallet_claim_details"] = []
+        month_report["deposit_challenge_bonus_claim_details"] = []
+        bonus_claims_by_week[date_str] = week_report
+        bonus_claims_by_month[date_str] = month_report
 
     new_old_user_analysis = new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, now.date())
     weekly_performance = weekly_performance_report(new_old_user_analysis["daily"], new_old_user_analysis["retention"], now.date())
