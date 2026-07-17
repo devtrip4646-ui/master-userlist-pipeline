@@ -1664,6 +1664,12 @@ def weekly_performance_report(new_old_daily, new_old_retention, today):
     and Tuesday to review last week's finished numbers before the section
     flips to tracking the new week's early pace on Wednesday.
 
+    "However many days have elapsed" always excludes today itself -- today
+    is still accumulating deposits with every hourly pipeline run, so a
+    partial day would understate the average next to fully-finished prior
+    days. The current week's average is only ever built from yesterday
+    backwards.
+
     Returns None if there's no data for the displayed week yet or no
     complete prior week to compare against (e.g. right after the 33-day
     retention window rolls past a boundary)."""
@@ -1677,7 +1683,15 @@ def weekly_performance_report(new_old_daily, new_old_retention, today):
 
     real_week_start = today - timedelta(days=today.weekday())
     current_week_start = real_week_start - timedelta(days=7) if today.weekday() < 2 else real_week_start
-    current_week_rows = sorted(by_week.get(current_week_start, []), key=lambda r: r["date"])
+    # Exclude today itself -- it's still accumulating deposits with every
+    # hourly pipeline run, so a partial "today" would understate the
+    # average next to fully-finished prior days. Only matters during
+    # normal (Wed-Sun) tracking; during the Mon/Tue grace period above,
+    # current_week_start is already last week and today can't appear in it.
+    current_week_rows = sorted(
+        (r for r in by_week.get(current_week_start, []) if r["date"] < today.isoformat()),
+        key=lambda r: r["date"],
+    )
     if not current_week_rows:
         return None
 
