@@ -2455,45 +2455,84 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
     the Day view, or a rolling 7/30-day window for the Week/Month views
     (see bonus_claims_by_week/bonus_claims_by_month in main()). Using a set
     keeps "claimed users" a true distinct count across the whole window
-    rather than a sum-of-daily-counts that double-counts repeat claimers."""
+    rather than a sum-of-daily-counts that double-counts repeat claimers.
+
+    "Deposited After" (wallet bonuses only -- these have a real claim
+    create_time; Deposit Challenge Bonus rows only carry an fd_date, no
+    claim timestamp, so they keep the same-day check below) means a
+    COMPLETE deposit strictly AFTER that specific claim's own timestamp,
+    not merely a deposit on the same calendar date -- a user who deposited
+    at 9am and claimed a bonus at 6pm the same day did NOT convert off
+    that bonus, even though both events fall on the same target date. The
+    per-category aggregate measures this once per user, against their
+    EARLIEST claim of that category in the window, so a user who re-claims
+    the same category more than once in a Week/Month view doesn't get the
+    same later deposit counted as "converted" multiple times over."""
     target_dates = set(target_dates)
 
+    # Same-day totals -- still used for Deposit Challenge Bonus below,
+    # which has no per-claim timestamp to compare against.
     today_deposit_amount = defaultdict(float)
+    # Individual timestamped COMPLETE deposits on target_dates, per user --
+    # lets wallet bonus claims check for deposits strictly AFTER their own
+    # claim time instead of just "any deposit that calendar day."
+    deposits_by_user = defaultdict(list)
     for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
         if status != "COMPLETE" or user_id is None or not create_time:
             continue
         if str(create_time)[:10] in target_dates:
             today_deposit_amount[user_id] += order_amount or 0.0
+            dt = parse_dt(create_time)
+            if dt:
+                deposits_by_user[user_id].append((dt, order_amount or 0.0))
     today_depositors = set(today_deposit_amount.keys())
 
+    def deposit_total_after(user_id, claim_dt):
+        if claim_dt is None:
+            return 0.0
+        return sum(amt for dt, amt in deposits_by_user.get(user_id, []) if dt > claim_dt)
 
-    by_category = defaultdict(lambda: {"users": set(), "value": 0.0})
-    wallet_claim_details = []
+    filtered_claims = []
     for matched_category, user_id, change_value, create_time in bonus_rows_all:
         if not matched_category or not create_time or str(create_time)[:10] not in target_dates:
             continue
+        filtered_claims.append((matched_category, user_id, change_value or 0.0, create_time, parse_dt(create_time)))
+
+    by_category = defaultdict(lambda: {"users": set(), "value": 0.0})
+    earliest_claim = {}  # (category, user_id) -> earliest claim_dt in this window
+    wallet_claim_details = []
+    for matched_category, user_id, change_value, create_time, claim_dt in filtered_claims:
         b = by_category[matched_category]
         b["users"].add(user_id)
-        b["value"] += change_value or 0.0
-        converted = user_id in today_depositors
+        b["value"] += change_value
+        key = (matched_category, user_id)
+        if claim_dt is not None and (key not in earliest_claim or claim_dt < earliest_claim[key]):
+            earliest_claim[key] = claim_dt
+
+        after_amount = deposit_total_after(user_id, claim_dt)
+        converted = after_amount > 0
         wallet_claim_details.append({
             "user_id": user_id,
             "agent": agent_for(agent_by_user, user_id),
             "bonus_category": matched_category,
-            "bonus_amount": round(change_value or 0.0, 2),
+            "bonus_amount": round(change_value, 2),
             "claimed_time": str(create_time),
             "deposited_after": "Yes" if converted else "No",
-            "deposit_amount": round(today_deposit_amount[user_id], 2) if converted else 0.0,
+            "deposit_amount": round(after_amount, 2) if converted else 0.0,
         })
     wallet_claim_details.sort(key=lambda r: r["claimed_time"])
 
-    def build_rows(groups):
+    def build_rows(groups, use_claim_time=False):
         rows = []
         for category, b in groups.items():
             claimed_users = len(b["users"])
-            converted_users = b["users"] & today_depositors
+            if use_claim_time:
+                converted_users = [u for u in b["users"] if deposit_total_after(u, earliest_claim.get((category, u))) > 0]
+                deposit_amount = sum(deposit_total_after(u, earliest_claim.get((category, u))) for u in converted_users)
+            else:
+                converted_users = b["users"] & today_depositors
+                deposit_amount = sum(today_deposit_amount[u] for u in converted_users)
             converted = len(converted_users)
-            deposit_amount = sum(today_deposit_amount[u] for u in converted_users)
             rows.append({
                 "bonus_category": category,
                 "claimed_users": claimed_users,
@@ -2523,7 +2562,7 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
     ]
 
     return {
-        "wallet_bonuses": build_rows(by_category),
+        "wallet_bonuses": build_rows(by_category, use_claim_time=True),
         "deposit_challenge_bonuses": build_rows(dcb_groups),
         "wallet_claim_details": wallet_claim_details,
         "deposit_challenge_bonus_claim_details": dcb_claim_details,
