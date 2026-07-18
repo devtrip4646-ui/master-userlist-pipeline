@@ -752,7 +752,7 @@ if (IS_ACTION_CENTER) {
       <div class="row2col">
         <section class="acc-blue">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-blue">&#127881;</div><h2>Yesterday First Deposit Users</h2></div>
+            <div class="sec-title"><div class="badge b-blue">&#127881;</div><h2>Yesterday First Deposit Users</h2><span class="today-tag">\${acx.yesterday_first_deposit_users.length.toLocaleString('en-IN')}</span></div>
             <button class="download-btn-sm" id="btn-dl-new-users">&#128190; Excel</button>
           </div>
           <div class="ac-note">Flagged by the source system's own first-deposit marker &middot; \${acx.yesterday_first_deposit_users.length.toLocaleString('en-IN')} users</div>
@@ -761,7 +761,7 @@ if (IS_ACTION_CENTER) {
         </section>
         <section class="acc-cyan">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-cyan">&#127942;</div><h2>No-Return First Deposit Users</h2></div>
+            <div class="sec-title"><div class="badge b-cyan">&#127942;</div><h2>No-Return First Deposit Users</h2><span class="today-tag">\${acx.no_return_fd_users.length.toLocaleString('en-IN')}</span></div>
             <button class="download-btn-sm" id="btn-dl-bonus">&#128190; Excel</button>
           </div>
           <div class="ac-note">First deposit 2-5 days ago, no deposit since &middot; \${acx.no_return_fd_users.length.toLocaleString('en-IN')} users</div>
@@ -771,33 +771,11 @@ if (IS_ACTION_CENTER) {
       </div>
       \` : ''}
 
-      <div class="analysis-heading deposit"><h2>VIP Near Upgrade</h2><div class="line"></div><span class="tag">ACTION CENTER</span></div>
-      <div class="row2col">
-        <section class="acc-purple">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-purple">&#11014;&#65039;</div><h2>Low - VIP Near Upgrade</h2></div>
-            <button class="download-btn-sm" id="btn-dl-near-low">&#128190; Excel</button>
-          </div>
-          <div class="ac-note">\${ac.near_upgrade_low.note} &middot; showing top \${ac.near_upgrade_low.total_matching.toLocaleString('en-IN')} matching, sorted closest-first</div>
-          <div id="near-low-table"></div>
-          <div class="ac-pagination" id="near-low-pagination"></div>
-        </section>
-        <section class="acc-purple">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-purple">&#11014;&#65039;</div><h2>High - VIP Near Upgrade</h2></div>
-            <button class="download-btn-sm" id="btn-dl-near-high">&#128190; Excel</button>
-          </div>
-          <div class="ac-note">\${ac.near_upgrade_high.note} &middot; showing top \${ac.near_upgrade_high.total_matching.toLocaleString('en-IN')} matching, sorted closest-first</div>
-          <div id="near-high-table"></div>
-          <div class="ac-pagination" id="near-high-pagination"></div>
-        </section>
-      </div>
-
       <div class="analysis-heading withdrawal"><h2>Inactive Users</h2><div class="line"></div><span class="tag">ACTION CENTER</span></div>
       <div class="row2col">
         <section class="acc-rose">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-rose">&#128564;</div><h2>Inactive Users - High</h2></div>
+            <div class="sec-title"><div class="badge b-rose">&#128564;</div><h2>Inactive Users - High</h2><span class="today-tag">\${ac.inactive_high.total_matching.toLocaleString('en-IN')}</span></div>
             <button class="download-btn-sm" id="btn-dl-inactive-high">&#128190; Excel</button>
           </div>
           <div class="ac-note">\${ac.inactive_high.note} &middot; showing top \${ac.inactive_high.total_matching.toLocaleString('en-IN')} matching, most-inactive-first</div>
@@ -806,7 +784,7 @@ if (IS_ACTION_CENTER) {
         </section>
         <section class="acc-rose">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-rose">&#128564;</div><h2>Inactive Users - Low</h2></div>
+            <div class="sec-title"><div class="badge b-rose">&#128564;</div><h2>Inactive Users - Low</h2><span class="today-tag">\${ac.inactive_low.total_matching.toLocaleString('en-IN')}</span></div>
             <button class="download-btn-sm" id="btn-dl-inactive-low">&#128190; Excel</button>
           </div>
           <div class="ac-note">\${ac.inactive_low.note} &middot; showing top \${ac.inactive_low.total_matching.toLocaleString('en-IN')} matching, most-inactive-first</div>
@@ -819,7 +797,7 @@ if (IS_ACTION_CENTER) {
       <div class="row2col">
         <section class="acc-cyan">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-cyan">&#9989;</div><h2>Low - Active Users (V2-V4)</h2></div>
+            <div class="sec-title"><div class="badge b-cyan">&#9989;</div><h2>Low - Active Users (V2-V4)</h2><span class="today-tag">\${ac.active_low.total_matching.toLocaleString('en-IN')}</span></div>
             <button class="download-btn-sm" id="btn-dl-active-low">&#128190; Excel</button>
           </div>
           <div class="ac-note">\${ac.active_low.note} &middot; showing top \${ac.active_low.total_matching.toLocaleString('en-IN')} matching, most-inactive-first</div>
@@ -828,7 +806,7 @@ if (IS_ACTION_CENTER) {
         </section>
         <section class="acc-cyan">
           <div class="section-head">
-            <div class="sec-title"><div class="badge b-cyan">&#9989;</div><h2>High - Active Users (V5-V15)</h2></div>
+            <div class="sec-title"><div class="badge b-cyan">&#9989;</div><h2>High - Active Users (V5-V15)</h2><span class="today-tag">\${ac.active_high.total_matching.toLocaleString('en-IN')}</span></div>
             <button class="download-btn-sm" id="btn-dl-active-high">&#128190; Excel</button>
           </div>
           <div class="ac-note">\${ac.active_high.note} &middot; showing top \${ac.active_high.total_matching.toLocaleString('en-IN')} matching, most-inactive-first</div>
@@ -837,11 +815,33 @@ if (IS_ACTION_CENTER) {
         </section>
       </div>
 
+      <div class="analysis-heading deposit"><h2>VIP Near Upgrade</h2><div class="line"></div><span class="tag">ACTION CENTER</span></div>
+      <div class="row2col">
+        <section class="acc-purple">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-purple">&#11014;&#65039;</div><h2>Low - VIP Near Upgrade</h2><span class="today-tag">\${ac.near_upgrade_low.total_matching.toLocaleString('en-IN')}</span></div>
+            <button class="download-btn-sm" id="btn-dl-near-low">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">\${ac.near_upgrade_low.note} &middot; showing top \${ac.near_upgrade_low.total_matching.toLocaleString('en-IN')} matching, sorted closest-first</div>
+          <div id="near-low-table"></div>
+          <div class="ac-pagination" id="near-low-pagination"></div>
+        </section>
+        <section class="acc-purple">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-purple">&#11014;&#65039;</div><h2>High - VIP Near Upgrade</h2><span class="today-tag">\${ac.near_upgrade_high.total_matching.toLocaleString('en-IN')}</span></div>
+            <button class="download-btn-sm" id="btn-dl-near-high">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">\${ac.near_upgrade_high.note} &middot; showing top \${ac.near_upgrade_high.total_matching.toLocaleString('en-IN')} matching, sorted closest-first</div>
+          <div id="near-high-table"></div>
+          <div class="ac-pagination" id="near-high-pagination"></div>
+        </section>
+      </div>
+
       \${wcs ? \`
       <div class="analysis-heading withdrawal"><h2>Weekly Cashback Shield</h2><div class="line"></div><span class="today-tag">\${shortDate(wcs.week_start)} - \${shortDate(wcs.week_end)}</span><span class="tag">ACTION CENTER</span></div>
       <section class="acc-orange">
         <div class="section-head">
-          <div class="sec-title"><div class="badge b-orange">&#128737;&#65039;</div><h2>Eligible Users This Week</h2></div>
+          <div class="sec-title"><div class="badge b-orange">&#128737;&#65039;</div><h2>Eligible Users This Week</h2><span class="today-tag">\${fmt(wcs.eligible_count)}</span></div>
           <button class="download-btn-sm" id="btn-dl-cashback">&#128190; Excel</button>
         </div>
         <div class="reactivation-highlight">

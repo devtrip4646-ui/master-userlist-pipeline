@@ -577,15 +577,16 @@ def action_center_reports(mconn, now, agent_by_user):
     least inactive) so the report and its Excel download stay a reasonable
     size."""
     rows = mconn.execute(
-        "SELECT user_id, vip_level, total_recharge, user_balance, last_active_time FROM users"
+        "SELECT user_id, vip_level, total_recharge, recharge_count, user_balance, last_active_time FROM users"
     ).fetchall()
 
     near_low, near_high, inactive_high, inactive_low = [], [], [], []
     active_low, active_high = [], []
-    for user_id, vip_level, total_recharge, user_balance, last_active_time in rows:
+    for user_id, vip_level, total_recharge, recharge_count, user_balance, last_active_time in rows:
         if vip_level is None:
             continue
         total_recharge = total_recharge or 0.0
+        recharge_count = recharge_count or 0
         inactive_days = None
         last_active_dt = parse_dt(last_active_time)
         if last_active_dt:
@@ -617,9 +618,9 @@ def action_center_reports(mconn, now, agent_by_user):
                 "inactive_days": inactive_days,
                 "last_active_date": last_active_dt.strftime("%Y-%m-%d") if last_active_dt else None,
             }
-            if 5 <= vip_level <= 15 and 15 <= inactive_days <= 240:
+            if 5 <= vip_level <= 15 and 16 <= inactive_days <= 90:
                 inactive_high.append(inactive_row)
-            if 2 <= vip_level <= 4 and 10 <= inactive_days <= 180:
+            if 2 <= vip_level <= 4 and 16 <= inactive_days <= 90 and recharge_count >= 3:
                 inactive_low.append(inactive_row)
 
             active_row = {
@@ -632,7 +633,7 @@ def action_center_reports(mconn, now, agent_by_user):
             }
             if 5 <= vip_level <= 15 and inactive_days <= 15:
                 active_high.append(active_row)
-            if 2 <= vip_level <= 4 and inactive_days <= 10:
+            if 2 <= vip_level <= 4 and inactive_days <= 15 and recharge_count >= 3:
                 active_low.append(active_row)
 
     near_low.sort(key=lambda r: r["amount_to_next"])
@@ -657,17 +658,17 @@ def action_center_reports(mconn, now, agent_by_user):
             "rows": near_high,
         },
         "inactive_high": {
-            "note": "VIP 5 to VIP 15, inactive 15-240 days",
+            "note": "VIP 5 to VIP 15, inactive 16-90 days",
             "total_matching": len(inactive_high),
             "rows": inactive_high,
         },
         "inactive_low": {
-            "note": "VIP 2 to VIP 4, inactive 10-180 days",
+            "note": "VIP 2 to VIP 4, 3+ deposit count, inactive 16-90 days",
             "total_matching": len(inactive_low),
             "rows": inactive_low,
         },
         "active_low": {
-            "note": "VIP 2 to VIP 4, active within last 10 days",
+            "note": "VIP 2 to VIP 4, 3+ deposit count, active within last 15 days",
             "total_matching": len(active_low),
             "rows": active_low,
         },
@@ -685,8 +686,8 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
     previous activity. Two VIP-tier-scoped cohorts, using the same day ranges
     as the Inactive-Low/Inactive-High action-center lists so a user "moving"
     from one report to the other is exactly consistent:
-      Low  (VIP2-4):  previous gap 10-180 days
-      High (VIP5-15): previous gap 15-240 days
+      Low  (VIP2-4):  previous gap 16-90 days
+      High (VIP5-15): previous gap 16-90 days
     total_deposit on each row is specifically today's DEPOSIT amount (0 if
     the user reactivated via a withdrawal or wallet transaction with no
     matching deposit today) -- VIP/total_recharge stay deposit-only even
@@ -696,7 +697,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
     sync_master_userlist(), NOT derived here from daily_records.db directly
     -- those tables are purged to a rolling 33-day window, which would
     silently drop every comeback after a longer gap (i.e. most of the
-    10-180/15-240 day range). sync_master_userlist runs earlier in the same
+    16-90 day range). sync_master_userlist runs earlier in the same
     job and is the only place that still has each user's PRE-update
     last_active_time (unbounded history), so it computes the true gap there
     and hands the candidate list off via a local JSON file.
@@ -722,9 +723,9 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             "total_deposit": cand["total_deposit"],
             "inactive_days": gap_days,
         }
-        if 2 <= vip_level <= 4 and 10 <= gap_days <= 180:
+        if 2 <= vip_level <= 4 and 16 <= gap_days <= 90:
             low_rows.append(row)
-        elif 5 <= vip_level <= 15 and 15 <= gap_days <= 240:
+        elif 5 <= vip_level <= 15 and 16 <= gap_days <= 90:
             high_rows.append(row)
 
     low_rows.sort(key=lambda r: -r["inactive_days"])
@@ -737,7 +738,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
 
     return {
         "low": {
-            "note": "VIP 2 to VIP 4, reactivated today (was inactive 10-180 days)",
+            "note": "VIP 2 to VIP 4, reactivated today (was inactive 16-90 days)",
             "reactivated_count": len(low_rows),
             "pct_reactivated": round(len(low_rows) / baseline_low * 100, 2) if baseline_low else 0.0,
             # Per-agent count of reactivated users, from the FULL (uncapped)
@@ -748,7 +749,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             "rows": low_rows,
         },
         "high": {
-            "note": "VIP 5 to VIP 15, reactivated today (was inactive 15-240 days)",
+            "note": "VIP 5 to VIP 15, reactivated today (was inactive 16-90 days)",
             "reactivated_count": len(high_rows),
             "pct_reactivated": round(len(high_rows) / baseline_high * 100, 2) if baseline_high else 0.0,
             "agent_breakdown": tally_rows_by_agent(high_rows),
@@ -1090,21 +1091,22 @@ def no_return_fd_conversion(deposit_rows, city_by_user, agent_by_user, today):
 
 def premium_active_conversion(mconn, deposit_rows, now, agent_by_user):
     """Of users already on the Active Users list in Action Center (VIP2-4
-    active within 10 days = "low", VIP5-15 active within 15 days = "high"),
-    how many ALSO made a COMPLETE deposit specifically TODAY -- a continued-
-    engagement signal, distinct from Reactivation (which tracks INACTIVE
-    users coming back) and from Active Users itself (which only shows who's
-    active, not who's converting today).
+    active within 15 days with 3+ lifetime deposits = "low", VIP5-15 active
+    within 15 days = "high"), how many ALSO made a COMPLETE deposit
+    specifically TODAY -- a continued-engagement signal, distinct from
+    Reactivation (which tracks INACTIVE users coming back) and from Active
+    Users itself (which only shows who's active, not who's converting
+    today).
 
     Recomputes the full active_low/active_high user_id membership directly
     (duplicating action_center_reports' classification, not reusing its
     output) rather than adding a dependency between the two reports --
     keeps this self-contained even though action_center_reports' own rows
     are no longer capped either."""
-    rows = mconn.execute("SELECT user_id, vip_level, last_active_time FROM users").fetchall()
+    rows = mconn.execute("SELECT user_id, vip_level, recharge_count, last_active_time FROM users").fetchall()
     active_low_ids, active_high_ids = set(), set()
     vip_by_user = {}
-    for user_id, vip_level, last_active_time in rows:
+    for user_id, vip_level, recharge_count, last_active_time in rows:
         if vip_level is None:
             continue
         vip_by_user[user_id] = vip_level
@@ -1112,7 +1114,7 @@ def premium_active_conversion(mconn, deposit_rows, now, agent_by_user):
         if not last_active_dt:
             continue
         inactive_days = (now - last_active_dt).days
-        if 2 <= vip_level <= 4 and inactive_days <= 10:
+        if 2 <= vip_level <= 4 and inactive_days <= 15 and (recharge_count or 0) >= 3:
             active_low_ids.add(user_id)
         if 5 <= vip_level <= 15 and inactive_days <= 15:
             active_high_ids.add(user_id)
