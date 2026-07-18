@@ -2756,21 +2756,63 @@ AGENT_PERF_TARGETS = {
     "High VIP Upgrade": {"type": "count", "target": 5},
     "Low Premium Active": {"type": "rate", "target": 35},
     "High Premium Active": {"type": "rate", "target": 35},
+    # No target figure was specified when this was set up -- 30% mirrors
+    # Retention's target since both are "day-1-ish conversion of a
+    # first-deposit-adjacent cohort" metrics. Adjust here if the actual
+    # FTD Team target differs.
+    "FTD Conversion": {"type": "rate", "target": 30},
 }
 
 AGENT_PERF_RETENTION_DAYS = 35
 
+# Departments the Performance page's Monthly Leaderboard and Daily/Range
+# Performance sections are scored within -- each agent is only scored on
+# their department's own categories, not all 7. An agent can belong to
+# multiple departments (e.g. Rithika is FTD + Reactivation) and gets scored
+# separately in each one. "General" is everyone (same as the old
+# undifferentiated leaderboard), scored on the categories no named
+# department claimed (Retention, VIP Upgrade) -- "agents": None here means
+# "the full agent_list," filled in at report-build time in main() since
+# the roster itself isn't known until then.
+AGENT_PERF_DEPARTMENTS = {
+    "FTD Team": {
+        "agents": ["Lakshmi( WFH)", "Rithika (WFH)", "Anitha (WFH)", "Amar (WFH)", "Shakshi (WFH)"],
+        "categories": ["FTD Conversion"],
+    },
+    "Reactivation Team": {
+        "agents": ["Sathya (WFH)", "Sahana (SL)", "Rithika (WFH)", "Anitha (WFH)", "Preethy (WFH)"],
+        "categories": ["Reactivation Low", "Reactivation High"],
+    },
+    "VIP Team": {
+        "agents": ["Lakshmi( WFH)", "Sahana (SL)", "Sathya (WFH)", "Anitha (WFH)", "Muskhan (WFH)", "Nisha (WFH)", "Reetu( WFH)"],
+        "categories": ["Low Premium Active", "High Premium Active"],
+    },
+    "General": {
+        "agents": None,
+        "categories": ["Retention", "Low VIP Upgrade", "High VIP Upgrade"],
+    },
+}
 
-def compute_agent_performance_rows(agent_list, reactivation, vip_upgrade, retention, premium_active, date_str):
+
+def compute_agent_performance_rows(
+    agent_list, reactivation, vip_upgrade, retention, no_return_conversion, premium_active, date_str
+):
     """One (date, agent, category, numerator, denominator) row per agent per
-    the 7 Performance-page criteria, for TODAY specifically -- upserted into
+    the Performance-page criteria, for TODAY specifically -- upserted into
     master_userlist.db's agent_performance table by main(). See
     AGENT_PERF_TARGETS for what numerator/denominator mean per category.
 
     `retention` here is specifically first_deposit_retention's result (by
     user request: the Performance page's single "Retention" criterion is
     First-Deposit retention only, not combined with Bonus-Claimer retention,
-    which has no Low/High split to begin with)."""
+    which has no Low/High split to begin with).
+
+    `no_return_conversion` is no_return_fd_conversion's result -- combined
+    with `retention` (first-deposit-yesterday cohort) to build "FTD
+    Conversion" for the FTD Team department: the two source cohorts are
+    disjoint by construction (FD yesterday vs. FD 2-5 days ago), so their
+    per-agent cohort/converted counts can be summed directly with no
+    double-counting risk."""
     rows = []
 
     count_sources = {
@@ -2788,6 +2830,13 @@ def compute_agent_performance_rows(agent_list, reactivation, vip_upgrade, retent
     ret_converted = retention.get("converted_by_agent", {}) if retention else {}
     for agent in agent_list:
         rows.append((date_str, agent, "Retention", ret_converted.get(agent, 0), ret_cohort.get(agent, 0)))
+
+    nr_cohort = no_return_conversion.get("cohort_by_agent", {}) if no_return_conversion else {}
+    nr_converted = no_return_conversion.get("converted_by_agent", {}) if no_return_conversion else {}
+    for agent in agent_list:
+        cohort = ret_cohort.get(agent, 0) + nr_cohort.get(agent, 0)
+        converted = ret_converted.get(agent, 0) + nr_converted.get(agent, 0)
+        rows.append((date_str, agent, "FTD Conversion", converted, cohort))
 
     for tier_label, category in [("low", "Low Premium Active"), ("high", "High Premium Active")]:
         tier = premium_active.get(tier_label, {}) if premium_active else {}
@@ -3243,7 +3292,8 @@ def main():
             "PRIMARY KEY (date, agent_name, category))"
         )
         upsert_rows = compute_agent_performance_rows(
-            agent_list, reactivation, vip_upgrade, retention["first_deposit"], premium_active, now.date().isoformat()
+            agent_list, reactivation, vip_upgrade, retention["first_deposit"], retention["no_return_fd_conversion"],
+            premium_active, now.date().isoformat()
         )
         mconn4.executemany(
             "INSERT OR REPLACE INTO agent_performance (date, agent_name, category, numerator, denominator) "
@@ -3337,6 +3387,16 @@ def main():
         # "% of target achieved" math client-side from this.
         "agent_performance": agent_performance,
         "agent_performance_targets": AGENT_PERF_TARGETS,
+        # Department -> {agents, categories} for the Performance page's
+        # per-department scorecards -- "agents": None in the source dict
+        # (General) is resolved to the live agent_list here.
+        "agent_performance_departments": {
+            dept: {
+                "agents": info["agents"] if info["agents"] is not None else agent_list,
+                "categories": info["categories"],
+            }
+            for dept, info in AGENT_PERF_DEPARTMENTS.items()
+        },
     }
 
     out_path = os.path.join(BASE, "deposit_report.json")

@@ -248,6 +248,7 @@ const PAGE = `<!DOCTYPE html>
   .perf-daterange-popover button { padding: 8px 16px; border: none; border-radius: 8px; background: #4338ca; color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; }
   .perf-daterange-popover button:hover { background: #3730a3; }
 
+  .perf-dept-title { font-size: 15px; font-weight: 700; color: #374151; margin: 22px 0 10px; }
   .perf-podium { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 26px; }
   @media (max-width: 900px) { .perf-podium { grid-template-columns: 1fr; } }
   .perf-podium-card { border-radius: 16px; padding: 20px 18px; color: #fff; position: relative; overflow: hidden; box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
@@ -903,8 +904,11 @@ if (IS_PERFORMANCE) {
     const data = await res.json();
     const perfRows = data.agent_performance || [];
     const targets = data.agent_performance_targets || {};
-    const agents = (data.agent_list || []).slice();
-    const categories = ['Reactivation Low', 'Reactivation High', 'Retention', 'Low VIP Upgrade', 'High VIP Upgrade', 'Low Premium Active', 'High Premium Active'];
+    // Departments: each is its own scorecard, scored only on its own
+    // agents x its own categories -- an agent in multiple departments
+    // (e.g. Rithika: FTD + Reactivation) gets a separate score in each.
+    const departments = data.agent_performance_departments || {};
+    const deptNames = Object.keys(departments);
     const allDates = Array.from(new Set(perfRows.map(r => r.date))).sort();
     const todayStr = data.report_today || allDates[allDates.length - 1];
     // Incentives are always judged on the CURRENT CALENDAR MONTH's cumulative
@@ -916,6 +920,10 @@ if (IS_PERFORMANCE) {
 
     const el = document.getElementById('performance-app');
     el.className = '';
+    if (!deptNames.length) {
+      el.innerHTML = '<div class="no-data">Performance data not available in this report yet.</div>';
+      return;
+    }
     el.innerHTML = \`
       <div class="analysis-heading deposit"><h2>Monthly Leaderboard &amp; Incentives</h2><div class="line"></div><span class="tag">\${shortDate(monthFrom)} - \${shortDate(monthTo)}</span></div>
       <div class="perf-legend">
@@ -925,9 +933,12 @@ if (IS_PERFORMANCE) {
         <span><i style="background:#d1d5db"></i> No users assigned -- excluded, not counted against them</span>
         <span style="margin-left:auto">Incentive brackets (rank 1 / 2 / 3): <b class="perf-incentive-chip tier1">60%+: Rs1500/800/500</b> <b class="perf-incentive-chip tier2">75%+: Rs4000/2000/1400</b> <b class="perf-incentive-chip tier3">90%+: Rs10000/5000/2000</b></span>
       </div>
-      <div id="perf-podium" class="perf-podium"></div>
+      \${deptNames.map(dept => \`
+        <h3 class="perf-dept-title">\${dept}</h3>
+        <div id="perf-podium-\${slugifyDept(dept)}" class="perf-podium"></div>
+      \`).join('')}
 
-      <div class="analysis-heading withdrawal"><h2>Daily / Range Performance</h2><div class="line"></div><span class="tag">7 KPIs, equal weight</span></div>
+      <div class="analysis-heading withdrawal"><h2>Daily / Range Performance</h2><div class="line"></div><span class="tag">Scored per department</span></div>
       <div class="perf-controls">
         <button class="perf-preset active" data-preset="today">Today</button>
         <button class="perf-preset" data-preset="yesterday">Yesterday</button>
@@ -944,9 +955,13 @@ if (IS_PERFORMANCE) {
           </div>
         </div>
       </div>
-      <div id="perf-list"></div>
+      \${deptNames.map(dept => \`
+        <h3 class="perf-dept-title">\${dept}</h3>
+        <div id="perf-list-\${slugifyDept(dept)}"></div>
+      \`).join('')}
     \`;
 
+    function slugifyDept(name) { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
     function fmtMoney(v) { return 'Rs' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
     function tierForPct(pct) {
       if (pct >= 90) return 3;
@@ -965,7 +980,7 @@ if (IS_PERFORMANCE) {
       return 'pb-red';
     }
 
-    function computeLeaderboard(fromDate, toDate) {
+    function computeLeaderboard(fromDate, toDate, agents, categories) {
       const inRange = perfRows.filter(r => r.date >= fromDate && r.date <= toDate);
       const byAgentCat = {};
       for (const r of inRange) {
@@ -1023,53 +1038,61 @@ if (IS_PERFORMANCE) {
     }
 
     function renderPodium() {
-      const ranked = computeLeaderboard(monthFrom, monthTo);
-      const podiumEl = document.getElementById('perf-podium');
-      const medals = ['&#129351;', '&#129352;', '&#129353;'];
-      const podiumClasses = ['p1', 'p2', 'p3'];
-      podiumEl.innerHTML = ranked.slice(0, 3).map((r, i) => {
-        const tier = tierForPct(r.composite);
-        const incentive = tier > 0 ? INCENTIVE_TABLE[tier][i] : null;
-        return '<div class="perf-podium-card ' + podiumClasses[i] + '">' +
-          '<div class="perf-podium-medal">' + medals[i] + '</div>' +
-          '<div class="perf-podium-name">' + r.agent + '</div>' +
-          '<div class="perf-podium-score">' + r.composite.toFixed(2) + '<small>% of target (month)</small></div>' +
-          (incentive
-            ? '<div class="perf-podium-incentive">Incentive earned<span class="amt">' + fmtMoney(incentive) + '</span></div>'
-            : '<div class="perf-podium-none">Below 60% of target -- no incentive yet</div>') +
-          '</div>';
-      }).join('');
+      for (const dept of deptNames) {
+        const { agents: deptAgents, categories: deptCategories } = departments[dept];
+        const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
+        const podiumEl = document.getElementById('perf-podium-' + slugifyDept(dept));
+        if (!podiumEl) continue;
+        const medals = ['&#129351;', '&#129352;', '&#129353;'];
+        const podiumClasses = ['p1', 'p2', 'p3'];
+        podiumEl.innerHTML = ranked.slice(0, 3).map((r, i) => {
+          const tier = tierForPct(r.composite);
+          const incentive = tier > 0 ? INCENTIVE_TABLE[tier][i] : null;
+          return '<div class="perf-podium-card ' + podiumClasses[i] + '">' +
+            '<div class="perf-podium-medal">' + medals[i] + '</div>' +
+            '<div class="perf-podium-name">' + r.agent + '</div>' +
+            '<div class="perf-podium-score">' + r.composite.toFixed(2) + '<small>% of target (month)</small></div>' +
+            (incentive
+              ? '<div class="perf-podium-incentive">Incentive earned<span class="amt">' + fmtMoney(incentive) + '</span></div>'
+              : '<div class="perf-podium-none">Below 60% of target -- no incentive yet</div>') +
+            '</div>';
+        }).join('');
+      }
     }
 
     function render(fromDate, toDate) {
-      const ranked = computeLeaderboard(fromDate, toDate);
-      const listEl = document.getElementById('perf-list');
+      for (const dept of deptNames) {
+        const { agents: deptAgents, categories: deptCategories } = departments[dept];
+        const ranked = computeLeaderboard(fromDate, toDate, deptAgents, deptCategories);
+        const listEl = document.getElementById('perf-list-' + slugifyDept(dept));
+        if (!listEl) continue;
 
-      listEl.innerHTML = ranked.map((r, i) => {
-        const rankNum = i + 1;
-        const critHtml = r.criteria.map(c => {
-          if (!c.applicable) {
-            return '<div class="perf-crit perf-crit-na">' +
+        listEl.innerHTML = ranked.map((r, i) => {
+          const rankNum = i + 1;
+          const critHtml = r.criteria.map(c => {
+            if (!c.applicable) {
+              return '<div class="perf-crit perf-crit-na">' +
+                '<div class="pc-label">' + c.category + '</div>' +
+                '<div class="pc-value">' + c.actualDisplay + '</div>' +
+                '<div class="perf-bar"><div class="perf-bar-fill pb-na" style="width:100%"></div></div>' +
+                '</div>';
+            }
+            const pct = Math.max(0, Math.min(c.pctOfTarget, 999));
+            const barPct = Math.min(pct, 100);
+            return '<div class="perf-crit">' +
               '<div class="pc-label">' + c.category + '</div>' +
               '<div class="pc-value">' + c.actualDisplay + '</div>' +
-              '<div class="perf-bar"><div class="perf-bar-fill pb-na" style="width:100%"></div></div>' +
+              '<div class="perf-bar"><div class="perf-bar-fill ' + barClass(pct) + '" style="width:' + barPct + '%"></div></div>' +
               '</div>';
-          }
-          const pct = Math.max(0, Math.min(c.pctOfTarget, 999));
-          const barPct = Math.min(pct, 100);
-          return '<div class="perf-crit">' +
-            '<div class="pc-label">' + c.category + '</div>' +
-            '<div class="pc-value">' + c.actualDisplay + '</div>' +
-            '<div class="perf-bar"><div class="perf-bar-fill ' + barClass(pct) + '" style="width:' + barPct + '%"></div></div>' +
+          }).join('');
+          return '<div class="perf-card">' +
+            '<div class="perf-rank' + (rankNum <= 3 ? ' top3' : '') + '">' + rankNum + '</div>' +
+            '<div class="perf-agent-name">' + r.agent + '</div>' +
+            '<div class="perf-criteria-grid">' + critHtml + '</div>' +
+            '<div class="perf-score-big" style="color:' + (r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#b45309' : '#be123c') + '">' + r.composite.toFixed(2) + '%</div>' +
             '</div>';
         }).join('');
-        return '<div class="perf-card">' +
-          '<div class="perf-rank' + (rankNum <= 3 ? ' top3' : '') + '">' + rankNum + '</div>' +
-          '<div class="perf-agent-name">' + r.agent + '</div>' +
-          '<div class="perf-criteria-grid">' + critHtml + '</div>' +
-          '<div class="perf-score-big" style="color:' + (r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#b45309' : '#be123c') + '">' + r.composite.toFixed(2) + '%</div>' +
-          '</div>';
-      }).join('');
+      }
     }
 
     const fromInput = document.getElementById('perf-from');
