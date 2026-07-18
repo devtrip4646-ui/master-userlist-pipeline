@@ -1585,7 +1585,69 @@ if (IS_PLATFORM_ANALYSIS) {
     const newOldAnalysis = data.new_old_user_analysis || { daily: [], retention: [] };
 
     document.getElementById('platform-analysis-app').innerHTML = \`
-      <div class="analysis-heading withdrawal"><h2>Games Activity &mdash; New Users</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
+      <div class="analysis-heading deposit"><h2>Weekly Performance</h2><div class="line"></div><span class="today-tag" id="weekly-perf-range-tag">&mdash;</span><span class="tag">PLATFORM</span></div>
+      <section class="acc-blue" id="weekly-perf-section">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-blue">&#128200;</div><h2>This Week vs Last Week</h2></div>
+          <button class="download-btn-sm" id="btn-dl-weekly-perf">&#128190; Excel</button>
+        </div>
+        <div class="ac-note">Current calendar week (Monday-Sunday, however many days have elapsed) vs the most recent FULLY COMPLETE prior week -- same daily data as New vs Old User Analysis below, just compared week-on-week. Read the current week as "pace so far," not a final result until Sunday.</div>
+        <div class="stat-row" id="weekly-perf-stats"></div>
+        <div class="date-switch" id="weekly-perf-view-switch" style="margin-top:18px">
+          <button data-view="wow" class="active">Week-on-Week</button>
+          <button data-view="daywise">Day-wise</button>
+        </div>
+        <div id="weekly-perf-table"></div>
+        <div id="weekly-perf-daywise" style="display:none"></div>
+        <div id="weekly-perf-retention" style="margin-top:22px"></div>
+        <div id="weekly-perf-target" style="margin-top:22px"></div>
+      </section>
+
+      <div class="analysis-heading withdrawal"><h2>Bonus Claim Report</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
+      <section class="acc-purple">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
+          <button class="download-btn-sm" id="btn-dl-bonus-claims">&#128190; Excel</button>
+        </div>
+        <div class="ac-note">All bonuses claimed on the selected date (or rolling week/month), and % who deposited afterward.</div>
+        <div class="date-switch" id="bonus-claims-range-switch">
+          <button data-range="day" class="active">Day</button>
+          <button data-range="week">Week</button>
+          <button data-range="month">Month</button>
+        </div>
+        <div class="date-switch" id="bonus-claims-date-switch"></div>
+        <div class="date-switch" id="bonus-claims-switch">
+          <button data-view="wallet" class="active">Wallet Bonuses</button>
+          <button data-view="dcb">Deposit Challenge Bonus</button>
+        </div>
+        <div id="bonus-claims-table"></div>
+      </section>
+
+      <div class="analysis-heading withdrawal"><h2>Acquisition &amp; Bonus Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
+      <div class="row2col">
+        <section class="acc-blue">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-blue">&#128202;</div><h2>Channel performance &mdash; 4-day combined</h2></div>
+            <button class="download-btn-sm" id="btn-dl-acq-channel">&#128190; Excel</button>
+          </div>
+          <div id="acq-channel-table"></div>
+          <div class="ac-pagination" id="acq-channel-pagination"></div>
+        </section>
+        <section class="acc-emerald">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-emerald">&#128176;</div><h2>Net Revenue by Region &amp; VIP</h2></div>
+            <button class="download-btn-sm" id="btn-dl-net-revenue">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">Deposit minus withdrawal, not just gross deposit volume -- a region/tier can look like a top performer by deposit total while actually net-negative once withdrawals are subtracted. Most recent date in the report.</div>
+          <div class="date-switch" id="net-rev-switch">
+            <button data-view="region" class="active">By Region</button>
+            <button data-view="vip">By VIP Level</button>
+          </div>
+          <div id="net-rev-table"></div>
+        </section>
+      </div>
+
+      <div class="analysis-heading withdrawal"><h2>Game Activity</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
       <div class="date-switch" id="new-games-range-switch">
         <button data-range="overall" class="active">Overall</button>
         <button data-range="day">Day</button>
@@ -1635,61 +1697,6 @@ if (IS_PLATFORM_ANALYSIS) {
         </section>
       </div>
 
-      <div class="analysis-heading withdrawal"><h2>Acquisition &amp; Bonus Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
-      <div class="row2col">
-        <section class="acc-blue">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-blue">&#128202;</div><h2>Channel performance &mdash; 4-day combined</h2></div>
-            <button class="download-btn-sm" id="btn-dl-acq-channel">&#128190; Excel</button>
-          </div>
-          <div id="acq-channel-table"></div>
-          <div class="ac-pagination" id="acq-channel-pagination"></div>
-        </section>
-        <section class="acc-emerald">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-emerald">&#128176;</div><h2>Net Revenue by Region &amp; VIP</h2></div>
-            <button class="download-btn-sm" id="btn-dl-net-revenue">&#128190; Excel</button>
-          </div>
-          <div class="ac-note">Deposit minus withdrawal, not just gross deposit volume -- a region/tier can look like a top performer by deposit total while actually net-negative once withdrawals are subtracted. Most recent date in the report.</div>
-          <div class="date-switch" id="net-rev-switch">
-            <button data-view="region" class="active">By Region</button>
-            <button data-view="vip">By VIP Level</button>
-          </div>
-          <div id="net-rev-table"></div>
-        </section>
-      </div>
-      <section class="acc-purple">
-        <div class="section-head">
-          <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
-          <button class="download-btn-sm" id="btn-dl-bonus-claims">&#128190; Excel</button>
-        </div>
-        <div class="ac-note">All bonuses claimed on the selected date (or rolling week/month), and % who deposited afterward.</div>
-        <div class="date-switch" id="bonus-claims-range-switch">
-          <button data-range="day" class="active">Day</button>
-          <button data-range="week">Week</button>
-          <button data-range="month">Month</button>
-        </div>
-        <div class="date-switch" id="bonus-claims-date-switch"></div>
-        <div class="date-switch" id="bonus-claims-switch">
-          <button data-view="wallet" class="active">Wallet Bonuses</button>
-          <button data-view="dcb">Deposit Challenge Bonus</button>
-        </div>
-        <div id="bonus-claims-table"></div>
-      </section>
-      <section class="acc-blue">
-        <div class="section-head">
-          <div class="sec-title"><div class="badge b-blue">&#128200;</div><h2>New vs Old User Analysis &mdash; Last 33 Days</h2></div>
-          <button class="download-btn-sm" id="btn-dl-new-old">&#128190; Excel</button>
-        </div>
-        <div class="ac-note">Old = repeat depositors that day. New = users whose first-ever deposit landed that day. Covers every day daily_records.db has (rolling 33-day retention), so it starts wherever data first became available.</div>
-        <div class="date-switch" id="new-old-switch">
-          <button data-view="daily" class="active">Daily Breakdown</button>
-          <button data-view="retention">New User 3-Day Retention</button>
-        </div>
-        <div id="new-old-table"></div>
-        <div class="ac-pagination" id="new-old-pagination"></div>
-      </section>
-
       <div class="analysis-heading deposit"><h2>Game &amp; Revenue Economics</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
       <div class="row2col">
         <section class="acc-orange">
@@ -1715,22 +1722,19 @@ if (IS_PLATFORM_ANALYSIS) {
         </section>
       </div>
 
-      <div class="analysis-heading deposit"><h2>Weekly Performance</h2><div class="line"></div><span class="today-tag" id="weekly-perf-range-tag">&mdash;</span><span class="tag">PLATFORM</span></div>
-      <section class="acc-blue" id="weekly-perf-section">
+      <div class="analysis-heading deposit"><h2>New vs Old User Analysis &mdash; Last 33 Days</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
+      <section class="acc-blue">
         <div class="section-head">
-          <div class="sec-title"><div class="badge b-blue">&#128200;</div><h2>This Week vs Last Week</h2></div>
-          <button class="download-btn-sm" id="btn-dl-weekly-perf">&#128190; Excel</button>
+          <div class="sec-title"><div class="badge b-blue">&#128200;</div><h2>New vs Old User Analysis &mdash; Last 33 Days</h2></div>
+          <button class="download-btn-sm" id="btn-dl-new-old">&#128190; Excel</button>
         </div>
-        <div class="ac-note">Current calendar week (Monday-Sunday, however many days have elapsed) vs the most recent FULLY COMPLETE prior week -- same daily data as New vs Old User Analysis below, just compared week-on-week. Read the current week as "pace so far," not a final result until Sunday.</div>
-        <div class="stat-row" id="weekly-perf-stats"></div>
-        <div class="date-switch" id="weekly-perf-view-switch" style="margin-top:18px">
-          <button data-view="wow" class="active">Week-on-Week</button>
-          <button data-view="daywise">Day-wise</button>
+        <div class="ac-note">Old = repeat depositors that day. New = users whose first-ever deposit landed that day. Covers every day daily_records.db has (rolling 33-day retention), so it starts wherever data first became available.</div>
+        <div class="date-switch" id="new-old-switch">
+          <button data-view="daily" class="active">Daily Breakdown</button>
+          <button data-view="retention">New User 3-Day Retention</button>
         </div>
-        <div id="weekly-perf-table"></div>
-        <div id="weekly-perf-daywise" style="display:none"></div>
-        <div id="weekly-perf-retention" style="margin-top:22px"></div>
-        <div id="weekly-perf-target" style="margin-top:22px"></div>
+        <div id="new-old-table"></div>
+        <div class="ac-pagination" id="new-old-pagination"></div>
       </section>
 
       <div class="analysis-heading deposit"><h2>Region vs VIP Depositor Matrix</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
