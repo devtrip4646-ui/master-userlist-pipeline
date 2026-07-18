@@ -873,14 +873,14 @@ def yesterday_first_deposit_users(deposit_rows, all_withdrawal_full, vip_by_user
 
 def no_return_fd_users(deposit_rows, all_withdrawal_full, agent_by_user, today):
     """Users whose first-ever deposit (source system's is_first_deposit flag)
-    landed 2-4 days ago -- e.g. today=12th July -> FD on 10th/9th/8th -- and
-    who have made NO COMPLETE deposit on any day AFTER that FD date since.
-    The 2-day buffer before the window starts (skipping today and
+    landed 2-5 days ago -- e.g. today=12th July -> FD on 10th/9th/8th/7th --
+    and who have made NO COMPLETE deposit on any day AFTER that FD date
+    since. The 2-day buffer before the window starts (skipping today and
     yesterday) gives every included user at least one full day where a
     return deposit COULD have happened, so this reads as "genuinely
     one-and-done," not just "hasn't come back yet" noise from someone whose
     FD was only yesterday."""
-    window_start = today - timedelta(days=4)
+    window_start = today - timedelta(days=5)
     window_end = today - timedelta(days=2)
 
     fd_date_by_user = {}
@@ -1054,14 +1054,14 @@ def first_deposit_retention(deposit_rows, city_by_user, today, agent_by_user):
 
 
 def no_return_fd_conversion(deposit_rows, city_by_user, agent_by_user, today):
-    """Of users whose first-ever deposit landed 2-4 days ago and had NOT
+    """Of users whose first-ever deposit landed 2-5 days ago and had NOT
     made another COMPLETE deposit as of yesterday (the "No-Return First
     Deposit Users" cohort -- see no_return_fd_users), how many made a
     COMPLETE deposit TODAY. Cohort membership is evaluated using only
     deposits strictly BEFORE today (not the live no_return_fd_users list,
     which would already exclude anyone who deposited today) -- otherwise
     today's converters would disqualify themselves from their own cohort."""
-    window_start = today - timedelta(days=4)
+    window_start = today - timedelta(days=5)
     window_end = today - timedelta(days=2)
 
     fd_date_by_user = {}
@@ -1084,7 +1084,7 @@ def no_return_fd_conversion(deposit_rows, city_by_user, agent_by_user, today):
     }
     return _retention_report(
         cohort, _today_deposit_activity(deposit_rows, today), city_by_user,
-        "No-Return First Deposit Users (FD 2-4 days ago, no deposit since) who deposited again today", agent_by_user,
+        "No-Return First Deposit Users (FD 2-5 days ago, no deposit since) who deposited again today", agent_by_user,
     )
 
 

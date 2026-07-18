@@ -747,21 +747,28 @@ if (IS_ACTION_CENTER) {
     const wcs = data.weekly_cashback_shield;
 
     document.getElementById('action-center-app').innerHTML = \`
-      \${wcs ? \`
-      <div class="analysis-heading withdrawal"><h2>Weekly Cashback Shield</h2><div class="line"></div><span class="today-tag">\${shortDate(wcs.week_start)} - \${shortDate(wcs.week_end)}</span><span class="tag">ACTION CENTER</span></div>
-      <section class="acc-orange">
-        <div class="section-head">
-          <div class="sec-title"><div class="badge b-orange">&#128737;&#65039;</div><h2>Eligible Users This Week</h2></div>
-          <button class="download-btn-sm" id="btn-dl-cashback">&#128190; Excel</button>
-        </div>
-        <div class="reactivation-highlight">
-          <div class="rh-count">\${fmt(wcs.eligible_count)}<small>Eligible Users</small></div>
-          <div class="rh-pct">\${money(wcs.total_bonus)}<small>Total Bonus Payable</small></div>
-        </div>
-        <div class="ac-note">VIP 2+ only &middot; Loss Rs 500-4,999 (80%+ of week's deposit lost): flat 1.5% &middot; Loss Rs 5,000-2,500,000: 50%-100%+ loss scales cashback -- VIP 2-4: 2.00%-4.00%, VIP 5-15: 1.51%-5.00% &middot; credited Sunday morning, no wagering requirement</div>
-        <div id="cashback-table"></div>
-        <div class="ac-pagination" id="cashback-pagination"></div>
-      </section>
+      \${acx ? \`
+      <div class="analysis-heading deposit"><h2>FTD</h2><div class="line"></div><span class="tag">ACTION CENTER</span></div>
+      <div class="row2col">
+        <section class="acc-blue">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-blue">&#127881;</div><h2>Yesterday First Deposit Users</h2></div>
+            <button class="download-btn-sm" id="btn-dl-new-users">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">Flagged by the source system's own first-deposit marker &middot; \${acx.yesterday_first_deposit_users.length.toLocaleString('en-IN')} users</div>
+          <div id="new-users-table"></div>
+          <div class="ac-pagination" id="new-users-pagination"></div>
+        </section>
+        <section class="acc-cyan">
+          <div class="section-head">
+            <div class="sec-title"><div class="badge b-cyan">&#127942;</div><h2>No-Return First Deposit Users</h2></div>
+            <button class="download-btn-sm" id="btn-dl-bonus">&#128190; Excel</button>
+          </div>
+          <div class="ac-note">First deposit 2-5 days ago, no deposit since &middot; \${acx.no_return_fd_users.length.toLocaleString('en-IN')} users</div>
+          <div id="bonus-table"></div>
+          <div class="ac-pagination" id="bonus-pagination"></div>
+        </section>
+      </div>
       \` : ''}
 
       <div class="analysis-heading deposit"><h2>VIP Near Upgrade</h2><div class="line"></div><span class="tag">ACTION CENTER</span></div>
@@ -808,30 +815,6 @@ if (IS_ACTION_CENTER) {
         </section>
       </div>
 
-      \${acx ? \`
-      <div class="analysis-heading deposit"><h2>New Users &amp; Bonuses</h2><div class="line"></div><span class="tag">ACTION CENTER</span></div>
-      <div class="row2col">
-        <section class="acc-blue">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-blue">&#127881;</div><h2>Yesterday First Deposit Users</h2></div>
-            <button class="download-btn-sm" id="btn-dl-new-users">&#128190; Excel</button>
-          </div>
-          <div class="ac-note">Flagged by the source system's own first-deposit marker &middot; \${acx.yesterday_first_deposit_users.length.toLocaleString('en-IN')} users</div>
-          <div id="new-users-table"></div>
-          <div class="ac-pagination" id="new-users-pagination"></div>
-        </section>
-        <section class="acc-cyan">
-          <div class="section-head">
-            <div class="sec-title"><div class="badge b-cyan">&#127942;</div><h2>No-Return First Deposit Users</h2></div>
-            <button class="download-btn-sm" id="btn-dl-bonus">&#128190; Excel</button>
-          </div>
-          <div class="ac-note">First deposit 2-4 days ago, no deposit since &middot; \${acx.no_return_fd_users.length.toLocaleString('en-IN')} users</div>
-          <div id="bonus-table"></div>
-          <div class="ac-pagination" id="bonus-pagination"></div>
-        </section>
-      </div>
-      \` : ''}
-
       <div class="analysis-heading withdrawal"><h2>Active Users</h2><div class="line"></div><span class="tag">ACTION CENTER</span></div>
       <div class="row2col">
         <section class="acc-cyan">
@@ -853,6 +836,23 @@ if (IS_ACTION_CENTER) {
           <div class="ac-pagination" id="active-high-pagination"></div>
         </section>
       </div>
+
+      \${wcs ? \`
+      <div class="analysis-heading withdrawal"><h2>Weekly Cashback Shield</h2><div class="line"></div><span class="today-tag">\${shortDate(wcs.week_start)} - \${shortDate(wcs.week_end)}</span><span class="tag">ACTION CENTER</span></div>
+      <section class="acc-orange">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-orange">&#128737;&#65039;</div><h2>Eligible Users This Week</h2></div>
+          <button class="download-btn-sm" id="btn-dl-cashback">&#128190; Excel</button>
+        </div>
+        <div class="reactivation-highlight">
+          <div class="rh-count">\${fmt(wcs.eligible_count)}<small>Eligible Users</small></div>
+          <div class="rh-pct">\${money(wcs.total_bonus)}<small>Total Bonus Payable</small></div>
+        </div>
+        <div class="ac-note">VIP 2+ only &middot; Loss Rs 500-4,999 (80%+ of week's deposit lost): flat 1.5% &middot; Loss Rs 5,000-2,500,000: 50%-100%+ loss scales cashback -- VIP 2-4: 2.00%-4.00%, VIP 5-15: 1.51%-5.00% &middot; credited Sunday morning, no wagering requirement</div>
+        <div id="cashback-table"></div>
+        <div class="ac-pagination" id="cashback-pagination"></div>
+      </section>
+      \` : ''}
     \`;
 
     if (wcs) {
