@@ -2766,25 +2766,24 @@ AGENT_PERF_TARGETS = {
 AGENT_PERF_RETENTION_DAYS = 35
 
 # Departments the Performance page's Monthly Leaderboard and Daily/Range
-# Performance sections are scored within -- each agent is only scored on
-# their department's own categories, not all 7. An agent can belong to
-# multiple departments (e.g. Rithika is FTD + Reactivation) and gets scored
-# separately in each one. "General" is everyone (same as the old
-# undifferentiated leaderboard), scored on the categories no named
-# department claimed (Retention, VIP Upgrade) -- "agents": None here means
+# Performance sections are scored within -- each department groups the
+# categories it owns; every agent is scored in every department, but
+# obviously only earns nonzero numbers on the categories that actually
+# apply to them (e.g. someone with no Reactivation-eligible users just
+# shows "No users assigned" there, same as always). "agents": None means
 # "the full agent_list," filled in at report-build time in main() since
 # the roster itself isn't known until then.
 AGENT_PERF_DEPARTMENTS = {
     "FTD Team": {
-        "agents": ["Lakshmi( WFH)", "Rithika (WFH)", "Anitha (WFH)", "Amar (WFH)", "Shakshi (WFH)"],
+        "agents": None,
         "categories": ["FTD Conversion"],
     },
     "Reactivation Team": {
-        "agents": ["Sathya (WFH)", "Sahana (SL)", "Rithika (WFH)", "Anitha (WFH)", "Preethy (WFH)"],
+        "agents": None,
         "categories": ["Reactivation Low", "Reactivation High"],
     },
     "VIP Team": {
-        "agents": ["Lakshmi( WFH)", "Sahana (SL)", "Sathya (WFH)", "Anitha (WFH)", "Muskhan (WFH)", "Nisha (WFH)", "Reetu( WFH)"],
+        "agents": None,
         "categories": ["Low Premium Active", "High Premium Active"],
     },
     "General": {
@@ -3389,7 +3388,7 @@ def main():
         "agent_performance_targets": AGENT_PERF_TARGETS,
         # Department -> {agents, categories} for the Performance page's
         # per-department scorecards -- "agents": None in the source dict
-        # (General) is resolved to the live agent_list here.
+        # is resolved to the live agent_list here.
         "agent_performance_departments": {
             dept: {
                 "agents": info["agents"] if info["agents"] is not None else agent_list,

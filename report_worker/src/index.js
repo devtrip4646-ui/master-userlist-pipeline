@@ -942,8 +942,8 @@ if (IS_PERFORMANCE) {
     const perfRows = data.agent_performance || [];
     const targets = data.agent_performance_targets || {};
     // Departments: each is its own scorecard, scored only on its own
-    // agents x its own categories -- an agent in multiple departments
-    // (e.g. Rithika: FTD + Reactivation) gets a separate score in each.
+    // categories -- every agent is scored in every department (see
+    // agent_performance_departments), earning a separate score in each.
     const departments = data.agent_performance_departments || {};
     const deptNames = Object.keys(departments);
     const allDates = Array.from(new Set(perfRows.map(r => r.date))).sort();
