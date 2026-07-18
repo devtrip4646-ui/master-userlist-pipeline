@@ -264,17 +264,24 @@ const PAGE = `<!DOCTYPE html>
   .perf-podium-incentive .amt { font-size: 20px; font-weight: 900; display: block; }
   .perf-podium-none { margin-top: 12px; font-size: 12px; opacity: 0.85; font-style: italic; }
 
-  .perf-podium.compact { gap: 10px; margin-bottom: 10px; }
-  .perf-podium.compact .perf-podium-card { padding: 10px 12px; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.10); }
-  .perf-podium.compact .perf-podium-card.p1 { transform: none; }
-  .perf-podium.compact .perf-podium-medal { font-size: 16px; }
-  .perf-podium.compact .perf-podium-name { font-size: 12px; margin-top: 2px; }
-  .perf-podium.compact .perf-podium-score { font-size: 18px; margin-top: 3px; }
-  .perf-podium.compact .perf-podium-score small { font-size: 10px; }
-  .perf-podium.compact .perf-podium-incentive { margin-top: 6px; padding: 4px 8px; font-size: 10px; border-radius: 7px; }
-  .perf-podium.compact .perf-podium-incentive .amt { font-size: 13px; }
-  .perf-podium.compact .perf-podium-none { margin-top: 6px; font-size: 10px; }
-  .perf-dept-title.compact { font-size: 12px; margin: 14px 0 6px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.03em; }
+  .perf-leaderboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 24px; align-items: start; }
+  @media (max-width: 900px) { .perf-leaderboard-grid { grid-template-columns: 1fr; } }
+  .perf-mini-title { font-size: 11px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.03em; margin: 14px 0 6px; }
+  .perf-mini-title:first-child { margin-top: 0; }
+  .perf-compact-list { display: flex; flex-direction: column; gap: 5px; }
+  .perf-compact-row { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: 8px; background: #fff; border: 1px solid #e5e7eb; border-left-width: 3px; }
+  .perf-compact-row.rank1 { border-left-color: #d4941f; }
+  .perf-compact-row.rank2 { border-left-color: #8a97a3; }
+  .perf-compact-row.rank3 { border-left-color: #a86a37; }
+  .perf-compact-row .pcr-medal { font-size: 14px; width: 18px; flex-shrink: 0; }
+  .perf-compact-row .pcr-name { font-weight: 700; font-size: 12px; color: #1a1a1a; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .perf-compact-row .pcr-score { font-weight: 800; font-size: 13px; color: #1a1a1a; }
+  .perf-compact-row .pcr-incentive { font-size: 10px; font-weight: 700; color: #059669; white-space: nowrap; }
+  .perf-compact-row .pcr-incentive.na { color: #9ca3af; font-style: italic; font-weight: 500; }
+  .perf-leaderboard-right .perf-compact-row { padding: 10px 14px; }
+  .perf-leaderboard-right .pcr-medal { font-size: 18px; width: 22px; }
+  .perf-leaderboard-right .pcr-name { font-size: 13px; }
+  .perf-leaderboard-right .pcr-score { font-size: 15px; }
 
   .perf-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 16px; }
   .perf-card .perf-rank { width: 34px; height: 34px; border-radius: 50%; background: #f3f4f6; color: #444; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -945,13 +952,18 @@ if (IS_PERFORMANCE) {
         <span><i style="background:#d1d5db"></i> No users assigned -- excluded, not counted against them</span>
         <span style="margin-left:auto">Incentive brackets (rank 1 / 2 / 3): <b class="perf-incentive-chip tier1">60%+: Rs1500/800/500</b> <b class="perf-incentive-chip tier2">75%+: Rs4000/2000/1400</b> <b class="perf-incentive-chip tier3">90%+: Rs10000/5000/2000</b></span>
       </div>
-      <h3 class="perf-dept-title">Overall Ranking</h3>
-      <div id="perf-podium-overall" class="perf-podium"></div>
-
-      \${deptNames.map(dept => \`
-        <h3 class="perf-dept-title compact">\${dept}</h3>
-        <div id="perf-podium-\${slugifyDept(dept)}" class="perf-podium compact"></div>
-      \`).join('')}
+      <div class="perf-leaderboard-grid">
+        <div class="perf-leaderboard-left">
+          \${deptNames.map(dept => \`
+            <h4 class="perf-mini-title">\${dept}</h4>
+            <div id="perf-mini-\${slugifyDept(dept)}" class="perf-compact-list"></div>
+          \`).join('')}
+        </div>
+        <div class="perf-leaderboard-right">
+          <h4 class="perf-mini-title">Overall Ranking</h4>
+          <div id="perf-podium-overall" class="perf-compact-list overall"></div>
+        </div>
+      </div>
 
       <div class="analysis-heading withdrawal"><h2>Daily / Range Performance</h2><div class="line"></div><span class="tag">Scored per department</span></div>
       <div class="perf-controls">
@@ -1052,21 +1064,20 @@ if (IS_PERFORMANCE) {
       return results;
     }
 
-    function renderPodiumInto(elId, ranked) {
-      const podiumEl = document.getElementById(elId);
-      if (!podiumEl) return;
+    function renderCompactListInto(elId, ranked) {
+      const listEl = document.getElementById(elId);
+      if (!listEl) return;
       const medals = ['&#129351;', '&#129352;', '&#129353;'];
-      const podiumClasses = ['p1', 'p2', 'p3'];
-      podiumEl.innerHTML = ranked.slice(0, 3).map((r, i) => {
+      listEl.innerHTML = ranked.slice(0, 3).map((r, i) => {
         const tier = tierForPct(r.composite);
         const incentive = tier > 0 ? INCENTIVE_TABLE[tier][i] : null;
-        return '<div class="perf-podium-card ' + podiumClasses[i] + '">' +
-          '<div class="perf-podium-medal">' + medals[i] + '</div>' +
-          '<div class="perf-podium-name">' + r.agent + '</div>' +
-          '<div class="perf-podium-score">' + r.composite.toFixed(2) + '<small>% of target (month)</small></div>' +
+        return '<div class="perf-compact-row rank' + (i + 1) + '">' +
+          '<span class="pcr-medal">' + medals[i] + '</span>' +
+          '<span class="pcr-name">' + r.agent + '</span>' +
+          '<span class="pcr-score">' + r.composite.toFixed(1) + '%</span>' +
           (incentive
-            ? '<div class="perf-podium-incentive">Incentive earned<span class="amt">' + fmtMoney(incentive) + '</span></div>'
-            : '<div class="perf-podium-none">Below 60% of target -- no incentive yet</div>') +
+            ? '<span class="pcr-incentive">' + fmtMoney(incentive) + '</span>'
+            : '<span class="pcr-incentive na">No incentive</span>') +
           '</div>';
       }).join('');
     }
@@ -1100,11 +1111,11 @@ if (IS_PERFORMANCE) {
     }
 
     function renderPodium() {
-      renderPodiumInto('perf-podium-overall', computeOverallLeaderboard());
+      renderCompactListInto('perf-podium-overall', computeOverallLeaderboard());
       for (const dept of deptNames) {
         const { agents: deptAgents, categories: deptCategories } = departments[dept];
         const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
-        renderPodiumInto('perf-podium-' + slugifyDept(dept), ranked);
+        renderCompactListInto('perf-mini-' + slugifyDept(dept), ranked);
       }
     }
 
