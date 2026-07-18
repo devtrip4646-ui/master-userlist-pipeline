@@ -1835,12 +1835,13 @@ if (IS_PLATFORM_ANALYSIS) {
           <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
           <button class="download-btn-sm" id="btn-dl-bonus-claims">&#128190; Excel</button>
         </div>
-        <div class="ac-note">All bonuses claimed on the selected date (or rolling week/month), and % who deposited afterward.</div>
+        <div class="ac-note">All bonuses claimed in the selected date range, and % who deposited afterward.</div>
         <div class="date-switch" id="bonus-claims-range-switch">
-          <button data-range="day" class="active">Day</button>
-          <button data-range="week">Week</button>
-          <button data-range="month">Month</button>
+          <button data-range="day" class="active">Single Day</button>
+          <button data-range="week">7-Day Range</button>
+          <button data-range="month">30-Day Range</button>
         </div>
+        <div class="ac-note" id="bonus-range-readout" style="margin:-6px 0 10px"></div>
         <div class="date-switch" id="bonus-claims-date-switch"></div>
         <div class="date-switch" id="bonus-claims-switch">
           <button data-view="wallet" class="active">Wallet Bonuses</button>
@@ -2175,6 +2176,24 @@ if (IS_PLATFORM_ANALYSIS) {
       const tbody = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => '<td class="' + (c.num ? 'num' : '') + '">' + c.render(r) + '</td>').join('') + '</tr>').join('') + '</tbody>';
       container.innerHTML = '<div class="table-wrap"><table>' + thead + tbody + '</table></div>';
     }
+    // Shows the ACTUAL date range covered by the current selection -- e.g.
+    // "12 Jul - 18 Jul (7 days)" -- instead of leaving "7-Day Range" as an
+    // abstract label the admin has to mentally translate. Computed from
+    // bonusDatesAll (the real available data dates), walking back by index
+    // rather than raw calendar subtraction, so it stays correct even if a
+    // day is ever missing from the retention window.
+    function updateBonusRangeReadout() {
+      const readoutEl = document.getElementById('bonus-range-readout');
+      if (!readoutEl) return;
+      const windowSize = bonusRange === 'day' ? 1 : bonusRange === 'week' ? 7 : 30;
+      const endIdx = bonusDatesAll.indexOf(selectedBonusDate);
+      const startIdx = endIdx >= 0 ? Math.max(0, endIdx - (windowSize - 1)) : 0;
+      const fromDate = bonusDatesAll[startIdx] || selectedBonusDate;
+      const dayCount = endIdx >= 0 ? (endIdx - startIdx + 1) : 1;
+      readoutEl.textContent = fromDate === selectedBonusDate
+        ? 'Showing: ' + shortDate(selectedBonusDate)
+        : 'Showing: ' + shortDate(fromDate) + ' \\u2013 ' + shortDate(selectedBonusDate) + ' (' + dayCount + ' days)';
+    }
     function renderBonusDateSwitch() {
       const el = document.getElementById('bonus-claims-date-switch');
       el.innerHTML = bonusDates.map(d =>
@@ -2185,12 +2204,14 @@ if (IS_PLATFORM_ANALYSIS) {
           selectedBonusDate = btn.dataset.date;
           bonusClaims = bonusClaimsRangeSources[bonusRange][selectedBonusDate] || { wallet_bonuses: [], deposit_challenge_bonuses: [] };
           renderBonusDateSwitch();
+          updateBonusRangeReadout();
           renderBonusClaims();
         });
       });
     }
     if (bonusDates.length) {
       renderBonusDateSwitch();
+      updateBonusRangeReadout();
       document.querySelectorAll('#bonus-claims-switch button').forEach(btn => {
         btn.addEventListener('click', () => {
           bonusView = btn.dataset.view;
@@ -2203,6 +2224,7 @@ if (IS_PLATFORM_ANALYSIS) {
           bonusRange = btn.dataset.range;
           document.querySelectorAll('#bonus-claims-range-switch button').forEach(b => b.classList.toggle('active', b === btn));
           bonusClaims = bonusClaimsRangeSources[bonusRange][selectedBonusDate] || { wallet_bonuses: [], deposit_challenge_bonuses: [] };
+          updateBonusRangeReadout();
           renderBonusClaims();
         });
       });
