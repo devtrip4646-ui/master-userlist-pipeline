@@ -1064,9 +1064,10 @@ if (IS_PERFORMANCE) {
       return results;
     }
 
-    function renderCompactListInto(elId, ranked) {
+    function renderCompactListInto(elId, ranked, opts) {
       const listEl = document.getElementById(elId);
       if (!listEl) return;
+      const showIncentive = !opts || opts.showIncentive !== false;
       const medals = ['&#129351;', '&#129352;', '&#129353;'];
       listEl.innerHTML = ranked.slice(0, 3).map((r, i) => {
         const tier = tierForPct(r.composite);
@@ -1075,9 +1076,11 @@ if (IS_PERFORMANCE) {
           '<span class="pcr-medal">' + medals[i] + '</span>' +
           '<span class="pcr-name">' + r.agent + '</span>' +
           '<span class="pcr-score">' + r.composite.toFixed(1) + '%</span>' +
-          (incentive
-            ? '<span class="pcr-incentive">' + fmtMoney(incentive) + '</span>'
-            : '<span class="pcr-incentive na">No incentive</span>') +
+          (showIncentive
+            ? (incentive
+              ? '<span class="pcr-incentive">' + fmtMoney(incentive) + '</span>'
+              : '<span class="pcr-incentive na">No incentive</span>')
+            : '') +
           '</div>';
       }).join('');
     }
@@ -1115,7 +1118,7 @@ if (IS_PERFORMANCE) {
       for (const dept of deptNames) {
         const { agents: deptAgents, categories: deptCategories } = departments[dept];
         const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
-        renderCompactListInto('perf-mini-' + slugifyDept(dept), ranked);
+        renderCompactListInto('perf-mini-' + slugifyDept(dept), ranked, { showIncentive: false });
       }
     }
 
