@@ -234,7 +234,17 @@ const PAGE = `<!DOCTYPE html>
   .date-switch button.active { background: #4338ca; color: #fff; border-color: #4338ca; }
   .range-date-select { padding: 8px 12px; border-radius: 20px; border: 1px solid #d8dce5; background: #fff; font-size: 13px; font-weight: 600; color: #444; cursor: pointer; }
 
-  .perf-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; }
+  /* ---- Performance page: shared tokens ---- */
+  :root {
+    --perf-ink: #111827;
+    --perf-sub: #6b7280;
+    --perf-line: #e5e7eb;
+    --perf-green: #059669;
+    --perf-amber: #d97706;
+    --perf-red: #dc2626;
+  }
+
+  .perf-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid var(--perf-line); border-radius: 12px; padding: 12px 16px; margin-bottom: 22px; }
   .perf-controls input[type=date] { border: 1px solid #d8dce5; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
   .perf-controls .perf-to { color: #9ca3af; font-size: 12px; font-weight: 700; }
   .perf-preset { padding: 7px 14px; border-radius: 18px; border: 1px solid #d8dce5; background: #f9fafb; font-size: 12px; cursor: pointer; font-weight: 700; color: #444; }
@@ -242,46 +252,49 @@ const PAGE = `<!DOCTYPE html>
   .perf-daterange { position: relative; }
   .perf-daterange-btn { padding: 8px 14px; border-radius: 8px; border: 1px solid #d8dce5; background: #fff; font-size: 13px; cursor: pointer; font-weight: 600; color: #333; }
   .perf-daterange-btn:hover { border-color: #4338ca; }
-  .perf-daterange-popover { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); padding: 14px; display: flex; align-items: flex-end; gap: 10px; }
+  .perf-daterange-popover { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; background: #fff; border: 1px solid var(--perf-line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); padding: 14px; display: flex; align-items: flex-end; gap: 10px; }
   .perf-daterange-popover label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; }
   .perf-daterange-popover input[type=date] { border: 1px solid #d8dce5; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
   .perf-daterange-popover button { padding: 8px 16px; border: none; border-radius: 8px; background: #4338ca; color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; }
   .perf-daterange-popover button:hover { background: #3730a3; }
 
-  .perf-dept-title { font-size: 15px; font-weight: 700; color: #374151; margin: 22px 0 10px; }
-  .perf-podium { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 26px; }
-  @media (max-width: 900px) { .perf-podium { grid-template-columns: 1fr; } }
-  .perf-podium-card { border-radius: 16px; padding: 20px 18px; color: #fff; position: relative; overflow: hidden; box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
-  .perf-podium-card.p1 { background: linear-gradient(145deg, #f5c542, #d4941f); order: 2; transform: scale(1.05); }
-  .perf-podium-card.p2 { background: linear-gradient(145deg, #b8c2cc, #8a97a3); order: 1; }
-  .perf-podium-card.p3 { background: linear-gradient(145deg, #d0925a, #a86a37); order: 3; }
-  @media (max-width: 900px) { .perf-podium-card.p1, .perf-podium-card.p2, .perf-podium-card.p3 { order: initial; transform: none; } }
-  .perf-podium-medal { font-size: 30px; }
-  .perf-podium-name { font-size: 18px; font-weight: 800; margin-top: 4px; }
-  .perf-podium-score { font-size: 34px; font-weight: 900; margin-top: 8px; letter-spacing: -0.02em; }
-  .perf-podium-score small { font-size: 13px; font-weight: 700; opacity: 0.85; margin-left: 4px; }
-  .perf-podium-incentive { margin-top: 12px; background: rgba(255,255,255,0.22); border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
-  .perf-podium-incentive .amt { font-size: 20px; font-weight: 900; display: block; }
-  .perf-podium-none { margin-top: 12px; font-size: 12px; opacity: 0.85; font-style: italic; }
+  /* Explainer card replacing the old cramped one-line legend */
+  .perf-explainer { display: grid; grid-template-columns: 1.1fr 1fr; gap: 22px; background: #fff; border: 1px solid var(--perf-line); border-radius: 14px; padding: 18px 22px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .perf-explainer { grid-template-columns: 1fr; } }
+  .perf-explainer h5 { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--perf-sub); margin: 0 0 10px; }
+  .perf-tier-key { display: flex; flex-direction: column; gap: 7px; }
+  .perf-tier-key .tk-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: #374151; }
+  .perf-tier-key .tk-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .perf-incentive-table { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .perf-incentive-cell { border-radius: 10px; padding: 10px 12px; text-align: center; }
+  .perf-incentive-cell.tier1 { background: #eff6ff; }
+  .perf-incentive-cell.tier2 { background: #f5f3ff; }
+  .perf-incentive-cell.tier3 { background: #fffbeb; }
+  .perf-incentive-cell .ic-thresh { font-size: 11px; font-weight: 800; color: var(--perf-sub); }
+  .perf-incentive-cell .ic-amts { font-size: 12px; font-weight: 700; color: var(--perf-ink); margin-top: 3px; }
 
-  .perf-leaderboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 24px; align-items: start; }
+  .perf-section-lead { font-size: 13px; color: var(--perf-sub); margin: -8px 0 18px; }
+
+  /* Monthly Leaderboard: departments (left) + Overall Ranking (right) */
+  .perf-leaderboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-bottom: 30px; align-items: start; }
   @media (max-width: 900px) { .perf-leaderboard-grid { grid-template-columns: 1fr; } }
-  .perf-mini-title { font-size: 11px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.03em; margin: 14px 0 6px; }
-  .perf-mini-title:first-child { margin-top: 0; }
-  .perf-compact-list { display: flex; flex-direction: column; gap: 5px; }
-  .perf-compact-row { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: 8px; background: #fff; border: 1px solid #e5e7eb; border-left-width: 3px; }
-  .perf-compact-row.rank1 { border-left-color: #d4941f; }
-  .perf-compact-row.rank2 { border-left-color: #8a97a3; }
-  .perf-compact-row.rank3 { border-left-color: #a86a37; }
-  .perf-compact-row .pcr-medal { font-size: 14px; width: 18px; flex-shrink: 0; }
-  .perf-compact-row .pcr-name { font-weight: 700; font-size: 12px; color: #1a1a1a; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .perf-compact-row .pcr-score { font-weight: 800; font-size: 13px; color: #1a1a1a; }
-  .perf-compact-row .pcr-incentive { font-size: 10px; font-weight: 700; color: #059669; white-space: nowrap; }
-  .perf-compact-row .pcr-incentive.na { color: #9ca3af; font-style: italic; font-weight: 500; }
-  .perf-leaderboard-right .perf-compact-row { padding: 10px 14px; }
-  .perf-leaderboard-right .pcr-medal { font-size: 18px; width: 22px; }
-  .perf-leaderboard-right .pcr-name { font-size: 13px; }
-  .perf-leaderboard-right .pcr-score { font-size: 15px; }
+  .perf-dept-panel { background: #fff; border: 1px solid var(--perf-line); border-radius: 14px; padding: 16px 18px 18px; margin-bottom: 16px; }
+  .perf-dept-panel:last-child { margin-bottom: 0; }
+  .perf-dept-panel-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+  .perf-dept-panel-head .dp-icon { font-size: 16px; }
+  .perf-dept-panel-head h4 { font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; color: var(--perf-ink); margin: 0; }
+  .perf-rank-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid #f1f2f5; }
+  .perf-rank-row:first-of-type { border-top: none; }
+  .perf-rank-row .pr-medal { width: 22px; font-size: 15px; text-align: center; flex-shrink: 0; }
+  .perf-rank-row .pr-main { flex: 1; min-width: 0; }
+  .perf-rank-row .pr-name-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .perf-rank-row .pr-name { font-weight: 700; font-size: 12.5px; color: var(--perf-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .perf-rank-row .pr-score { font-weight: 800; font-size: 12.5px; flex-shrink: 0; }
+  .perf-rank-row .pr-bar { height: 5px; border-radius: 3px; background: #eef0f4; overflow: hidden; }
+  .perf-rank-row .pr-bar-fill { height: 100%; border-radius: 3px; }
+  .perf-rank-row .pr-incentive { font-size: 10.5px; font-weight: 700; color: var(--perf-green); flex-shrink: 0; white-space: nowrap; }
+  .perf-rank-row .pr-incentive.na { color: #b0b6c0; font-weight: 500; }
+  .perf-dept-empty { font-size: 12px; color: #9ca3af; font-style: italic; padding: 6px 0; }
 
   .perf-overall-podium { display: flex; flex-direction: column; gap: 16px; height: 100%; }
   .perf-overall-podium .poc { flex: 1; border-radius: 16px; padding: 22px 26px; color: #fff; display: flex; align-items: center; gap: 18px; box-shadow: 0 8px 22px rgba(0,0,0,0.14); }
@@ -296,35 +309,36 @@ const PAGE = `<!DOCTYPE html>
   .perf-overall-podium .poc-score { text-align: right; flex-shrink: 0; }
   .perf-overall-podium .poc-score .val { font-size: 32px; font-weight: 900; letter-spacing: -0.02em; }
   .perf-overall-podium .poc-score small { display: block; font-size: 11px; font-weight: 700; opacity: 0.85; }
+  .perf-overall-empty { background: #fff; border: 1px dashed var(--perf-line); border-radius: 14px; padding: 30px; text-align: center; color: #9ca3af; font-size: 13px; height: 100%; display: flex; align-items: center; justify-content: center; }
 
-  .perf-range-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+  /* Daily / Range Performance */
+  .perf-range-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: start; }
   @media (max-width: 900px) { .perf-range-grid { grid-template-columns: 1fr; } }
-  .perf-range-grid .perf-card { flex-wrap: wrap; }
-  .perf-range-grid .perf-criteria-grid { min-width: 100%; order: 3; margin-top: 10px; }
-  .perf-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 16px; }
-  .perf-card .perf-rank { width: 34px; height: 34px; border-radius: 50%; background: #f3f4f6; color: #444; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .perf-range-col > .perf-dept-block { margin-bottom: 22px; }
+  .perf-range-col > .perf-dept-block:last-child { margin-bottom: 0; }
+  .perf-dept-block-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+  .perf-dept-block-head .db-icon { font-size: 17px; }
+  .perf-dept-block-head h3 { font-size: 14px; font-weight: 800; color: var(--perf-ink); margin: 0; }
+  .perf-dept-block-head .db-count { font-size: 11px; font-weight: 700; color: var(--perf-sub); background: #f3f4f6; padding: 2px 9px; border-radius: 10px; margin-left: 2px; }
+  .perf-dept-scroll { max-height: 460px; overflow-y: auto; border: 1px solid var(--perf-line); border-radius: 12px; background: #fff; }
+  .perf-card { padding: 13px 16px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #f1f2f5; }
+  .perf-card:last-child { border-bottom: none; }
+  .perf-card:nth-child(even) { background: #fafbfc; }
+  .perf-card .perf-rank { width: 28px; height: 28px; border-radius: 50%; background: #f3f4f6; color: #444; font-weight: 800; font-size: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .perf-card .perf-rank.top3 { background: linear-gradient(145deg, #4338ca, #6366f1); color: #fff; }
-  .perf-card .perf-agent-name { font-weight: 800; font-size: 14px; color: #1a1a1a; min-width: 140px; }
-  .perf-card .perf-score-big { font-size: 20px; font-weight: 900; min-width: 70px; text-align: right; }
-  .perf-criteria-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; flex: 1; }
-  @media (max-width: 1100px) { .perf-criteria-grid { grid-template-columns: repeat(4, 1fr); } }
-  .perf-crit { font-size: 10px; color: #6b7280; }
-  .perf-crit .pc-label { font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .perf-crit .pc-value { font-weight: 800; font-size: 12px; color: #1a1a1a; margin: 2px 0; }
+  .perf-card .perf-agent-name { font-weight: 800; font-size: 13px; color: var(--perf-ink); width: 128px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .perf-card .perf-score-big { font-size: 17px; font-weight: 900; min-width: 62px; text-align: right; flex-shrink: 0; }
+  .perf-criteria-grid { display: grid; gap: 10px; flex: 1; min-width: 0; }
+  .perf-crit { font-size: 11px; color: var(--perf-sub); min-width: 0; }
+  .perf-crit .pc-label { font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .perf-crit .pc-value { font-weight: 800; font-size: 12.5px; color: var(--perf-ink); margin: 3px 0; }
   .perf-bar { height: 6px; border-radius: 4px; background: #eef0f4; overflow: hidden; }
   .perf-bar-fill { height: 100%; border-radius: 4px; }
-  .perf-bar-fill.pb-green { background: #10b981; }
-  .perf-bar-fill.pb-amber { background: #f59e0b; }
-  .perf-bar-fill.pb-red { background: #e11d48; }
+  .perf-bar-fill.pb-green { background: var(--perf-green); }
+  .perf-bar-fill.pb-amber { background: var(--perf-amber); }
+  .perf-bar-fill.pb-red { background: var(--perf-red); }
   .perf-bar-fill.pb-na { background: #d1d5db; }
-  .perf-crit-na .pc-value { color: #9ca3af; font-style: italic; font-size: 10px; }
-  .perf-incentive-chip { padding: 4px 10px; border-radius: 14px; font-size: 11px; font-weight: 800; white-space: nowrap; }
-  .perf-incentive-chip.tier1 { background: #dbeafe; color: #1e40af; }
-  .perf-incentive-chip.tier2 { background: #ede9fe; color: #6d28d9; }
-  .perf-incentive-chip.tier3 { background: #fef3c7; color: #92400e; }
-  .perf-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: #6b7280; margin: 4px 0 20px; }
-  .perf-legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .perf-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .perf-crit-na .pc-value { color: #9ca3af; font-style: italic; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -963,27 +977,42 @@ if (IS_PERFORMANCE) {
     }
     el.innerHTML = \`
       <div class="analysis-heading deposit"><h2>Monthly Leaderboard &amp; Incentives</h2><div class="line"></div><span class="tag">\${shortDate(monthFrom)} - \${shortDate(monthTo)}</span></div>
-      <div class="perf-legend">
-        <span><i style="background:#10b981"></i> 100%+ of target</span>
-        <span><i style="background:#f59e0b"></i> 60-99% of target</span>
-        <span><i style="background:#e11d48"></i> Below 60%</span>
-        <span><i style="background:#d1d5db"></i> No users assigned -- excluded, not counted against them</span>
-        <span style="margin-left:auto">Incentive brackets (rank 1 / 2 / 3): <b class="perf-incentive-chip tier1">60%+: Rs1500/800/500</b> <b class="perf-incentive-chip tier2">75%+: Rs4000/2000/1400</b> <b class="perf-incentive-chip tier3">90%+: Rs10000/5000/2000</b></span>
+      <div class="perf-explainer">
+        <div>
+          <h5>How scoring works</h5>
+          <div class="perf-tier-key">
+            <div class="tk-row"><span class="tk-dot" style="background:#059669"></span>100%+ of target -- fully on track</div>
+            <div class="tk-row"><span class="tk-dot" style="background:#d97706"></span>60-99% of target -- getting there</div>
+            <div class="tk-row"><span class="tk-dot" style="background:#dc2626"></span>Below 60% of target</div>
+            <div class="tk-row"><span class="tk-dot" style="background:#d1d5db"></span>No users assigned this criterion -- excluded, not counted against the agent</div>
+          </div>
+        </div>
+        <div>
+          <h5>Incentive brackets (rank 1 / 2 / 3)</h5>
+          <div class="perf-incentive-table">
+            <div class="perf-incentive-cell tier1"><div class="ic-thresh">60%+</div><div class="ic-amts">Rs1500 / 800 / 500</div></div>
+            <div class="perf-incentive-cell tier2"><div class="ic-thresh">75%+</div><div class="ic-amts">Rs4000 / 2000 / 1400</div></div>
+            <div class="perf-incentive-cell tier3"><div class="ic-thresh">90%+</div><div class="ic-amts">Rs10000 / 5000 / 2000</div></div>
+          </div>
+        </div>
       </div>
       <div class="perf-leaderboard-grid">
-        <div class="perf-leaderboard-left">
+        <div>
           \${deptNames.map(dept => \`
-            <h4 class="perf-mini-title">\${dept}</h4>
-            <div id="perf-mini-\${slugifyDept(dept)}" class="perf-compact-list"></div>
+            <div class="perf-dept-panel">
+              <div class="perf-dept-panel-head"><span class="dp-icon">\${deptIcon(dept)}</span><h4>\${dept}</h4></div>
+              <div id="perf-mini-\${slugifyDept(dept)}"></div>
+            </div>
           \`).join('')}
         </div>
-        <div class="perf-leaderboard-right">
-          <h4 class="perf-mini-title">Overall Ranking</h4>
+        <div>
+          <div class="perf-dept-panel-head" style="margin-bottom:12px"><span class="dp-icon">&#127942;</span><h4>Overall Ranking -- average across all departments</h4></div>
           <div id="perf-podium-overall" class="perf-overall-podium"></div>
         </div>
       </div>
 
       <div class="analysis-heading withdrawal"><h2>Daily / Range Performance</h2><div class="line"></div><span class="tag">Scored per department</span></div>
+      <div class="perf-section-lead">Pick a date or range below -- every department's list recalculates against that window (the Monthly Leaderboard above always stays fixed to this calendar month).</div>
       <div class="perf-controls">
         <button class="perf-preset active" data-preset="today">Today</button>
         <button class="perf-preset" data-preset="yesterday">Yesterday</button>
@@ -1001,20 +1030,32 @@ if (IS_PERFORMANCE) {
         </div>
       </div>
       <div class="perf-range-grid">
-        <div>
+        <div class="perf-range-col">
           \${deptNames.slice(0, 2).map(dept => \`
-            <h3 class="perf-dept-title">\${dept}</h3>
-            <div id="perf-list-\${slugifyDept(dept)}"></div>
+            <div class="perf-dept-block">
+              <div class="perf-dept-block-head"><span class="db-icon">\${deptIcon(dept)}</span><h3>\${dept}</h3><span class="db-count" id="perf-count-\${slugifyDept(dept)}"></span></div>
+              <div class="perf-dept-scroll"><div id="perf-list-\${slugifyDept(dept)}"></div></div>
+            </div>
           \`).join('')}
         </div>
-        <div>
+        <div class="perf-range-col">
           \${deptNames.slice(2).map(dept => \`
-            <h3 class="perf-dept-title">\${dept}</h3>
-            <div id="perf-list-\${slugifyDept(dept)}"></div>
+            <div class="perf-dept-block">
+              <div class="perf-dept-block-head"><span class="db-icon">\${deptIcon(dept)}</span><h3>\${dept}</h3><span class="db-count" id="perf-count-\${slugifyDept(dept)}"></span></div>
+              <div class="perf-dept-scroll"><div id="perf-list-\${slugifyDept(dept)}"></div></div>
+            </div>
           \`).join('')}
         </div>
       </div>
     \`;
+
+    function deptIcon(name) {
+      const n = name.toLowerCase();
+      if (n.includes('ftd')) return '&#127881;';
+      if (n.includes('reactivation')) return '&#128260;';
+      if (n.includes('vip')) return '&#128142;';
+      return '&#128202;';
+    }
 
     function slugifyDept(name) { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
     function fmtMoney(v) { return 'Rs' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
@@ -1095,6 +1136,10 @@ if (IS_PERFORMANCE) {
     function renderOverallPodiumInto(elId, ranked) {
       const el = document.getElementById(elId);
       if (!el) return;
+      if (!ranked.length) {
+        el.innerHTML = '<div class="perf-overall-empty">No agents to rank yet</div>';
+        return;
+      }
       const medals = ['&#129351;', '&#129352;', '&#129353;'];
       const tiers = ['gold', 'silver', 'bronze'];
       const labels = ['Gold', 'Silver', 'Bronze'];
@@ -1115,22 +1160,30 @@ if (IS_PERFORMANCE) {
       }).join('');
     }
 
-    function renderCompactListInto(elId, ranked, opts) {
+    function renderRankListInto(elId, ranked, opts) {
       const listEl = document.getElementById(elId);
       if (!listEl) return;
       const showIncentive = !opts || opts.showIncentive !== false;
+      if (!ranked.length) {
+        listEl.innerHTML = '<div class="perf-dept-empty">No agents to rank yet</div>';
+        return;
+      }
       const medals = ['&#129351;', '&#129352;', '&#129353;'];
       listEl.innerHTML = ranked.slice(0, 3).map((r, i) => {
         const tier = tierForPct(r.composite);
         const incentive = tier > 0 ? INCENTIVE_TABLE[tier][i] : null;
-        return '<div class="perf-compact-row rank' + (i + 1) + '">' +
-          '<span class="pcr-medal">' + medals[i] + '</span>' +
-          '<span class="pcr-name">' + r.agent + '</span>' +
-          '<span class="pcr-score">' + r.composite.toFixed(1) + '%</span>' +
+        const barPct = Math.max(0, Math.min(r.composite, 100));
+        return '<div class="perf-rank-row">' +
+          '<span class="pr-medal">' + medals[i] + '</span>' +
+          '<div class="pr-main">' +
+          '<div class="pr-name-line"><span class="pr-name">' + r.agent + '</span>' +
+          '<span class="pr-score" style="color:' + (r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#d97706' : '#dc2626') + '">' + r.composite.toFixed(1) + '%</span></div>' +
+          '<div class="pr-bar"><div class="pr-bar-fill" style="width:' + barPct + '%;background:' + (r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#d97706' : '#dc2626') + '"></div></div>' +
+          '</div>' +
           (showIncentive
             ? (incentive
-              ? '<span class="pcr-incentive">' + fmtMoney(incentive) + '</span>'
-              : '<span class="pcr-incentive na">No incentive</span>')
+              ? '<span class="pr-incentive">' + fmtMoney(incentive) + '</span>'
+              : '<span class="pr-incentive na">No incentive</span>')
             : '') +
           '</div>';
       }).join('');
@@ -1169,7 +1222,7 @@ if (IS_PERFORMANCE) {
       for (const dept of deptNames) {
         const { agents: deptAgents, categories: deptCategories } = departments[dept];
         const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
-        renderCompactListInto('perf-mini-' + slugifyDept(dept), ranked, { showIncentive: false });
+        renderRankListInto('perf-mini-' + slugifyDept(dept), ranked, { showIncentive: false });
       }
     }
 
@@ -1179,6 +1232,8 @@ if (IS_PERFORMANCE) {
         const ranked = computeLeaderboard(fromDate, toDate, deptAgents, deptCategories);
         const listEl = document.getElementById('perf-list-' + slugifyDept(dept));
         if (!listEl) continue;
+        const countEl = document.getElementById('perf-count-' + slugifyDept(dept));
+        if (countEl) countEl.textContent = ranked.length + (ranked.length === 1 ? ' agent' : ' agents');
 
         listEl.innerHTML = ranked.map((r, i) => {
           const rankNum = i + 1;
@@ -1202,7 +1257,7 @@ if (IS_PERFORMANCE) {
             '<div class="perf-rank' + (rankNum <= 3 ? ' top3' : '') + '">' + rankNum + '</div>' +
             '<div class="perf-agent-name">' + r.agent + '</div>' +
             '<div class="perf-criteria-grid" style="grid-template-columns:repeat(' + Math.max(1, r.criteria.length) + ',1fr)">' + critHtml + '</div>' +
-            '<div class="perf-score-big" style="color:' + (r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#b45309' : '#be123c') + '">' + r.composite.toFixed(2) + '%</div>' +
+            '<div class="perf-score-big" style="color:' + (r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#d97706' : '#dc2626') + '">' + r.composite.toFixed(2) + '%</div>' +
             '</div>';
         }).join('');
       }
