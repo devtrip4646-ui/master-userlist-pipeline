@@ -264,6 +264,18 @@ const PAGE = `<!DOCTYPE html>
   .perf-podium-incentive .amt { font-size: 20px; font-weight: 900; display: block; }
   .perf-podium-none { margin-top: 12px; font-size: 12px; opacity: 0.85; font-style: italic; }
 
+  .perf-podium.compact { gap: 10px; margin-bottom: 10px; }
+  .perf-podium.compact .perf-podium-card { padding: 10px 12px; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.10); }
+  .perf-podium.compact .perf-podium-card.p1 { transform: none; }
+  .perf-podium.compact .perf-podium-medal { font-size: 16px; }
+  .perf-podium.compact .perf-podium-name { font-size: 12px; margin-top: 2px; }
+  .perf-podium.compact .perf-podium-score { font-size: 18px; margin-top: 3px; }
+  .perf-podium.compact .perf-podium-score small { font-size: 10px; }
+  .perf-podium.compact .perf-podium-incentive { margin-top: 6px; padding: 4px 8px; font-size: 10px; border-radius: 7px; }
+  .perf-podium.compact .perf-podium-incentive .amt { font-size: 13px; }
+  .perf-podium.compact .perf-podium-none { margin-top: 6px; font-size: 10px; }
+  .perf-dept-title.compact { font-size: 12px; margin: 14px 0 6px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.03em; }
+
   .perf-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 16px; }
   .perf-card .perf-rank { width: 34px; height: 34px; border-radius: 50%; background: #f3f4f6; color: #444; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .perf-card .perf-rank.top3 { background: linear-gradient(145deg, #4338ca, #6366f1); color: #fff; }
@@ -933,9 +945,12 @@ if (IS_PERFORMANCE) {
         <span><i style="background:#d1d5db"></i> No users assigned -- excluded, not counted against them</span>
         <span style="margin-left:auto">Incentive brackets (rank 1 / 2 / 3): <b class="perf-incentive-chip tier1">60%+: Rs1500/800/500</b> <b class="perf-incentive-chip tier2">75%+: Rs4000/2000/1400</b> <b class="perf-incentive-chip tier3">90%+: Rs10000/5000/2000</b></span>
       </div>
+      <h3 class="perf-dept-title">Overall Ranking</h3>
+      <div id="perf-podium-overall" class="perf-podium"></div>
+
       \${deptNames.map(dept => \`
-        <h3 class="perf-dept-title">\${dept}</h3>
-        <div id="perf-podium-\${slugifyDept(dept)}" class="perf-podium"></div>
+        <h3 class="perf-dept-title compact">\${dept}</h3>
+        <div id="perf-podium-\${slugifyDept(dept)}" class="perf-podium compact"></div>
       \`).join('')}
 
       <div class="analysis-heading withdrawal"><h2>Daily / Range Performance</h2><div class="line"></div><span class="tag">Scored per department</span></div>
@@ -1037,26 +1052,59 @@ if (IS_PERFORMANCE) {
       return results;
     }
 
-    function renderPodium() {
+    function renderPodiumInto(elId, ranked) {
+      const podiumEl = document.getElementById(elId);
+      if (!podiumEl) return;
+      const medals = ['&#129351;', '&#129352;', '&#129353;'];
+      const podiumClasses = ['p1', 'p2', 'p3'];
+      podiumEl.innerHTML = ranked.slice(0, 3).map((r, i) => {
+        const tier = tierForPct(r.composite);
+        const incentive = tier > 0 ? INCENTIVE_TABLE[tier][i] : null;
+        return '<div class="perf-podium-card ' + podiumClasses[i] + '">' +
+          '<div class="perf-podium-medal">' + medals[i] + '</div>' +
+          '<div class="perf-podium-name">' + r.agent + '</div>' +
+          '<div class="perf-podium-score">' + r.composite.toFixed(2) + '<small>% of target (month)</small></div>' +
+          (incentive
+            ? '<div class="perf-podium-incentive">Incentive earned<span class="amt">' + fmtMoney(incentive) + '</span></div>'
+            : '<div class="perf-podium-none">Below 60% of target -- no incentive yet</div>') +
+          '</div>';
+      }).join('');
+    }
+
+    // Overall Ranking: an agent's score is the average of their composite
+    // across every department they belong to (a single-department agent's
+    // overall score is just that department's score; a multi-department
+    // agent's is the mean of each). Not a re-scoring against a merged
+    // category list -- each department's composite is already normalized
+    // to "% of that department's own target," so averaging those is
+    // apples-to-apples regardless of which/how-many categories each
+    // department covers.
+    function computeOverallLeaderboard() {
+      const allAgents = new Set();
+      deptNames.forEach(dept => departments[dept].agents.forEach(a => allAgents.add(a)));
+      const scoresByAgent = {};
       for (const dept of deptNames) {
         const { agents: deptAgents, categories: deptCategories } = departments[dept];
         const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
-        const podiumEl = document.getElementById('perf-podium-' + slugifyDept(dept));
-        if (!podiumEl) continue;
-        const medals = ['&#129351;', '&#129352;', '&#129353;'];
-        const podiumClasses = ['p1', 'p2', 'p3'];
-        podiumEl.innerHTML = ranked.slice(0, 3).map((r, i) => {
-          const tier = tierForPct(r.composite);
-          const incentive = tier > 0 ? INCENTIVE_TABLE[tier][i] : null;
-          return '<div class="perf-podium-card ' + podiumClasses[i] + '">' +
-            '<div class="perf-podium-medal">' + medals[i] + '</div>' +
-            '<div class="perf-podium-name">' + r.agent + '</div>' +
-            '<div class="perf-podium-score">' + r.composite.toFixed(2) + '<small>% of target (month)</small></div>' +
-            (incentive
-              ? '<div class="perf-podium-incentive">Incentive earned<span class="amt">' + fmtMoney(incentive) + '</span></div>'
-              : '<div class="perf-podium-none">Below 60% of target -- no incentive yet</div>') +
-            '</div>';
-        }).join('');
+        for (const r of ranked) {
+          (scoresByAgent[r.agent] = scoresByAgent[r.agent] || []).push(r.composite);
+        }
+      }
+      const results = Array.from(allAgents).map(agent => {
+        const scores = scoresByAgent[agent] || [];
+        const composite = scores.length ? scores.reduce((s, c) => s + c, 0) / scores.length : 0;
+        return { agent, composite };
+      });
+      results.sort((a, b) => b.composite - a.composite);
+      return results;
+    }
+
+    function renderPodium() {
+      renderPodiumInto('perf-podium-overall', computeOverallLeaderboard());
+      for (const dept of deptNames) {
+        const { agents: deptAgents, categories: deptCategories } = departments[dept];
+        const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
+        renderPodiumInto('perf-podium-' + slugifyDept(dept), ranked);
       }
     }
 
