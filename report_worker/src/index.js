@@ -314,7 +314,7 @@ const PAGE = `<!DOCTYPE html>
   .perf-extra-rank-row { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid var(--perf-line); border-left-width: 3px; border-radius: 10px; padding: 10px 14px; }
   .perf-extra-rank-row.fourth { border-left-color: #9ca3af; }
   .perf-extra-rank-row.last { border-left-color: #dc2626; }
-  .perf-extra-rank-row .er-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--perf-sub); width: 76px; flex-shrink: 0; }
+  .perf-extra-rank-row .er-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--perf-sub); width: 90px; flex-shrink: 0; white-space: nowrap; }
   .perf-extra-rank-row .er-name { font-weight: 700; font-size: 13px; color: var(--perf-ink); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .perf-extra-rank-row .er-score { font-weight: 800; font-size: 14px; flex-shrink: 0; }
 
@@ -1166,27 +1166,33 @@ if (IS_PERFORMANCE) {
           '</div>';
       }).join('');
 
-      // 4th place and last place, shown as slim rows below the podium --
-      // last place is skipped separately when it would just duplicate 4th
-      // (i.e. exactly 4 agents ranked total).
-      const extraRows = [];
+      // Every rank from 4th down to last, shown as slim rows below the
+      // podium -- the full spread, not just a sampled few.
       if (ranked.length > 3) {
-        extraRows.push({ label: '4th Place', r: ranked[3] });
-      }
-      if (ranked.length > 4) {
-        extraRows.push({ label: 'Last Place', r: ranked[ranked.length - 1] });
-      }
-      if (extraRows.length) {
-        html += '<div class="perf-extra-rank">' + extraRows.map(({ label, r }) => {
+        const rest = ranked.slice(3);
+        html += '<div class="perf-extra-rank">' + rest.map((r, idx) => {
+          const rankNum = idx + 4;
+          const isLast = rankNum === ranked.length;
           const color = r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#d97706' : '#dc2626';
-          return '<div class="perf-extra-rank-row ' + (label === 'Last Place' ? 'last' : 'fourth') + '">' +
-            '<span class="er-label">' + label + '</span>' +
+          return '<div class="perf-extra-rank-row' + (isLast ? ' last' : '') + '">' +
+            '<span class="er-label">' + ordinal(rankNum) + (isLast ? ' (Last)' : '') + '</span>' +
             '<span class="er-name">' + r.agent + '</span>' +
             '<span class="er-score" style="color:' + color + '">' + r.composite.toFixed(1) + '%</span>' +
             '</div>';
         }).join('') + '</div>';
       }
       el.innerHTML = html;
+    }
+
+    function ordinal(n) {
+      const v = n % 100;
+      if (v >= 11 && v <= 13) return n + 'th';
+      switch (n % 10) {
+        case 1: return n + 'st';
+        case 2: return n + 'nd';
+        case 3: return n + 'rd';
+        default: return n + 'th';
+      }
     }
 
     function renderRankListInto(elId, ranked, opts) {
