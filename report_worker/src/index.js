@@ -310,6 +310,13 @@ const PAGE = `<!DOCTYPE html>
   .perf-overall-podium .poc-score .val { font-size: 32px; font-weight: 900; letter-spacing: -0.02em; }
   .perf-overall-podium .poc-score small { display: block; font-size: 11px; font-weight: 700; opacity: 0.85; }
   .perf-overall-empty { background: #fff; border: 1px dashed var(--perf-line); border-radius: 14px; padding: 30px; text-align: center; color: #9ca3af; font-size: 13px; height: 100%; display: flex; align-items: center; justify-content: center; }
+  .perf-extra-rank { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+  .perf-extra-rank-row { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid var(--perf-line); border-left-width: 3px; border-radius: 10px; padding: 10px 14px; }
+  .perf-extra-rank-row.fourth { border-left-color: #9ca3af; }
+  .perf-extra-rank-row.last { border-left-color: #dc2626; }
+  .perf-extra-rank-row .er-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--perf-sub); width: 76px; flex-shrink: 0; }
+  .perf-extra-rank-row .er-name { font-weight: 700; font-size: 13px; color: var(--perf-ink); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .perf-extra-rank-row .er-score { font-weight: 800; font-size: 14px; flex-shrink: 0; }
 
   /* Daily / Range Performance */
   .perf-range-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: start; }
@@ -1143,7 +1150,7 @@ if (IS_PERFORMANCE) {
       const medals = ['&#129351;', '&#129352;', '&#129353;'];
       const tiers = ['gold', 'silver', 'bronze'];
       const labels = ['Gold', 'Silver', 'Bronze'];
-      el.innerHTML = ranked.slice(0, 3).map((r, i) => {
+      let html = ranked.slice(0, 3).map((r, i) => {
         const tier = tierForPct(r.composite);
         const incentive = tier > 0 ? INCENTIVE_TABLE[tier][i] : null;
         return '<div class="poc ' + tiers[i] + '">' +
@@ -1158,6 +1165,28 @@ if (IS_PERFORMANCE) {
           '<div class="poc-score"><span class="val">' + r.composite.toFixed(1) + '%</span><small>of target (month)</small></div>' +
           '</div>';
       }).join('');
+
+      // 4th place and last place, shown as slim rows below the podium --
+      // last place is skipped separately when it would just duplicate 4th
+      // (i.e. exactly 4 agents ranked total).
+      const extraRows = [];
+      if (ranked.length > 3) {
+        extraRows.push({ label: '4th Place', r: ranked[3] });
+      }
+      if (ranked.length > 4) {
+        extraRows.push({ label: 'Last Place', r: ranked[ranked.length - 1] });
+      }
+      if (extraRows.length) {
+        html += '<div class="perf-extra-rank">' + extraRows.map(({ label, r }) => {
+          const color = r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#d97706' : '#dc2626';
+          return '<div class="perf-extra-rank-row ' + (label === 'Last Place' ? 'last' : 'fourth') + '">' +
+            '<span class="er-label">' + label + '</span>' +
+            '<span class="er-name">' + r.agent + '</span>' +
+            '<span class="er-score" style="color:' + color + '">' + r.composite.toFixed(1) + '%</span>' +
+            '</div>';
+        }).join('') + '</div>';
+      }
+      el.innerHTML = html;
     }
 
     function renderRankListInto(elId, ranked, opts) {
