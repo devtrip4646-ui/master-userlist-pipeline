@@ -297,6 +297,10 @@ const PAGE = `<!DOCTYPE html>
   .perf-overall-podium .poc-score .val { font-size: 32px; font-weight: 900; letter-spacing: -0.02em; }
   .perf-overall-podium .poc-score small { display: block; font-size: 11px; font-weight: 700; opacity: 0.85; }
 
+  .perf-range-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+  @media (max-width: 900px) { .perf-range-grid { grid-template-columns: 1fr; } }
+  .perf-range-grid .perf-card { flex-wrap: wrap; }
+  .perf-range-grid .perf-criteria-grid { min-width: 100%; order: 3; margin-top: 10px; }
   .perf-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 16px; }
   .perf-card .perf-rank { width: 34px; height: 34px; border-radius: 50%; background: #f3f4f6; color: #444; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .perf-card .perf-rank.top3 { background: linear-gradient(145deg, #4338ca, #6366f1); color: #fff; }
@@ -996,10 +1000,20 @@ if (IS_PERFORMANCE) {
           </div>
         </div>
       </div>
-      \${deptNames.map(dept => \`
-        <h3 class="perf-dept-title">\${dept}</h3>
-        <div id="perf-list-\${slugifyDept(dept)}"></div>
-      \`).join('')}
+      <div class="perf-range-grid">
+        <div>
+          \${deptNames.slice(0, 2).map(dept => \`
+            <h3 class="perf-dept-title">\${dept}</h3>
+            <div id="perf-list-\${slugifyDept(dept)}"></div>
+          \`).join('')}
+        </div>
+        <div>
+          \${deptNames.slice(2).map(dept => \`
+            <h3 class="perf-dept-title">\${dept}</h3>
+            <div id="perf-list-\${slugifyDept(dept)}"></div>
+          \`).join('')}
+        </div>
+      </div>
     \`;
 
     function slugifyDept(name) { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
@@ -1187,7 +1201,7 @@ if (IS_PERFORMANCE) {
           return '<div class="perf-card">' +
             '<div class="perf-rank' + (rankNum <= 3 ? ' top3' : '') + '">' + rankNum + '</div>' +
             '<div class="perf-agent-name">' + r.agent + '</div>' +
-            '<div class="perf-criteria-grid">' + critHtml + '</div>' +
+            '<div class="perf-criteria-grid" style="grid-template-columns:repeat(' + Math.max(1, r.criteria.length) + ',1fr)">' + critHtml + '</div>' +
             '<div class="perf-score-big" style="color:' + (r.composite >= 100 ? '#059669' : r.composite >= 60 ? '#b45309' : '#be123c') + '">' + r.composite.toFixed(2) + '%</div>' +
             '</div>';
         }).join('');
