@@ -283,6 +283,20 @@ const PAGE = `<!DOCTYPE html>
   .perf-leaderboard-right .pcr-name { font-size: 13px; }
   .perf-leaderboard-right .pcr-score { font-size: 15px; }
 
+  .perf-overall-podium { display: flex; flex-direction: column; gap: 16px; height: 100%; }
+  .perf-overall-podium .poc { flex: 1; border-radius: 16px; padding: 22px 26px; color: #fff; display: flex; align-items: center; gap: 18px; box-shadow: 0 8px 22px rgba(0,0,0,0.14); }
+  .perf-overall-podium .poc.gold { background: linear-gradient(145deg, #f5c542, #d4941f); }
+  .perf-overall-podium .poc.silver { background: linear-gradient(145deg, #b8c2cc, #8a97a3); }
+  .perf-overall-podium .poc.bronze { background: linear-gradient(145deg, #d0925a, #a86a37); }
+  .perf-overall-podium .poc-medal { font-size: 36px; flex-shrink: 0; }
+  .perf-overall-podium .poc-body { flex: 1; min-width: 0; }
+  .perf-overall-podium .poc-rank-label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.85; }
+  .perf-overall-podium .poc-name { font-size: 22px; font-weight: 800; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .perf-overall-podium .poc-incentive { margin-top: 6px; font-size: 13px; font-weight: 700; }
+  .perf-overall-podium .poc-score { text-align: right; flex-shrink: 0; }
+  .perf-overall-podium .poc-score .val { font-size: 32px; font-weight: 900; letter-spacing: -0.02em; }
+  .perf-overall-podium .poc-score small { display: block; font-size: 11px; font-weight: 700; opacity: 0.85; }
+
   .perf-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 16px; }
   .perf-card .perf-rank { width: 34px; height: 34px; border-radius: 50%; background: #f3f4f6; color: #444; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .perf-card .perf-rank.top3 { background: linear-gradient(145deg, #4338ca, #6366f1); color: #fff; }
@@ -961,7 +975,7 @@ if (IS_PERFORMANCE) {
         </div>
         <div class="perf-leaderboard-right">
           <h4 class="perf-mini-title">Overall Ranking</h4>
-          <div id="perf-podium-overall" class="perf-compact-list overall"></div>
+          <div id="perf-podium-overall" class="perf-overall-podium"></div>
         </div>
       </div>
 
@@ -1064,6 +1078,29 @@ if (IS_PERFORMANCE) {
       return results;
     }
 
+    function renderOverallPodiumInto(elId, ranked) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      const medals = ['&#129351;', '&#129352;', '&#129353;'];
+      const tiers = ['gold', 'silver', 'bronze'];
+      const labels = ['Gold', 'Silver', 'Bronze'];
+      el.innerHTML = ranked.slice(0, 3).map((r, i) => {
+        const tier = tierForPct(r.composite);
+        const incentive = tier > 0 ? INCENTIVE_TABLE[tier][i] : null;
+        return '<div class="poc ' + tiers[i] + '">' +
+          '<div class="poc-medal">' + medals[i] + '</div>' +
+          '<div class="poc-body">' +
+          '<div class="poc-rank-label">' + labels[i] + '</div>' +
+          '<div class="poc-name">' + r.agent + '</div>' +
+          (incentive
+            ? '<div class="poc-incentive">Incentive earned: ' + fmtMoney(incentive) + '</div>'
+            : '<div class="poc-incentive" style="opacity:0.8">Below 60% of target -- no incentive yet</div>') +
+          '</div>' +
+          '<div class="poc-score"><span class="val">' + r.composite.toFixed(1) + '%</span><small>of target (month)</small></div>' +
+          '</div>';
+      }).join('');
+    }
+
     function renderCompactListInto(elId, ranked, opts) {
       const listEl = document.getElementById(elId);
       if (!listEl) return;
@@ -1114,7 +1151,7 @@ if (IS_PERFORMANCE) {
     }
 
     function renderPodium() {
-      renderCompactListInto('perf-podium-overall', computeOverallLeaderboard());
+      renderOverallPodiumInto('perf-podium-overall', computeOverallLeaderboard());
       for (const dept of deptNames) {
         const { agents: deptAgents, categories: deptCategories } = departments[dept];
         const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
