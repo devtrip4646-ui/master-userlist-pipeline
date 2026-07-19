@@ -2552,6 +2552,15 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
                 "deposited_after": converted,
                 "deposit_amount": round(deposit_amount, 2),
                 "pct_deposited": round(converted / claimed_users * 100, 2) if claimed_users else 0.0,
+                # Spend efficiency: this bonus's own total cost (ALL
+                # claimers, not just converters -- the full budget was spent
+                # regardless of who came back) against the deposit money
+                # ITS OWN converters brought back. None (not 0) when nobody
+                # converted -- 0% would misleadingly read as "very
+                # efficient" when it actually means no measurable return at
+                # all. This is same-day-or-after correlation, not proven
+                # causation -- a converter may have deposited anyway.
+                "bonus_cost_ratio_pct": round(b["value"] / deposit_amount * 100, 2) if deposit_amount else None,
             })
         rows.sort(key=lambda r: -r["total_value"])
         return rows
