@@ -1835,7 +1835,7 @@ if (IS_PLATFORM_ANALYSIS) {
           <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
           <button class="download-btn-sm" id="btn-dl-bonus-claims">&#128190; Excel</button>
         </div>
-        <div class="ac-note">All bonuses claimed in the selected date range, and % who deposited afterward. Bonus Share % = total bonus value across this whole table &divide; that row's own deposit amount.</div>
+        <div class="ac-note">All bonuses claimed in the selected date range, and % who deposited afterward.</div>
         <div class="date-switch" id="bonus-claims-range-switch">
           <button data-range="day" class="active">Single Day</button>
           <button data-range="week">7-Day Range</button>
@@ -2162,7 +2162,6 @@ if (IS_PLATFORM_ANALYSIS) {
         { label: 'Deposited After', render: r => fmt(r.deposited_after), raw: r => r.deposited_after, num: true },
         { label: 'Deposit Amount', render: r => money(r.deposit_amount), raw: r => r.deposit_amount, num: true },
         { label: '%', render: r => r.pct_deposited + '%', raw: r => r.pct_deposited, num: true },
-        { label: 'Bonus Share %', render: r => (r.bonus_share_pct ?? 0) + '%', raw: r => r.bonus_share_pct, num: true },
       ];
     }
     function renderBonusClaims() {
