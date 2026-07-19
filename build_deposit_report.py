@@ -2536,6 +2536,12 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
 
     def build_rows(groups, use_claim_time=False):
         rows = []
+        # Numerator for bonus_share_pct is the OVERALL bonus total across
+        # every category in this table (wallet bonuses and Deposit Challenge
+        # Bonus are scoped separately, matching the two tabs on screen) --
+        # not each row's own bonus value. Only the denominator (deposit
+        # collected after THAT specific bonus was claimed) varies per row.
+        overall_bonus_total = sum(b["value"] for b in groups.values())
         for category, b in groups.items():
             claimed_users = len(b["users"])
             if use_claim_time:
@@ -2552,11 +2558,7 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
                 "deposited_after": converted,
                 "deposit_amount": round(deposit_amount, 2),
                 "pct_deposited": round(converted / claimed_users * 100, 2) if claimed_users else 0.0,
-                # What the bonus cost as a share of the deposit it (allegedly)
-                # drove -- total bonus value / total deposit amount from the
-                # users who deposited after claiming it. Undefined (0) when
-                # nobody converted, since there's no deposit to compare against.
-                "bonus_share_pct": round(b["value"] / deposit_amount * 100, 2) if deposit_amount else 0.0,
+                "bonus_share_pct": round(overall_bonus_total / deposit_amount * 100, 2) if deposit_amount else 0.0,
             })
         rows.sort(key=lambda r: -r["total_value"])
         return rows

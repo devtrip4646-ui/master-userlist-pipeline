@@ -1835,7 +1835,7 @@ if (IS_PLATFORM_ANALYSIS) {
           <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claim Report</h2></div>
           <button class="download-btn-sm" id="btn-dl-bonus-claims">&#128190; Excel</button>
         </div>
-        <div class="ac-note">All bonuses claimed in the selected date range, and % who deposited afterward.</div>
+        <div class="ac-note">All bonuses claimed in the selected date range, and % who deposited afterward. Bonus Share % = total bonus value across this whole table &divide; that row's own deposit amount.</div>
         <div class="date-switch" id="bonus-claims-range-switch">
           <button data-range="day" class="active">Single Day</button>
           <button data-range="week">7-Day Range</button>
