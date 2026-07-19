@@ -2756,11 +2756,7 @@ AGENT_PERF_TARGETS = {
     "High VIP Upgrade": {"type": "count", "target": 5},
     "Low Premium Active": {"type": "rate", "target": 35},
     "High Premium Active": {"type": "rate", "target": 35},
-    # No target figure was specified when this was set up -- 30% mirrors
-    # Retention's target since both are "day-1-ish conversion of a
-    # first-deposit-adjacent cohort" metrics. Adjust here if the actual
-    # FTD Team target differs.
-    "FTD Conversion": {"type": "rate", "target": 30},
+    "FD 2-5 Days Conversion": {"type": "rate", "target": 30},
 }
 
 AGENT_PERF_RETENTION_DAYS = 35
@@ -2776,7 +2772,11 @@ AGENT_PERF_RETENTION_DAYS = 35
 AGENT_PERF_DEPARTMENTS = {
     "FTD Team": {
         "agents": None,
-        "categories": ["FTD Conversion"],
+        # Two separate targets: Retention (FD was yesterday) and FD 2-5
+        # Days Conversion (FD was 2-5 days ago, no deposit since) -- kept
+        # as distinct criteria rather than merged, so each cohort's own
+        # conversion rate is visible on its own.
+        "categories": ["Retention", "FD 2-5 Days Conversion"],
     },
     "Reactivation Team": {
         "agents": None,
@@ -2788,7 +2788,7 @@ AGENT_PERF_DEPARTMENTS = {
     },
     "General": {
         "agents": None,
-        "categories": ["Retention", "Low VIP Upgrade", "High VIP Upgrade"],
+        "categories": ["Low VIP Upgrade", "High VIP Upgrade"],
     },
 }
 
@@ -2802,16 +2802,16 @@ def compute_agent_performance_rows(
     AGENT_PERF_TARGETS for what numerator/denominator mean per category.
 
     `retention` here is specifically first_deposit_retention's result (by
-    user request: the Performance page's single "Retention" criterion is
+    user request: the Performance page's "Retention" criterion is
     First-Deposit retention only, not combined with Bonus-Claimer retention,
-    which has no Low/High split to begin with).
+    which has no Low/High split to begin with) -- FTD Team's first target,
+    cohort = FD was yesterday.
 
-    `no_return_conversion` is no_return_fd_conversion's result -- combined
-    with `retention` (first-deposit-yesterday cohort) to build "FTD
-    Conversion" for the FTD Team department: the two source cohorts are
-    disjoint by construction (FD yesterday vs. FD 2-5 days ago), so their
-    per-agent cohort/converted counts can be summed directly with no
-    double-counting risk."""
+    `no_return_conversion` is no_return_fd_conversion's result -- FTD
+    Team's second target ("FD 2-5 Days Conversion"), cohort = FD was 2-5
+    days ago with no deposit since. Kept as its own separate criterion
+    rather than merged with Retention, even though the two cohorts are
+    disjoint by construction (FD yesterday vs. FD 2-5 days ago)."""
     rows = []
 
     count_sources = {
@@ -2833,9 +2833,9 @@ def compute_agent_performance_rows(
     nr_cohort = no_return_conversion.get("cohort_by_agent", {}) if no_return_conversion else {}
     nr_converted = no_return_conversion.get("converted_by_agent", {}) if no_return_conversion else {}
     for agent in agent_list:
-        cohort = ret_cohort.get(agent, 0) + nr_cohort.get(agent, 0)
-        converted = ret_converted.get(agent, 0) + nr_converted.get(agent, 0)
-        rows.append((date_str, agent, "FTD Conversion", converted, cohort))
+        cohort = nr_cohort.get(agent, 0)
+        converted = nr_converted.get(agent, 0)
+        rows.append((date_str, agent, "FD 2-5 Days Conversion", converted, cohort))
 
     for tier_label, category in [("low", "Low Premium Active"), ("high", "High Premium Active")]:
         tier = premium_active.get(tier_label, {}) if premium_active else {}
