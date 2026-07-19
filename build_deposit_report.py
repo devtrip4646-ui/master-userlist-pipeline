@@ -2552,6 +2552,11 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
                 "deposited_after": converted,
                 "deposit_amount": round(deposit_amount, 2),
                 "pct_deposited": round(converted / claimed_users * 100, 2) if claimed_users else 0.0,
+                # What the bonus cost as a share of the deposit it (allegedly)
+                # drove -- total bonus value / total deposit amount from the
+                # users who deposited after claiming it. Undefined (0) when
+                # nobody converted, since there's no deposit to compare against.
+                "bonus_share_pct": round(b["value"] / deposit_amount * 100, 2) if deposit_amount else 0.0,
             })
         rows.sort(key=lambda r: -r["total_value"])
         return rows

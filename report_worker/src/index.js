@@ -2162,6 +2162,7 @@ if (IS_PLATFORM_ANALYSIS) {
         { label: 'Deposited After', render: r => fmt(r.deposited_after), raw: r => r.deposited_after, num: true },
         { label: 'Deposit Amount', render: r => money(r.deposit_amount), raw: r => r.deposit_amount, num: true },
         { label: '%', render: r => r.pct_deposited + '%', raw: r => r.pct_deposited, num: true },
+        { label: 'Bonus Share %', render: r => (r.bonus_share_pct ?? 0) + '%', raw: r => r.bonus_share_pct, num: true },
       ];
     }
     function renderBonusClaims() {
