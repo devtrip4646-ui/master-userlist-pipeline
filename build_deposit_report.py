@@ -2565,6 +2565,25 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
         rows.sort(key=lambda r: -r["total_value"])
         return rows
 
+    def overall_summary(rows):
+        """Same shape as one category row, but summed across every category
+        in this table -- so the overall Cost Ratio % answers "how efficient
+        was the day's ENTIRE bonus spend," not just one category at a
+        time. Wallet Bonuses and Deposit Challenge Bonus are summarized
+        separately (matching the two tabs on screen), not combined."""
+        total_claimed = sum(r["claimed_users"] for r in rows)
+        total_value = sum(r["total_value"] for r in rows)
+        total_converted = sum(r["deposited_after"] for r in rows)
+        total_deposit = sum(r["deposit_amount"] for r in rows)
+        return {
+            "claimed_users": total_claimed,
+            "total_value": round(total_value, 2),
+            "deposited_after": total_converted,
+            "deposit_amount": round(total_deposit, 2),
+            "pct_deposited": round(total_converted / total_claimed * 100, 2) if total_claimed else 0.0,
+            "bonus_cost_ratio_pct": round(total_value / total_deposit * 100, 2) if total_deposit else None,
+        }
+
     dcb_groups = defaultdict(lambda: {"users": set(), "value": 0.0})
     for r in deposit_challenge_bonus_rows:
         d = dcb_groups[r["rule"]]
@@ -2582,9 +2601,13 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
         for r in sorted(deposit_challenge_bonus_rows, key=lambda r: r["fd_date"])
     ]
 
+    wallet_rows = build_rows(by_category, use_claim_time=True)
+    dcb_rows = build_rows(dcb_groups)
     return {
-        "wallet_bonuses": build_rows(by_category, use_claim_time=True),
-        "deposit_challenge_bonuses": build_rows(dcb_groups),
+        "wallet_bonuses": wallet_rows,
+        "deposit_challenge_bonuses": dcb_rows,
+        "wallet_bonuses_overall": overall_summary(wallet_rows),
+        "deposit_challenge_bonuses_overall": overall_summary(dcb_rows),
         "wallet_claim_details": wallet_claim_details,
         "deposit_challenge_bonus_claim_details": dcb_claim_details,
     }
