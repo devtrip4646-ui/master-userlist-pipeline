@@ -678,11 +678,28 @@ function shortDate(isoDateStr) {
 }
 
 const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+// Same green/red/amber used on-screen for up/down deltas and MET/MISSED
+// pills (.st-delta.up/.down, .su-pill-green/.su-pill-amber) -- reused here
+// so an exported Excel report reads the same way the dashboard does.
+const XL_GREEN_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+const XL_GREEN_FONT = { color: { argb: 'FF065F46' }, bold: true };
+const XL_RED_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+const XL_RED_FONT = { color: { argb: 'FF991B1B' }, bold: true };
+const XL_AMBER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+const XL_AMBER_FONT = { color: { argb: 'FF92400E' }, bold: true };
 
 function styleHeaderRow(ws) {
   const row = ws.getRow(1);
   row.font = { bold: true };
   row.eachCell(c => { c.fill = HEADER_FILL; });
+}
+
+// Colors a single cell green (positive) or red (negative) -- used for
+// Change/% Change columns so a reader can spot up/down at a glance without
+// reading every number.
+function styleDeltaCell(cell, value) {
+  if (value > 0) { cell.fill = XL_GREEN_FILL; cell.font = XL_GREEN_FONT; }
+  else if (value < 0) { cell.fill = XL_RED_FILL; cell.font = XL_RED_FONT; }
 }
 
 async function saveWorkbook(wb, filename) {
@@ -2421,11 +2438,60 @@ if (IS_PLATFORM_ANALYSIS) {
         ws1.columns = wowCols.map(c => ({ header: c.label, key: c.label, width: 24 }));
         ws1.addRows(weeklyPerf.comparison.map(r => wowCols.reduce((o, c) => { o[c.label] = c.raw(r); return o; }, {})));
         styleHeaderRow(ws1);
+        weeklyPerf.comparison.forEach((r, i) => {
+          const row = ws1.getRow(i + 2);
+          styleDeltaCell(row.getCell('Change'), r.change);
+          styleDeltaCell(row.getCell('% Change'), r.pct_change);
+        });
 
         const ws2 = wb.addWorksheet('Day-wise');
         ws2.columns = dayWiseCols.map(c => ({ header: c.label, key: c.label, width: c.label === 'Date' ? 14 : 20 }));
         ws2.addRows(dayWiseRows.map(r => dayWiseCols.reduce((o, c) => { o[c.label] = c.raw(r); return o; }, {})));
         styleHeaderRow(ws2);
+
+        const rcExport = weeklyPerf.retention_comparison;
+        if (rcExport && (rcExport.prior || rcExport.current)) {
+          const p = rcExport.prior || {}, c = rcExport.current || {};
+          const retCols = [
+            { label: 'Metric', key: 'metric' },
+            { label: 'Last Week', key: 'prior' },
+            { label: 'This Week', key: 'current' },
+          ];
+          const ws3 = wb.addWorksheet('Retention');
+          ws3.columns = retCols.map(col => ({ header: col.label, key: col.key, width: 30 }));
+          ws3.addRows([
+            { metric: 'Cohorts Included', prior: p.cohorts_included ?? '', current: c.cohorts_included ?? '' },
+            { metric: 'Avg New Users / Cohort', prior: p.new_users_avg ?? '', current: c.new_users_avg ?? '' },
+            { metric: 'Withdrew, then Redeposited %', prior: p.withdrew_retention_pct ?? '', current: c.withdrew_retention_pct ?? '' },
+            { metric: 'Never Withdrew, then Redeposited %', prior: p.never_withdrew_retention_pct ?? '', current: c.never_withdrew_retention_pct ?? '' },
+          ]);
+          styleHeaderRow(ws3);
+        }
+
+        if (weeklyPerf.target && weeklyPerf.target.length) {
+          const targetCols = [
+            { label: 'Metric', key: 'metric' },
+            { label: 'Target', key: 'target' },
+            { label: 'Actual', key: 'actual' },
+            { label: 'Variance', key: 'variance' },
+            { label: '% of Target', key: 'pct_of_target' },
+            { label: 'Status', key: 'status' },
+          ];
+          const ws4 = wb.addWorksheet('Target vs Actual');
+          ws4.columns = targetCols.map(c => ({ header: c.label, key: c.key, width: c.label === 'Metric' ? 30 : 16 }));
+          ws4.addRows(weeklyPerf.target.map(t => ({
+            metric: t.metric, target: t.target, actual: t.actual, variance: t.variance,
+            pct_of_target: t.pct_of_target, status: t.status,
+          })));
+          styleHeaderRow(ws4);
+          weeklyPerf.target.forEach((t, i) => {
+            const row = ws4.getRow(i + 2);
+            styleDeltaCell(row.getCell('variance'), t.variance);
+            const statusCell = row.getCell('status');
+            if (t.status === 'MET') { statusCell.fill = XL_GREEN_FILL; statusCell.font = XL_GREEN_FONT; }
+            else { statusCell.fill = XL_AMBER_FILL; statusCell.font = XL_AMBER_FONT; }
+          });
+        }
 
         await saveWorkbook(wb, 'weekly-performance-' + weeklyPerf.current_week_start + '.xlsx');
       };
