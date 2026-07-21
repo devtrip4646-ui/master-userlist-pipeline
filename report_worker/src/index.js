@@ -3479,10 +3479,10 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       </section>
       <section class="acc-purple ac-compact">
         <div class="section-head">
-          <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claimed Users</h2></div>
+          <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claimed Users</h2><span class="today-tag" id="bonus-claimed-users-date-tag">&mdash;</span></div>
           <button class="download-btn-sm" id="btn-dl-bonus-claimed-users">&#128190; Excel</button>
         </div>
-        <div class="ac-note">Same Today/Yesterday selection as Withdrawal Amount Range. Deposit before Claim = total deposited today before the user's first bonus claim of the day; Deposit after Claim = deposited after that. Claim % = claimed &divide; before. Cost Ratio % = claimed &divide; after.</div>
+        <div class="ac-note">Follows the date picker above &middot; Deposit before Claim = total deposited that day before the user's first bonus claim; Deposit after Claim = deposited after that. Claim % = claimed &divide; before. Cost Ratio % = claimed &divide; after.</div>
         <div id="bonus-claimed-users-table"></div>
         <div class="ac-pagination" id="bonus-claimed-users-pagination"></div>
       </section>
@@ -3653,13 +3653,21 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     { label: 'Deposit after Claim', render: r => money(r.deposit_after_claim), raw: r => r.deposit_after_claim, num: true },
     { label: 'Cost Ratio %', render: r => r.cost_ratio_pct == null ? '&mdash;' : r.cost_ratio_pct + '%', raw: r => r.cost_ratio_pct, num: true },
   ];
-  function renderBonusClaimedUsers() {
-    const byDay = data.bonus_claimed_users_by_day || {};
-    const rows = byDay[yesterdayWdDay] || [];
+  // Follows the Home page's own date picker (selectDate below), NOT the
+  // separate Today/Yesterday toggle next to it (that one only scopes
+  // Withdrawal Amount Range) -- bonusClaimedUsersDate tracks whichever
+  // date was last rendered so the Excel export matches what's on screen.
+  let bonusClaimedUsersDate = todayLocalISO();
+  function renderBonusClaimedUsers(dateStr) {
+    bonusClaimedUsersDate = dateStr;
+    const byDate = data.bonus_claimed_users_by_date || {};
+    const rows = byDate[dateStr] || [];
+    const tagEl = document.getElementById('bonus-claimed-users-date-tag');
+    if (tagEl) tagEl.textContent = shortDate(dateStr);
     const container = document.getElementById('bonus-claimed-users-table');
     if (!container) return;
     if (!rows.length) {
-      container.innerHTML = '<div class="no-data">No bonus claims ' + yesterdayWdDay + '.</div>';
+      container.innerHTML = '<div class="no-data">No bonus claims on ' + shortDate(dateStr) + '.</div>';
       document.getElementById('bonus-claimed-users-pagination').innerHTML = '';
       return;
     }
@@ -4001,7 +4009,6 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       yesterdayWdDay = btn.dataset.day;
       document.querySelectorAll('#yesterday-wd-switch button').forEach(b => b.classList.toggle('active', b === btn));
       renderYesterdayWithdrawalRange();
-      renderBonusClaimedUsers();
     });
   });
 
@@ -4017,14 +4024,14 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
   });
 
   document.getElementById('btn-dl-bonus-claimed-users').addEventListener('click', () => {
-    const rows = (data.bonus_claimed_users_by_day || {})[yesterdayWdDay] || [];
+    const rows = (data.bonus_claimed_users_by_date || {})[bonusClaimedUsersDate] || [];
     if (!rows.length) return;
     const exportRows = rows.map(r => ({
       'User ID': r.user_id, 'VIP Level': r.vip_level, Agent: r.agent || 'Un-Assigned', 'Bonus Names': r.bonus_names,
       'Claimed Amount': r.claimed_amount, 'Deposit before Claim': r.deposit_before_claim,
       'Claim %': r.claim_pct, 'Deposit after Claim': r.deposit_after_claim, 'Cost Ratio %': r.cost_ratio_pct,
     }));
-    downloadStyledExcel(exportRows, 'Bonus Claimed Users - ' + yesterdayWdDay, 'bonus-claimed-users-' + yesterdayWdDay + '.xlsx');
+    downloadStyledExcel(exportRows, 'Bonus Claimed Users - ' + bonusClaimedUsersDate, 'bonus-claimed-users-' + bonusClaimedUsersDate + '.xlsx');
   });
 
   // Date picker wiring
@@ -4048,6 +4055,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     dayStatus.classList.toggle('past', !isToday);
     const scope = data.by_date[dateStr] || EMPTY_SCOPE;
     render(scope, dateStr);
+    renderBonusClaimedUsers(dateStr);
   }
   datePicker.addEventListener('change', () => selectDate(datePicker.value));
   btnToday.addEventListener('click', () => selectDate(todayLocalISO()));
@@ -4055,7 +4063,6 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
   selectDate(todayLocalISO());
   renderBacklogCharts();
   renderYesterdayWithdrawalRange();
-  renderBonusClaimedUsers();
 })();
 </script>
 </body>

@@ -3292,28 +3292,24 @@ def main():
     deposit_day_stats = build_deposit_day_stats(deposit_rows)
     dcb_rows_by_date = {}
     bonus_claims_by_date = {}
+    # Home page's Bonus Claimed Users report follows the SAME date picker
+    # as the rest of the Home page (data.by_date[selectedDate]), not a
+    # separate Today/Yesterday-only toggle -- so it's computed for every
+    # retained date here, reusing dcb_rows_for_date rather than
+    # recomputing Deposit Challenge Bonus rows a third time.
+    bonus_claimed_users_by_date = {}
     for date_str in all_dates:
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         dcb_rows_for_date = deposit_challenge_bonus_rows if d == now.date() else deposit_challenge_bonus(deposit_rows, deposit_day_stats, d, agent_by_user)
         dcb_rows_by_date[date_str] = dcb_rows_for_date
         bonus_claims_by_date[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, {date_str}, agent_by_user)
+        bonus_claimed_users_by_date[date_str] = bonus_claimed_users_report(
+            bonus_rows_all, deposit_rows, dcb_rows_for_date, d, vip_by_user, agent_by_user
+        )
     bonus_claims = bonus_claims_by_date.get(now.date().isoformat(), {
         "wallet_bonuses": [], "deposit_challenge_bonuses": [],
         "wallet_claim_details": [], "deposit_challenge_bonus_claim_details": [],
     })
-
-    # Home page (paired with Withdrawal Amount Range): same Today/Yesterday
-    # scope as that section, reusing dcb_rows_by_date rather than
-    # recomputing Deposit Challenge Bonus rows a third time.
-    yesterday_date = now.date() - timedelta(days=1)
-    bonus_claimed_users_by_day = {
-        "today": bonus_claimed_users_report(
-            bonus_rows_all, deposit_rows, dcb_rows_by_date.get(today_str, []), now.date(), vip_by_user, agent_by_user
-        ),
-        "yesterday": bonus_claimed_users_report(
-            bonus_rows_all, deposit_rows, dcb_rows_by_date.get(yesterday_str, []), yesterday_date, vip_by_user, agent_by_user
-        ),
-    }
 
     # Week/Month views: rolling window ENDING at each retained date, clipped
     # to whatever's actually in all_dates (the 33-day retention window), so
@@ -3454,7 +3450,7 @@ def main():
         },
         "withdrawal_analysis": withdrawal_analysis,
         "withdrawal_amount_range_by_day": withdrawal_amount_range_by_day,
-        "bonus_claimed_users_by_day": bonus_claimed_users_by_day,
+        "bonus_claimed_users_by_date": bonus_claimed_users_by_date,
         # All-dates raw order rows (unlike by_date[...].withdrawal_orders,
         # which is scoped to a single selected date) -- needed for the
         # Processing/In-Review aging charts and the Last-4-Days completed
