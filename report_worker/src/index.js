@@ -1241,30 +1241,40 @@ if (IS_PERFORMANCE) {
       }).join('');
     }
 
-    // Overall Ranking: an agent's score is the average of their composite
-    // across every department they belong to (a single-department agent's
-    // overall score is just that department's score; a multi-department
-    // agent's is the mean of each). Not a re-scoring against a merged
-    // category list -- each department's composite is already normalized
-    // to "% of that department's own target," so averaging those is
-    // apples-to-apples regardless of which/how-many categories each
-    // department covers.
+    // Overall Ranking: a WEIGHTED average of an agent's composite across
+    // every department -- General counts for 15%, the remaining
+    // departments (FTD Team, Reactivation Team, VIP Team) split the other
+    // 85% equally between them (~28.33% each with 3 of them). Falls back
+    // to a plain equal split across whatever departments exist if
+    // "General" isn't one of them, so this doesn't silently lose weight.
+    // Each department's composite is already normalized to "% of that
+    // department's own target," so a weighted sum is apples-to-apples
+    // regardless of which/how-many categories each one covers.
+    const GENERAL_WEIGHT = 0.15;
+    function departmentWeights() {
+      const weights = {};
+      if (deptNames.includes('General') && deptNames.length > 1) {
+        const otherDepts = deptNames.filter(d => d !== 'General');
+        const otherWeight = (1 - GENERAL_WEIGHT) / otherDepts.length;
+        deptNames.forEach(d => { weights[d] = d === 'General' ? GENERAL_WEIGHT : otherWeight; });
+      } else {
+        deptNames.forEach(d => { weights[d] = 1 / deptNames.length; });
+      }
+      return weights;
+    }
     function computeOverallLeaderboard() {
       const allAgents = new Set();
       deptNames.forEach(dept => departments[dept].agents.forEach(a => allAgents.add(a)));
-      const scoresByAgent = {};
+      const weights = departmentWeights();
+      const scoreByAgent = {};
       for (const dept of deptNames) {
         const { agents: deptAgents, categories: deptCategories } = departments[dept];
         const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
         for (const r of ranked) {
-          (scoresByAgent[r.agent] = scoresByAgent[r.agent] || []).push(r.composite);
+          scoreByAgent[r.agent] = (scoreByAgent[r.agent] || 0) + r.composite * weights[dept];
         }
       }
-      const results = Array.from(allAgents).map(agent => {
-        const scores = scoresByAgent[agent] || [];
-        const composite = scores.length ? scores.reduce((s, c) => s + c, 0) / scores.length : 0;
-        return { agent, composite };
-      });
+      const results = Array.from(allAgents).map(agent => ({ agent, composite: scoreByAgent[agent] || 0 }));
       results.sort((a, b) => b.composite - a.composite);
       return results;
     }
