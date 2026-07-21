@@ -1049,7 +1049,7 @@ if (IS_PERFORMANCE) {
       </div>
 
       <div class="analysis-heading withdrawal"><h2>Daily / Range Performance</h2><div class="line"></div><span class="tag">Scored per department</span></div>
-      <div class="perf-section-lead">Pick a date or range below -- every department's list recalculates against that window (the Monthly Leaderboard above always stays fixed to this calendar month).</div>
+      <div class="perf-section-lead">Pick a date or range below -- every department's list recalculates against that window (separate from the Monthly Leaderboard's own date-range control above).</div>
       <div class="perf-controls">
         <button class="perf-preset active" data-preset="today">Today</button>
         <button class="perf-preset" data-preset="yesterday">Yesterday</button>
@@ -1292,22 +1292,31 @@ if (IS_PERFORMANCE) {
       return results;
     }
 
-    // Overall Ranking has its own independent date-range control (This
-    // Month / Till Yesterday / custom From-To) -- separate from the
-    // Daily/Range Performance section below and from the department
-    // mini-lists on the left, which stay pinned to the current calendar
-    // month (that's also what the incentive brackets are judged against).
+    // The Monthly Leaderboard's date-range control (This Month / Till
+    // Yesterday / custom From-To) drives BOTH the Overall Ranking podium
+    // (right) and the department top-3 mini-lists (left) together --
+    // independent of the separate Daily/Range Performance controls
+    // further down the page. Defaults to the current calendar month,
+    // which is also what the incentive brackets are judged against.
     function renderOverallPodium(fromDate, toDate) {
       renderOverallPodiumInto('perf-podium-overall', computeOverallLeaderboard(fromDate, toDate));
     }
 
-    function renderPodium() {
-      renderOverallPodium(monthFrom, monthTo);
+    function renderDeptMiniLists(fromDate, toDate) {
       for (const dept of deptNames) {
         const { agents: deptAgents, categories: deptCategories } = departments[dept];
-        const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
+        const ranked = computeLeaderboard(fromDate, toDate, deptAgents, deptCategories);
         renderRankListInto('perf-mini-' + slugifyDept(dept), ranked, { showIncentive: false });
       }
+    }
+
+    function renderLeaderboardSection(fromDate, toDate) {
+      renderOverallPodium(fromDate, toDate);
+      renderDeptMiniLists(fromDate, toDate);
+    }
+
+    function renderPodium() {
+      renderLeaderboardSection(monthFrom, monthTo);
     }
 
     function render(fromDate, toDate) {
@@ -1434,7 +1443,7 @@ if (IS_PERFORMANCE) {
         overallDateRangePopover.style.display = 'none';
         if (btn.dataset.overallPreset === 'month') {
           overallDateRangeLabel.textContent = 'This Month';
-          renderOverallPodium(monthFrom, monthTo);
+          renderLeaderboardSection(monthFrom, monthTo);
         } else {
           // If today is the 1st of the month, "yesterday" falls in the
           // previous month -- clamp to a same-day range at month start
@@ -1442,7 +1451,7 @@ if (IS_PERFORMANCE) {
           const y = yesterdayStr();
           const to = y >= monthFrom ? y : monthFrom;
           overallDateRangeLabel.textContent = shortDate(monthFrom) + ' \\u2013 ' + shortDate(to);
-          renderOverallPodium(monthFrom, to);
+          renderLeaderboardSection(monthFrom, to);
         }
       }));
 
@@ -1453,7 +1462,7 @@ if (IS_PERFORMANCE) {
         overallPresetBtns.forEach(b => b.classList.remove('active'));
         overallDateRangeLabel.textContent = from === to ? shortDate(from) : shortDate(from) + ' \\u2013 ' + shortDate(to);
         overallDateRangePopover.style.display = 'none';
-        renderOverallPodium(from, to);
+        renderLeaderboardSection(from, to);
       });
     }
 
