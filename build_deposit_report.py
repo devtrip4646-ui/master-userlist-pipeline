@@ -2599,6 +2599,71 @@ def bonus_claim_report(bonus_rows_all, deposit_rows, deposit_challenge_bonus_row
     }
 
 
+def bonus_claimed_users_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, target_date, vip_by_user, agent_by_user):
+    """Home page (Withdrawal Amount Range row): one row per user who
+    claimed at least one bonus on target_date -- every bonus they claimed
+    that day (wallet-sourced and Deposit Challenge Bonus combined), and
+    their deposit activity split around their EARLIEST claim of the day:
+      - Deposit before Claim: COMPLETE deposits strictly BEFORE that claim.
+      - Claim %: claimed amount / deposit before claim -- how big the
+        bonus was relative to what they'd already put in that day.
+      - Deposit after Claim: COMPLETE deposits strictly AFTER that claim.
+      - Cost Ratio %: claimed amount / deposit after claim -- same
+        spend-efficiency definition as bonus_claim_report's per-category
+        Cost Ratio %, just scoped to one user instead of one category.
+    Deposit Challenge Bonus rows have no per-claim timestamp (only
+    fd_date) -- treated as claimed at the start of the day, same
+    same-day-only convention bonus_claim_report already uses for DCB."""
+    target_date_str = target_date.isoformat()
+    day_start = datetime.combine(target_date, dtime.min)
+
+    claims_by_user = defaultdict(list)
+    for matched_category, user_id, change_value, create_time in bonus_rows_all:
+        if not matched_category or not create_time or str(create_time)[:10] != target_date_str:
+            continue
+        claims_by_user[user_id].append((matched_category, change_value or 0.0, parse_dt(create_time)))
+    for r in dcb_rows_for_date:
+        claims_by_user[r["user_id"]].append((r["rule"], r["bonus_amount"], None))
+
+    if not claims_by_user:
+        return []
+
+    deposits_by_user = defaultdict(list)
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None or not create_time:
+            continue
+        if str(create_time)[:10] != target_date_str:
+            continue
+        dt = parse_dt(create_time)
+        if dt:
+            deposits_by_user[user_id].append((dt, order_amount or 0.0))
+
+    rows = []
+    for user_id, claims in claims_by_user.items():
+        bonus_names = sorted({c[0] for c in claims})
+        claimed_amount = sum(c[1] for c in claims)
+        timed_claims = [c[2] for c in claims if c[2] is not None]
+        earliest_dt = min(timed_claims) if timed_claims else day_start
+
+        user_deposits = deposits_by_user.get(user_id, [])
+        deposit_before = sum(amt for dt, amt in user_deposits if dt < earliest_dt)
+        deposit_after = sum(amt for dt, amt in user_deposits if dt > earliest_dt)
+
+        rows.append({
+            "user_id": user_id,
+            "agent": agent_for(agent_by_user, user_id),
+            "vip_level": vip_by_user.get(user_id),
+            "bonus_names": ", ".join(bonus_names),
+            "claimed_amount": round(claimed_amount, 2),
+            "deposit_before_claim": round(deposit_before, 2),
+            "claim_pct": round(claimed_amount / deposit_before * 100, 2) if deposit_before else None,
+            "deposit_after_claim": round(deposit_after, 2),
+            "cost_ratio_pct": round(claimed_amount / deposit_after * 100, 2) if deposit_after else None,
+        })
+    rows.sort(key=lambda r: -r["claimed_amount"])
+    return rows
+
+
 # Weekly Cashback Shield (Action Center): loss amount Rs 5,000-2,500,000, rate
 # scales linearly with what % of the week's deposit was "lost" (verified_loss
 # / total_deposit) -- a single line from the 50% anchor to the 100% anchor,
@@ -3237,6 +3302,19 @@ def main():
         "wallet_claim_details": [], "deposit_challenge_bonus_claim_details": [],
     })
 
+    # Home page (paired with Withdrawal Amount Range): same Today/Yesterday
+    # scope as that section, reusing dcb_rows_by_date rather than
+    # recomputing Deposit Challenge Bonus rows a third time.
+    yesterday_date = now.date() - timedelta(days=1)
+    bonus_claimed_users_by_day = {
+        "today": bonus_claimed_users_report(
+            bonus_rows_all, deposit_rows, dcb_rows_by_date.get(today_str, []), now.date(), vip_by_user, agent_by_user
+        ),
+        "yesterday": bonus_claimed_users_report(
+            bonus_rows_all, deposit_rows, dcb_rows_by_date.get(yesterday_str, []), yesterday_date, vip_by_user, agent_by_user
+        ),
+    }
+
     # Week/Month views: rolling window ENDING at each retained date, clipped
     # to whatever's actually in all_dates (the 33-day retention window), so
     # e.g. "Month" on an early date just covers however much history exists.
@@ -3376,6 +3454,7 @@ def main():
         },
         "withdrawal_analysis": withdrawal_analysis,
         "withdrawal_amount_range_by_day": withdrawal_amount_range_by_day,
+        "bonus_claimed_users_by_day": bonus_claimed_users_by_day,
         # All-dates raw order rows (unlike by_date[...].withdrawal_orders,
         # which is scoped to a single selected date) -- needed for the
         # Processing/In-Review aging charts and the Last-4-Days completed
