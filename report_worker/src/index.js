@@ -195,6 +195,7 @@ const PAGE = `<!DOCTYPE html>
   canvas { max-height: 280px; }
   .loading { padding: 60px; text-align: center; color: #888; }
   .no-data { color: #999; font-style: italic; padding: 12px 0; }
+  .bonus-names-cell { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; cursor: help; }
 
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
@@ -3481,8 +3482,9 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
           <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claimed Users</h2></div>
           <button class="download-btn-sm" id="btn-dl-bonus-claimed-users">&#128190; Excel</button>
         </div>
-        <div class="ac-note">Same Today/Yesterday selection as Withdrawal Amount Range &middot; Claim % = claimed amount &divide; deposit before claim &middot; Cost Ratio % = claimed amount &divide; deposit after claim</div>
+        <div class="ac-note">Same Today/Yesterday selection as Withdrawal Amount Range. Deposit before Claim = total deposited today before the user's first bonus claim of the day; Deposit after Claim = deposited after that. Claim % = claimed &divide; before. Cost Ratio % = claimed &divide; after.</div>
         <div id="bonus-claimed-users-table"></div>
+        <div class="ac-pagination" id="bonus-claimed-users-pagination"></div>
       </section>
     </div>
   \`;
@@ -3644,7 +3646,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
   const bonusClaimedUsersCols = [
     { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
     { label: 'VIP Level', render: r => (r.vip_level == null ? '&mdash;' : r.vip_level), raw: r => r.vip_level, num: true },
-    { label: 'Bonus Names', render: r => r.bonus_names, raw: r => r.bonus_names },
+    { label: 'Bonus Names', render: r => '<span class="bonus-names-cell" title="' + r.bonus_names.replace(/"/g, '&quot;') + '">' + r.bonus_names + '</span>', raw: r => r.bonus_names },
     { label: 'Claimed Amount', render: r => money(r.claimed_amount), raw: r => r.claimed_amount, num: true },
     { label: 'Deposit before Claim', render: r => money(r.deposit_before_claim), raw: r => r.deposit_before_claim, num: true },
     { label: 'Claim %', render: r => r.claim_pct == null ? '&mdash;' : r.claim_pct + '%', raw: r => r.claim_pct, num: true },
@@ -3658,12 +3660,10 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     if (!container) return;
     if (!rows.length) {
       container.innerHTML = '<div class="no-data">No bonus claims ' + yesterdayWdDay + '.</div>';
+      document.getElementById('bonus-claimed-users-pagination').innerHTML = '';
       return;
     }
-    container.innerHTML = '<div class="table-wrap"><table><thead><tr>' +
-      bonusClaimedUsersCols.map(c => '<th' + (c.num ? ' class="num"' : '') + '>' + c.label + '</th>').join('') + '</tr></thead><tbody>' +
-      rows.map(r => '<tr>' + bonusClaimedUsersCols.map(c => '<td' + (c.num ? ' class="num"' : '') + '>' + c.render(r) + '</td>').join('') + '</tr>').join('') +
-      '</tbody></table></div>';
+    paginatedTable('bonus-claimed-users-table', 'bonus-claimed-users-pagination', rows, bonusClaimedUsersCols, 5, { jumpDropdown: true });
   }
 
   // Draws each bar's own value, percentage, and (optionally) a total-amount
