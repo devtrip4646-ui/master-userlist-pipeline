@@ -192,7 +192,6 @@ const PAGE = `<!DOCTYPE html>
   .bar { position: absolute; left: 0; top: 0; bottom: 0; background: #ddeaff; z-index: 0; border-radius: 4px; }
   .bar-cell span { position: relative; z-index: 1; }
   .table-wrap { max-height: 420px; overflow: auto; }
-  .bonus-overall-row td { background: #eef2ff; font-weight: 800; color: #1a1a1a; border-top: 2px solid #c7d2fe; position: sticky; bottom: 0; }
   canvas { max-height: 280px; }
   .loading { padding: 60px; text-align: center; color: #888; }
   .no-data { color: #999; font-style: italic; padding: 12px 0; }
@@ -2172,10 +2171,6 @@ if (IS_PLATFORM_ANALYSIS) {
       if (!bonusClaims) return [];
       return bonusView === 'wallet' ? bonusClaims.wallet_bonuses : bonusClaims.deposit_challenge_bonuses;
     }
-    function bonusOverall() {
-      if (!bonusClaims) return null;
-      return bonusView === 'wallet' ? bonusClaims.wallet_bonuses_overall : bonusClaims.deposit_challenge_bonuses_overall;
-    }
     function bonusCols() {
       return [
         { label: bonusView === 'wallet' ? 'Bonus Category' : 'Rule', render: r => r.bonus_category, raw: r => r.bonus_category },
@@ -2190,7 +2185,6 @@ if (IS_PLATFORM_ANALYSIS) {
     function renderBonusClaims() {
       const rows = bonusRows();
       const cols = bonusCols();
-      const overall = bonusOverall();
       const container = document.getElementById('bonus-claims-table');
       if (!rows.length) {
         container.innerHTML = '<div class="no-data">No bonus claims recorded yet.</div>';
@@ -2198,13 +2192,7 @@ if (IS_PLATFORM_ANALYSIS) {
       }
       const thead = '<thead><tr>' + cols.map(c => '<th' + (c.num ? ' class="num"' : '') + '>' + c.label + '</th>').join('') + '</tr></thead>';
       const tbody = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => '<td class="' + (c.num ? 'num' : '') + '">' + c.render(r) + '</td>').join('') + '</tr>').join('') + '</tbody>';
-      let tfoot = '';
-      if (overall) {
-        const overallLabel = 'Overall (' + rows.length + (rows.length === 1 ? ' category' : ' categories') + ')';
-        const overallRow = Object.assign({ bonus_category: overallLabel }, overall);
-        tfoot = '<tfoot><tr class="bonus-overall-row">' + cols.map(c => '<td class="' + (c.num ? 'num' : '') + '">' + c.render(overallRow) + '</td>').join('') + '</tr></tfoot>';
-      }
-      container.innerHTML = '<div class="table-wrap"><table>' + thead + tbody + tfoot + '</table></div>';
+      container.innerHTML = '<div class="table-wrap"><table>' + thead + tbody + '</table></div>';
     }
     // Shows the ACTUAL date range covered by the current selection -- e.g.
     // "12 Jul - 18 Jul (7 days)" -- instead of leaving "7-Day Range" as an
@@ -2261,13 +2249,11 @@ if (IS_PLATFORM_ANALYSIS) {
       renderBonusClaims();
       document.getElementById('btn-dl-bonus-claims').addEventListener('click', async () => {
         const cols = bonusCols();
-        const rowsForExport = bonusRows();
-        const summaryRows = rowsForExport.map(r => {
+        const summaryRows = bonusRows().map(r => {
           const obj = {};
           cols.forEach(c => { obj[c.label] = c.raw ? c.raw(r) : c.render(r); });
           return obj;
         });
-        const overallForExport = bonusOverall();
         const detailRaw = bonusView === 'wallet'
           ? (bonusClaims.wallet_claim_details || [])
           : (bonusClaims.deposit_challenge_bonus_claim_details || []);
@@ -2287,15 +2273,6 @@ if (IS_PLATFORM_ANALYSIS) {
         if (summaryRows.length) {
           wsSummary.columns = Object.keys(summaryRows[0]).map(k => ({ header: k, key: k, width: Math.max(12, k.length + 2) }));
           wsSummary.addRows(summaryRows);
-          if (overallForExport) {
-            const overallLabel = 'Overall (' + rowsForExport.length + (rowsForExport.length === 1 ? ' category' : ' categories') + ')';
-            const overallExportRow = Object.assign({ bonus_category: overallLabel }, overallForExport);
-            const overallObj = {};
-            cols.forEach(c => { overallObj[c.label] = c.raw ? c.raw(overallExportRow) : c.render(overallExportRow); });
-            const addedRow = wsSummary.addRow(overallObj);
-            addedRow.font = { bold: true };
-            addedRow.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FF' } }; });
-          }
         }
         styleHeaderRow(wsSummary);
         const wsUsers = wb.addWorksheet('User Data');
