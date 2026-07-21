@@ -1205,7 +1205,14 @@ def withdrawal_orders_export(withdrawal_full_records, vip_by_user, now, agent_by
 
 
 def last4days_completion(by_date_withdrawal_full, dates):
-    """For the last 4 dates: count of completed withdrawals within 4h vs more than 4h."""
+    """For the last 4 dates: count of completed (status=2) withdrawals whose
+    PROCESSING duration -- review_time (when the order left In-Review and
+    entered Processing) to update_time (when it finished and became
+    Complete) -- was within 4h vs more than 4h. Same review_dt/update_dt
+    pair as withdrawal_completion_by_channel, not create_time -- create_time
+    also includes however long the order sat in In-Review before Processing
+    even started, which isn't part of the processing step being measured
+    here."""
     last4 = dates[-4:]
     result = []
     for date in last4:
@@ -1213,9 +1220,9 @@ def last4days_completion(by_date_withdrawal_full, dates):
         for r in by_date_withdrawal_full.get(date, []):
             if r["status"] != 2:
                 continue
-            hours = withdrawal_waiting_hours(r)
-            if hours is None:
+            if not r["review_dt"] or not r["update_dt"]:
                 continue
+            hours = max((r["update_dt"] - r["review_dt"]).total_seconds() / 3600.0, 0)
             if hours <= 4:
                 within += 1
             else:
@@ -1613,12 +1620,12 @@ def new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, today):
 # the workbook itself. When the current week moves past this date without
 # an update, the section simply stops showing a target (rather than
 # comparing against a stale one) until refreshed.
-WEEKLY_TARGET_WEEK_START = "2026-07-13"
+WEEKLY_TARGET_WEEK_START = "2026-07-20"
 WEEKLY_TARGET_VALUES = {
-    "old_users_count": 1800.0,
-    "old_users_avg_deposit": 1900.0,
-    "total_deposit": 3900000.0,
-    "total_depositor_count": 1900.0,
+    "old_users_count": 1876.0,
+    "old_users_avg_deposit": 2237.0,
+    "total_deposit": 4090000.0,
+    "total_depositor_count": 1975.0,
 }
 WEEKLY_TARGET_LABELS = {
     "old_users_count": "Old Users Count",
