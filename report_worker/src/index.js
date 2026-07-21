@@ -1031,6 +1031,19 @@ if (IS_PERFORMANCE) {
         </div>
         <div>
           <div class="perf-dept-panel-head" style="margin-bottom:12px"><span class="dp-icon">&#127942;</span><h4>Overall Ranking -- average across all departments</h4></div>
+          <div class="perf-controls" id="perf-overall-range-controls" style="margin-bottom:14px">
+            <button class="perf-preset active" data-overall-preset="month">This Month</button>
+            <button class="perf-preset" data-overall-preset="yesterday">Till Yesterday</button>
+            <span class="perf-to">|</span>
+            <div class="perf-daterange">
+              <button type="button" id="perf-overall-daterange-btn" class="perf-daterange-btn">&#128197; <span id="perf-overall-daterange-label">This Month</span></button>
+              <div id="perf-overall-daterange-popover" class="perf-daterange-popover" style="display:none">
+                <label>From<input type="date" id="perf-overall-from"></label>
+                <label>To<input type="date" id="perf-overall-to"></label>
+                <button type="button" id="perf-overall-daterange-apply">Apply</button>
+              </div>
+            </div>
+          </div>
           <div id="perf-podium-overall" class="perf-overall-podium"></div>
         </div>
       </div>
@@ -1179,7 +1192,7 @@ if (IS_PERFORMANCE) {
             ? '<div class="poc-incentive">Incentive earned: ' + fmtMoney(incentive) + '</div>'
             : '<div class="poc-incentive" style="opacity:0.8">Below 60% of target -- no incentive yet</div>') +
           '</div>' +
-          '<div class="poc-score"><span class="val">' + r.composite.toFixed(1) + '%</span><small>of target (month)</small></div>' +
+          '<div class="poc-score"><span class="val">' + r.composite.toFixed(1) + '%</span><small>of target</small></div>' +
           '</div>';
       }).join('');
 
@@ -1262,14 +1275,14 @@ if (IS_PERFORMANCE) {
       }
       return weights;
     }
-    function computeOverallLeaderboard() {
+    function computeOverallLeaderboard(fromDate, toDate) {
       const allAgents = new Set();
       deptNames.forEach(dept => departments[dept].agents.forEach(a => allAgents.add(a)));
       const weights = departmentWeights();
       const scoreByAgent = {};
       for (const dept of deptNames) {
         const { agents: deptAgents, categories: deptCategories } = departments[dept];
-        const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
+        const ranked = computeLeaderboard(fromDate, toDate, deptAgents, deptCategories);
         for (const r of ranked) {
           scoreByAgent[r.agent] = (scoreByAgent[r.agent] || 0) + r.composite * weights[dept];
         }
@@ -1279,8 +1292,17 @@ if (IS_PERFORMANCE) {
       return results;
     }
 
+    // Overall Ranking has its own independent date-range control (This
+    // Month / Till Yesterday / custom From-To) -- separate from the
+    // Daily/Range Performance section below and from the department
+    // mini-lists on the left, which stay pinned to the current calendar
+    // month (that's also what the incentive brackets are judged against).
+    function renderOverallPodium(fromDate, toDate) {
+      renderOverallPodiumInto('perf-podium-overall', computeOverallLeaderboard(fromDate, toDate));
+    }
+
     function renderPodium() {
-      renderOverallPodiumInto('perf-podium-overall', computeOverallLeaderboard());
+      renderOverallPodium(monthFrom, monthTo);
       for (const dept of deptNames) {
         const { agents: deptAgents, categories: deptCategories } = departments[dept];
         const ranked = computeLeaderboard(monthFrom, monthTo, deptAgents, deptCategories);
@@ -1379,6 +1401,61 @@ if (IS_PERFORMANCE) {
       dateRangePopover.style.display = 'none';
       render(from, to);
     });
+
+    // Overall Ranking's own date-range control (This Month / Till
+    // Yesterday / custom From-To) -- independent of the Daily/Range
+    // Performance controls above and of the department mini-lists, which
+    // both stay pinned to the current calendar month.
+    const overallPresetBtns = Array.from(document.querySelectorAll('#perf-overall-range-controls .perf-preset'));
+    const overallDateRangeBtn = document.getElementById('perf-overall-daterange-btn');
+    const overallDateRangeLabel = document.getElementById('perf-overall-daterange-label');
+    const overallDateRangePopover = document.getElementById('perf-overall-daterange-popover');
+    const overallFromInput = document.getElementById('perf-overall-from');
+    const overallToInput = document.getElementById('perf-overall-to');
+    const overallDateRangeApply = document.getElementById('perf-overall-daterange-apply');
+
+    function yesterdayStr() {
+      const idx = allDates.indexOf(todayStr);
+      const anchorIdx = idx >= 0 ? idx : allDates.length - 1;
+      const yIdx = Math.max(0, anchorIdx - 1);
+      return allDates[yIdx] || todayStr;
+    }
+
+    if (overallDateRangeBtn) {
+      overallDateRangeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        overallDateRangePopover.style.display = overallDateRangePopover.style.display === 'none' ? 'flex' : 'none';
+      });
+      overallDateRangePopover.addEventListener('click', (e) => e.stopPropagation());
+      document.addEventListener('click', () => { overallDateRangePopover.style.display = 'none'; });
+
+      overallPresetBtns.forEach(btn => btn.addEventListener('click', () => {
+        overallPresetBtns.forEach(b => b.classList.toggle('active', b === btn));
+        overallDateRangePopover.style.display = 'none';
+        if (btn.dataset.overallPreset === 'month') {
+          overallDateRangeLabel.textContent = 'This Month';
+          renderOverallPodium(monthFrom, monthTo);
+        } else {
+          // If today is the 1st of the month, "yesterday" falls in the
+          // previous month -- clamp to a same-day range at month start
+          // rather than reaching into last month's data.
+          const y = yesterdayStr();
+          const to = y >= monthFrom ? y : monthFrom;
+          overallDateRangeLabel.textContent = shortDate(monthFrom) + ' \\u2013 ' + shortDate(to);
+          renderOverallPodium(monthFrom, to);
+        }
+      }));
+
+      overallDateRangeApply.addEventListener('click', () => {
+        const from = overallFromInput.value || overallToInput.value;
+        const to = overallToInput.value || overallFromInput.value;
+        if (!from || !to) return;
+        overallPresetBtns.forEach(b => b.classList.remove('active'));
+        overallDateRangeLabel.textContent = from === to ? shortDate(from) : shortDate(from) + ' \\u2013 ' + shortDate(to);
+        overallDateRangePopover.style.display = 'none';
+        renderOverallPodium(from, to);
+      });
+    }
 
     renderPodium();
     applyPreset('today');
