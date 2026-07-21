@@ -195,7 +195,6 @@ const PAGE = `<!DOCTYPE html>
   canvas { max-height: 280px; }
   .loading { padding: 60px; text-align: center; color: #888; }
   .no-data { color: #999; font-style: italic; padding: 12px 0; }
-  .bonus-names-cell { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; cursor: help; }
 
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
@@ -1256,21 +1255,23 @@ if (IS_PERFORMANCE) {
     }
 
     // Overall Ranking: a WEIGHTED average of an agent's composite across
-    // every department -- General counts for 15%, the remaining
-    // departments (FTD Team, Reactivation Team, VIP Team) split the other
-    // 85% equally between them (~28.33% each with 3 of them). Falls back
-    // to a plain equal split across whatever departments exist if
-    // "General" isn't one of them, so this doesn't silently lose weight.
-    // Each department's composite is already normalized to "% of that
-    // department's own target," so a weighted sum is apples-to-apples
+    // every department -- Reactivation Team counts for 20%, General for
+    // 15%, and the remaining departments (FTD Team, VIP Team) split the
+    // other 65% equally between them (32.5% each with 2 of them). Falls
+    // back to a plain equal split across whatever departments exist if
+    // neither named department is present, so this doesn't silently lose
+    // weight. Each department's composite is already normalized to "% of
+    // that department's own target," so a weighted sum is apples-to-apples
     // regardless of which/how-many categories each one covers.
-    const GENERAL_WEIGHT = 0.15;
+    const NAMED_WEIGHTS = { 'Reactivation Team': 0.20, 'General': 0.15 };
     function departmentWeights() {
       const weights = {};
-      if (deptNames.includes('General') && deptNames.length > 1) {
-        const otherDepts = deptNames.filter(d => d !== 'General');
-        const otherWeight = (1 - GENERAL_WEIGHT) / otherDepts.length;
-        deptNames.forEach(d => { weights[d] = d === 'General' ? GENERAL_WEIGHT : otherWeight; });
+      const namedPresent = Object.keys(NAMED_WEIGHTS).filter(d => deptNames.includes(d));
+      const otherDepts = deptNames.filter(d => !namedPresent.includes(d));
+      if (namedPresent.length && otherDepts.length) {
+        const namedTotal = namedPresent.reduce((s, d) => s + NAMED_WEIGHTS[d], 0);
+        const otherWeight = (1 - namedTotal) / otherDepts.length;
+        deptNames.forEach(d => { weights[d] = namedPresent.includes(d) ? NAMED_WEIGHTS[d] : otherWeight; });
       } else {
         deptNames.forEach(d => { weights[d] = 1 / deptNames.length; });
       }
@@ -3465,28 +3466,17 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       </section>
     </div>
 
-    <div class="row2col">
-      <section class="acc-cyan ac-compact">
-        <div class="section-head">
-          <div class="sec-title"><div class="badge b-cyan">&#128181;</div><h2>Withdrawal Amount Range</h2></div>
-          <button class="download-btn-sm" id="btn-dl-yesterday-wd-range">&#128190; Excel</button>
-        </div>
-        <div class="date-switch" id="yesterday-wd-switch">
-          <button data-day="today">Today</button>
-          <button data-day="yesterday" class="active">Yesterday</button>
-        </div>
-        <div id="yesterday-wd-range-table"></div>
-      </section>
-      <section class="acc-purple ac-compact">
-        <div class="section-head">
-          <div class="sec-title"><div class="badge b-purple">&#127942;</div><h2>Bonus Claimed Users</h2><span class="today-tag" id="bonus-claimed-users-date-tag">&mdash;</span></div>
-          <button class="download-btn-sm" id="btn-dl-bonus-claimed-users">&#128190; Excel</button>
-        </div>
-        <div class="ac-note">Follows the date picker above &middot; Deposit before Claim = total deposited that day before the user's first bonus claim; Deposit after Claim = deposited after that. Claim % = claimed &divide; before. Cost Ratio % = claimed &divide; after.</div>
-        <div id="bonus-claimed-users-table"></div>
-        <div class="ac-pagination" id="bonus-claimed-users-pagination"></div>
-      </section>
-    </div>
+    <section class="acc-cyan ac-compact">
+      <div class="section-head">
+        <div class="sec-title"><div class="badge b-cyan">&#128181;</div><h2>Withdrawal Amount Range</h2></div>
+        <button class="download-btn-sm" id="btn-dl-yesterday-wd-range">&#128190; Excel</button>
+      </div>
+      <div class="date-switch" id="yesterday-wd-switch">
+        <button data-day="today">Today</button>
+        <button data-day="yesterday" class="active">Yesterday</button>
+      </div>
+      <div id="yesterday-wd-range-table"></div>
+    </section>
   \`;
 
   let currentScope = null;
@@ -3641,37 +3631,6 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
           '<td class="num">' + money(row.total_amount) + '</td></tr>';
       }).join('') +
       '</tbody></table></div>';
-  }
-
-  const bonusClaimedUsersCols = [
-    { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
-    { label: 'VIP Level', render: r => (r.vip_level == null ? '&mdash;' : r.vip_level), raw: r => r.vip_level, num: true },
-    { label: 'Bonus Names', render: r => '<span class="bonus-names-cell" title="' + r.bonus_names.replace(/"/g, '&quot;') + '">' + r.bonus_names + '</span>', raw: r => r.bonus_names },
-    { label: 'Claimed Amount', render: r => money(r.claimed_amount), raw: r => r.claimed_amount, num: true },
-    { label: 'Deposit before Claim', render: r => money(r.deposit_before_claim), raw: r => r.deposit_before_claim, num: true },
-    { label: 'Claim %', render: r => r.claim_pct == null ? '&mdash;' : r.claim_pct + '%', raw: r => r.claim_pct, num: true },
-    { label: 'Deposit after Claim', render: r => money(r.deposit_after_claim), raw: r => r.deposit_after_claim, num: true },
-    { label: 'Cost Ratio %', render: r => r.cost_ratio_pct == null ? '&mdash;' : r.cost_ratio_pct + '%', raw: r => r.cost_ratio_pct, num: true },
-  ];
-  // Follows the Home page's own date picker (selectDate below), NOT the
-  // separate Today/Yesterday toggle next to it (that one only scopes
-  // Withdrawal Amount Range) -- bonusClaimedUsersDate tracks whichever
-  // date was last rendered so the Excel export matches what's on screen.
-  let bonusClaimedUsersDate = todayLocalISO();
-  function renderBonusClaimedUsers(dateStr) {
-    bonusClaimedUsersDate = dateStr;
-    const byDate = data.bonus_claimed_users_by_date || {};
-    const rows = byDate[dateStr] || [];
-    const tagEl = document.getElementById('bonus-claimed-users-date-tag');
-    if (tagEl) tagEl.textContent = shortDate(dateStr);
-    const container = document.getElementById('bonus-claimed-users-table');
-    if (!container) return;
-    if (!rows.length) {
-      container.innerHTML = '<div class="no-data">No bonus claims on ' + shortDate(dateStr) + '.</div>';
-      document.getElementById('bonus-claimed-users-pagination').innerHTML = '';
-      return;
-    }
-    paginatedTable('bonus-claimed-users-table', 'bonus-claimed-users-pagination', rows, bonusClaimedUsersCols, 5, { jumpDropdown: true });
   }
 
   // Draws each bar's own value, percentage, and (optionally) a total-amount
@@ -4023,17 +3982,6 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     downloadStyledExcel(exportRows, 'Withdrawal Amount Range - ' + yesterdayWdDay, 'withdrawal-amount-range-' + yesterdayWdDay + '-' + rep.date + '.xlsx');
   });
 
-  document.getElementById('btn-dl-bonus-claimed-users').addEventListener('click', () => {
-    const rows = (data.bonus_claimed_users_by_date || {})[bonusClaimedUsersDate] || [];
-    if (!rows.length) return;
-    const exportRows = rows.map(r => ({
-      'User ID': r.user_id, 'VIP Level': r.vip_level, Agent: r.agent || 'Un-Assigned', 'Bonus Names': r.bonus_names,
-      'Claimed Amount': r.claimed_amount, 'Deposit before Claim': r.deposit_before_claim,
-      'Claim %': r.claim_pct, 'Deposit after Claim': r.deposit_after_claim, 'Cost Ratio %': r.cost_ratio_pct,
-    }));
-    downloadStyledExcel(exportRows, 'Bonus Claimed Users - ' + bonusClaimedUsersDate, 'bonus-claimed-users-' + bonusClaimedUsersDate + '.xlsx');
-  });
-
   // Date picker wiring
   const dateBar = document.getElementById('date-bar');
   const datePicker = document.getElementById('date-picker');
@@ -4055,7 +4003,6 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     dayStatus.classList.toggle('past', !isToday);
     const scope = data.by_date[dateStr] || EMPTY_SCOPE;
     render(scope, dateStr);
-    renderBonusClaimedUsers(dateStr);
   }
   datePicker.addEventListener('change', () => selectDate(datePicker.value));
   btnToday.addEventListener('click', () => selectDate(todayLocalISO()));
