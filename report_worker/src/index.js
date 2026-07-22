@@ -338,7 +338,7 @@ const PAGE = `<!DOCTYPE html>
   .perf-criteria-grid { display: grid; gap: 10px; flex: 1; min-width: 0; }
   .perf-crit { font-size: 11px; color: var(--perf-sub); min-width: 0; }
   .perf-crit .pc-label { font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .perf-crit .pc-target { font-weight: 600; text-transform: none; letter-spacing: normal; color: #9ca3af; }
+  .perf-crit .pc-target { display: block; font-weight: 600; font-size: 9.5px; color: #9ca3af; margin-top: 1px; }
   .perf-crit .pc-value { font-weight: 800; font-size: 12.5px; color: var(--perf-ink); margin: 3px 0; }
   .perf-bar { height: 6px; border-radius: 4px; background: #eef0f4; overflow: hidden; }
   .perf-bar-fill { height: 100%; border-radius: 4px; }
@@ -1338,7 +1338,8 @@ if (IS_PERFORMANCE) {
             const targetLabel = meta.type === 'rate' ? meta.target + '%' : fmt(meta.target);
             if (!c.applicable) {
               return '<div class="perf-crit perf-crit-na">' +
-                '<div class="pc-label">' + c.category + ' <span class="pc-target">(Target: ' + targetLabel + ')</span></div>' +
+                '<div class="pc-label">' + c.category + '</div>' +
+                '<div class="pc-target">Target: ' + targetLabel + '</div>' +
                 '<div class="pc-value">' + c.actualDisplay + '</div>' +
                 '<div class="perf-bar"><div class="perf-bar-fill pb-na" style="width:100%"></div></div>' +
                 '</div>';
@@ -1346,7 +1347,8 @@ if (IS_PERFORMANCE) {
             const pct = Math.max(0, Math.min(c.pctOfTarget, 999));
             const barPct = Math.min(pct, 100);
             return '<div class="perf-crit">' +
-              '<div class="pc-label">' + c.category + ' <span class="pc-target">(Target: ' + targetLabel + ')</span></div>' +
+              '<div class="pc-label">' + c.category + '</div>' +
+              '<div class="pc-target">Target: ' + targetLabel + '</div>' +
               '<div class="pc-value">' + c.actualDisplay + '</div>' +
               '<div class="perf-bar"><div class="perf-bar-fill ' + barClass(pct) + '" style="width:' + barPct + '%"></div></div>' +
               '</div>';
