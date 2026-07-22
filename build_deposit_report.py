@@ -1837,11 +1837,13 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
       - "Top Games": per (user, game), total amount wagered.
       - "Highest Single Bet": for each user, their single largest bet
         transaction and which game it was on.
-    Each ships 4 views -- "overall" (the full 33-day window, no date
-    filter), "by_date" (one calendar day), "by_week" (rolling 7 days ending
-    that date), "by_month" (rolling 30 days ending that date, clipped to
-    all_dates like bonus_claims_by_week/month) -- so the frontend can offer
-    the same Overall/Day/Week/Month switch as Bonus Claim Report.
+    Each ships 4 views -- "overall" (rolling 15 days, not the full 33-day
+    retention window -- the un-windowed version routinely ran to thousands
+    of pages), "by_date" (one calendar day), "by_week" (rolling 7 days
+    ending that date), "by_month" (rolling 30 days ending that date,
+    clipped to all_dates like bonus_claims_by_week/month) -- so the
+    frontend can offer the same Overall/Day/Week/Month switch as Bonus
+    Claim Report.
     UNCAPPED -- every qualifying row ships, not just a top-N slice, so both
     the on-screen table and its Excel export are complete."""
     empty = {"top_games": [], "highest_single_bet": []}
@@ -1876,14 +1878,11 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
             last_active_label_by_user[user_id] = "Today" if gap <= 0 else f"{gap}d ago"
 
     rows_by_date = defaultdict(list)
-    all_rows = []
     for user_id, game_name, change_value, create_time in rows:
         dt = parse_dt(create_time)
         if not dt:
             continue
-        triple = (user_id, game_name, change_value)
-        rows_by_date[dt.date().isoformat()].append(triple)
-        all_rows.append(triple)
+        rows_by_date[dt.date().isoformat()].append((user_id, game_name, change_value))
 
     all_dates_set = set(all_dates)
 
@@ -1891,16 +1890,22 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
         end_d = datetime.strptime(end_date_str, "%Y-%m-%d").date()
         return {(end_d - timedelta(days=i)).isoformat() for i in range(days)} & all_dates_set
 
-    # Overall and Day are shipped uncapped -- Day view is genuinely bounded
-    # (one calendar day's worth of activity), Overall is the single
-    # headline view. Week/Month are capped at ACTION_CENTER_LIST_CAP:
-    # precomputed for EVERY retained date so the date-switch works
-    # instantly, but adjacent dates' 7/30-day windows heavily overlap, so
-    # uncapped week/month duplicated ~95% of their rows across dates --
-    # measured at 53MB combined (of a 110MB report) before this cap, the
-    # single largest contributor to Platform Analysis failing to load in a
-    # browser tab. Same fix as bonus_claims_by_week/month's claim_details.
-    overall = _aggregate_games_reports(all_rows, agent_by_user, last_active_label_by_user, vip_by_id)
+    # "Overall" is the last 15 days of activity, not the full 33-day
+    # retention window -- the un-windowed version routinely ran to
+    # thousands of pages, unwieldy to browse. The 33-day "new user" (FD)
+    # cohort definition itself is unchanged; only the bet-activity window
+    # aggregated into this view got narrower. Uncapped within that 15-day
+    # window (Day view is also uncapped -- both are genuinely bounded).
+    # Week/Month are capped at ACTION_CENTER_LIST_CAP: precomputed for
+    # EVERY retained date so the date-switch works instantly, but adjacent
+    # dates' 7/30-day windows heavily overlap, so uncapped week/month
+    # duplicated ~95% of their rows across dates -- measured at 53MB
+    # combined (of a 110MB report) before this cap, the single largest
+    # contributor to Platform Analysis failing to load in a browser tab.
+    # Same fix as bonus_claims_by_week/month's claim_details.
+    last15_dates = rolling_window(today.isoformat(), 15)
+    last15_rows = [r for d in last15_dates for r in rows_by_date.get(d, [])]
+    overall = _aggregate_games_reports(last15_rows, agent_by_user, last_active_label_by_user, vip_by_id)
     by_date, by_week, by_month = {}, {}, {}
     for date_str in all_dates:
         by_date[date_str] = _aggregate_games_reports(rows_by_date.get(date_str, []), agent_by_user, last_active_label_by_user, vip_by_id)

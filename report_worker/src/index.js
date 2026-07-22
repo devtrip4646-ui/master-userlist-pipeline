@@ -1991,7 +1991,7 @@ if (IS_PLATFORM_ANALYSIS) {
 
       <div class="analysis-heading withdrawal"><h2>Game Activity</h2><div class="line"></div><span class="tag">PLATFORM</span></div>
       <div class="date-switch" id="new-games-range-switch">
-        <button data-range="overall" class="active">Overall</button>
+        <button data-range="overall" class="active">Last 15 Days</button>
         <button data-range="day">Day</button>
         <button data-range="week">Week</button>
         <button data-range="month">Month</button>
