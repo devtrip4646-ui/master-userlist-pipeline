@@ -1017,7 +1017,7 @@ if (IS_PERFORMANCE) {
         <div>
           <h5>Incentive brackets (rank 1 / 2 / 3)</h5>
           <div class="perf-incentive-table">
-            <div class="perf-incentive-cell tier1"><div class="ic-thresh">60%+</div><div class="ic-amts">Rs1500 / 800 / 500</div></div>
+            <div class="perf-incentive-cell tier1"><div class="ic-thresh">50%+</div><div class="ic-amts">Rs1500 / 800 / 500</div></div>
             <div class="perf-incentive-cell tier2"><div class="ic-thresh">75%+</div><div class="ic-amts">Rs4000 / 2000 / 1400</div></div>
             <div class="perf-incentive-cell tier3"><div class="ic-thresh">90%+</div><div class="ic-amts">Rs10000 / 5000 / 2000</div></div>
           </div>
@@ -1102,7 +1102,7 @@ if (IS_PERFORMANCE) {
     function tierForPct(pct) {
       if (pct >= 90) return 3;
       if (pct >= 75) return 2;
-      if (pct >= 60) return 1;
+      if (pct >= 50) return 1;
       return 0;
     }
     const INCENTIVE_TABLE = {
@@ -1193,7 +1193,7 @@ if (IS_PERFORMANCE) {
           '<div class="poc-name">' + r.agent + '</div>' +
           (incentive
             ? '<div class="poc-incentive">Incentive earned: ' + fmtMoney(incentive) + '</div>'
-            : '<div class="poc-incentive" style="opacity:0.8">Below 60% of target -- no incentive yet</div>') +
+            : '<div class="poc-incentive" style="opacity:0.8">Below 50% of target -- no incentive yet</div>') +
           '</div>' +
           '<div class="poc-score"><span class="val">' + r.composite.toFixed(1) + '%</span><small>of target</small></div>' +
           '</div>';
