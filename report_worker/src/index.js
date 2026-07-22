@@ -980,6 +980,8 @@ if (IS_PERFORMANCE) {
     const data = await res.json();
     const perfRows = data.agent_performance || [];
     const targets = data.agent_performance_targets || {};
+    const reactivationData = data.reactivation || {};
+    const REACTIVATION_COHORT_CATEGORIES = { 'Reactivation Low': 'low', 'Reactivation High': 'high' };
     // Departments: each is its own scorecard, scored only on its own
     // categories -- every agent is scored in every department (see
     // agent_performance_departments), earning a separate score in each.
@@ -1336,12 +1338,20 @@ if (IS_PERFORMANCE) {
           const critHtml = r.criteria.map(c => {
             const meta = targets[c.category] || { type: 'count', target: 0 };
             const targetLabel = meta.type === 'rate' ? meta.target + '%' : fmt(meta.target);
-            // Total users only means something extra for rate-type metrics
-            // (the cohort size behind the %) -- for count-type metrics
-            // (Reactivation Low/High, VIP Upgrade) the denominator IS the
-            // flat daily target already shown, so repeating it would be
-            // redundant.
-            const totalUsersLabel = meta.type === 'rate' ? ' &middot; ' + fmt(c.cohortSize) + (c.cohortSize === 1 ? ' user' : ' users') : '';
+            // Total users: for rate-type metrics, the cohort size behind
+            // the %. For Reactivation Low/High specifically, the flat
+            // daily target isn't a cohort size, so pull the agent's actual
+            // "inactive + reactivated today" pool from data.reactivation
+            // instead. VIP Upgrade (General) has no equivalent pool concept
+            // -- skipped there.
+            const reactTier = REACTIVATION_COHORT_CATEGORIES[c.category];
+            let totalUsersLabel = '';
+            if (meta.type === 'rate') {
+              totalUsersLabel = ' &middot; ' + fmt(c.cohortSize) + (c.cohortSize === 1 ? ' user' : ' users');
+            } else if (reactTier) {
+              const cohort = ((reactivationData[reactTier] || {}).cohort_by_agent || {})[r.agent] || 0;
+              totalUsersLabel = ' &middot; ' + fmt(cohort) + (cohort === 1 ? ' user' : ' users');
+            }
             if (!c.applicable) {
               return '<div class="perf-crit perf-crit-na">' +
                 '<div class="pc-label">' + c.category + '</div>' +

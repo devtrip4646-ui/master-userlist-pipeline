@@ -736,6 +736,25 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
     baseline_low = len(low_rows) + still_inactive_low
     baseline_high = len(high_rows) + still_inactive_high
 
+    # Per-agent version of the same baseline (reactivated today + still
+    # currently inactive) -- purely informational, shown on the
+    # Performance page next to the Reactivation Low/High target so admins
+    # can see how many users an agent is actually responsible for, distinct
+    # from the flat daily reactivation-count target. NOT part of the
+    # numerator/denominator used for scoring (that stays the flat target).
+    still_inactive_low_by_agent = tally_rows_by_agent(action_center["inactive_low"]["rows"]) if action_center else {}
+    still_inactive_high_by_agent = tally_rows_by_agent(action_center["inactive_high"]["rows"]) if action_center else {}
+    reactivated_low_by_agent = tally_rows_by_agent(low_rows)
+    reactivated_high_by_agent = tally_rows_by_agent(high_rows)
+    cohort_by_agent_low = {
+        agent: reactivated_low_by_agent.get(agent, 0) + still_inactive_low_by_agent.get(agent, 0)
+        for agent in set(reactivated_low_by_agent) | set(still_inactive_low_by_agent)
+    }
+    cohort_by_agent_high = {
+        agent: reactivated_high_by_agent.get(agent, 0) + still_inactive_high_by_agent.get(agent, 0)
+        for agent in set(reactivated_high_by_agent) | set(still_inactive_high_by_agent)
+    }
+
     return {
         "low": {
             "note": "VIP 2 to VIP 4, reactivated today (was inactive 16-90 days)",
@@ -745,14 +764,16 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             # low_rows list -- feeds the Performance page's Reactivation Low
             # criterion (target: 7/day), which needs the true count even
             # when the on-screen `rows` list is capped for display size.
-            "agent_breakdown": tally_rows_by_agent(low_rows),
+            "agent_breakdown": reactivated_low_by_agent,
+            "cohort_by_agent": cohort_by_agent_low,
             "rows": low_rows,
         },
         "high": {
             "note": "VIP 5 to VIP 15, reactivated today (was inactive 16-90 days)",
             "reactivated_count": len(high_rows),
             "pct_reactivated": round(len(high_rows) / baseline_high * 100, 2) if baseline_high else 0.0,
-            "agent_breakdown": tally_rows_by_agent(high_rows),
+            "agent_breakdown": reactivated_high_by_agent,
+            "cohort_by_agent": cohort_by_agent_high,
             "rows": high_rows,
         },
     }
