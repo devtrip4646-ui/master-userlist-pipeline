@@ -618,9 +618,9 @@ def action_center_reports(mconn, now, agent_by_user):
                 "inactive_days": inactive_days,
                 "last_active_date": last_active_dt.strftime("%Y-%m-%d") if last_active_dt else None,
             }
-            if 5 <= vip_level <= 15 and 16 <= inactive_days <= 90:
+            if 5 <= vip_level <= 15 and 16 <= inactive_days <= 180:
                 inactive_high.append(inactive_row)
-            if 2 <= vip_level <= 4 and 16 <= inactive_days <= 90 and recharge_count >= 3:
+            if 2 <= vip_level <= 4 and 16 <= inactive_days <= 180 and recharge_count >= 3:
                 inactive_low.append(inactive_row)
 
             active_row = {
@@ -658,12 +658,12 @@ def action_center_reports(mconn, now, agent_by_user):
             "rows": near_high,
         },
         "inactive_high": {
-            "note": "VIP 5 to VIP 15, inactive 16-90 days",
+            "note": "VIP 5 to VIP 15, inactive 16-180 days",
             "total_matching": len(inactive_high),
             "rows": inactive_high,
         },
         "inactive_low": {
-            "note": "VIP 2 to VIP 4, 3+ deposit count, inactive 16-90 days",
+            "note": "VIP 2 to VIP 4, 3+ deposit count, inactive 16-180 days",
             "total_matching": len(inactive_low),
             "rows": inactive_low,
         },
@@ -686,8 +686,8 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
     previous activity. Two VIP-tier-scoped cohorts, using the same day ranges
     as the Inactive-Low/Inactive-High action-center lists so a user "moving"
     from one report to the other is exactly consistent:
-      Low  (VIP2-4):  previous gap 16-90 days
-      High (VIP5-15): previous gap 16-90 days
+      Low  (VIP2-4):  previous gap 16-180 days
+      High (VIP5-15): previous gap 16-180 days
     total_deposit on each row is specifically today's DEPOSIT amount (0 if
     the user reactivated via a withdrawal or wallet transaction with no
     matching deposit today) -- VIP/total_recharge stay deposit-only even
@@ -697,7 +697,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
     sync_master_userlist(), NOT derived here from daily_records.db directly
     -- those tables are purged to a rolling 33-day window, which would
     silently drop every comeback after a longer gap (i.e. most of the
-    16-90 day range). sync_master_userlist runs earlier in the same
+    16-180 day range). sync_master_userlist runs earlier in the same
     job and is the only place that still has each user's PRE-update
     last_active_time (unbounded history), so it computes the true gap there
     and hands the candidate list off via a local JSON file.
@@ -723,9 +723,9 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             "total_deposit": cand["total_deposit"],
             "inactive_days": gap_days,
         }
-        if 2 <= vip_level <= 4 and 16 <= gap_days <= 90:
+        if 2 <= vip_level <= 4 and 16 <= gap_days <= 180:
             low_rows.append(row)
-        elif 5 <= vip_level <= 15 and 16 <= gap_days <= 90:
+        elif 5 <= vip_level <= 15 and 16 <= gap_days <= 180:
             high_rows.append(row)
 
     low_rows.sort(key=lambda r: -r["inactive_days"])
@@ -757,7 +757,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
 
     return {
         "low": {
-            "note": "VIP 2 to VIP 4, reactivated today (was inactive 16-90 days)",
+            "note": "VIP 2 to VIP 4, reactivated today (was inactive 16-180 days)",
             "reactivated_count": len(low_rows),
             "pct_reactivated": round(len(low_rows) / baseline_low * 100, 2) if baseline_low else 0.0,
             # Per-agent count of reactivated users, from the FULL (uncapped)
@@ -769,7 +769,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             "rows": low_rows,
         },
         "high": {
-            "note": "VIP 5 to VIP 15, reactivated today (was inactive 16-90 days)",
+            "note": "VIP 5 to VIP 15, reactivated today (was inactive 16-180 days)",
             "reactivated_count": len(high_rows),
             "pct_reactivated": round(len(high_rows) / baseline_high * 100, 2) if baseline_high else 0.0,
             "agent_breakdown": reactivated_high_by_agent,
