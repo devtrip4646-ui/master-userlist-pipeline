@@ -1152,7 +1152,7 @@ if (IS_PERFORMANCE) {
             pctOfTarget = agg.den > 0 ? (agg.num / agg.den) * 100 : 0;
             actualDisplay = Math.round(agg.num) + ' / ' + Math.round(agg.den);
           }
-          return { category: cat, pctOfTarget, actualDisplay, applicable };
+          return { category: cat, pctOfTarget, actualDisplay, applicable, type: meta.type, cohortSize: Math.round(agg.den) };
         });
         const applicableCriteria = criteria.filter(c => c.applicable);
         // Each KPI's contribution to the composite is capped at 100% -- a
@@ -1336,6 +1336,12 @@ if (IS_PERFORMANCE) {
           const critHtml = r.criteria.map(c => {
             const meta = targets[c.category] || { type: 'count', target: 0 };
             const targetLabel = meta.type === 'rate' ? meta.target + '%' : fmt(meta.target);
+            // Total users only means something extra for rate-type metrics
+            // (the cohort size behind the %) -- for count-type metrics
+            // (Reactivation Low/High, VIP Upgrade) the denominator IS the
+            // flat daily target already shown, so repeating it would be
+            // redundant.
+            const totalUsersLabel = meta.type === 'rate' ? ' &middot; ' + fmt(c.cohortSize) + (c.cohortSize === 1 ? ' user' : ' users') : '';
             if (!c.applicable) {
               return '<div class="perf-crit perf-crit-na">' +
                 '<div class="pc-label">' + c.category + '</div>' +
@@ -1348,7 +1354,7 @@ if (IS_PERFORMANCE) {
             const barPct = Math.min(pct, 100);
             return '<div class="perf-crit">' +
               '<div class="pc-label">' + c.category + '</div>' +
-              '<div class="pc-target">Target: ' + targetLabel + '</div>' +
+              '<div class="pc-target">Target: ' + targetLabel + totalUsersLabel + '</div>' +
               '<div class="pc-value">' + c.actualDisplay + '</div>' +
               '<div class="perf-bar"><div class="perf-bar-fill ' + barClass(pct) + '" style="width:' + barPct + '%"></div></div>' +
               '</div>';
