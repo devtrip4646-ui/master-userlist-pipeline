@@ -762,7 +762,7 @@ def deposit_reactivation_analytics(mconn, reactivation_candidates, action_center
             "pct_reactivated": round(len(low_rows) / baseline_low * 100, 2) if baseline_low else 0.0,
             # Per-agent count of reactivated users, from the FULL (uncapped)
             # low_rows list -- feeds the Performance page's Reactivation Low
-            # criterion (target: 7/day), which needs the true count even
+            # criterion (target: 25/day), which needs the true count even
             # when the on-screen `rows` list is capped for display size.
             "agent_breakdown": reactivated_low_by_agent,
             "cohort_by_agent": cohort_by_agent_low,
@@ -2793,8 +2793,8 @@ def weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, 
 #     cohort size varies day to day. That weighted rate is then compared
 #     against the flat target here to get "% of target achieved".
 AGENT_PERF_TARGETS = {
-    "Reactivation Low": {"type": "count", "target": 30},
-    "Reactivation High": {"type": "count", "target": 10},
+    "Reactivation Low": {"type": "count", "target": 25},
+    "Reactivation High": {"type": "count", "target": 5},
     "Retention": {"type": "rate", "target": 30},
     "Low VIP Upgrade": {"type": "count", "target": 10},
     "High VIP Upgrade": {"type": "count", "target": 5},
