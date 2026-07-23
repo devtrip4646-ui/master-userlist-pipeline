@@ -95,6 +95,20 @@ def parse_dt(s):
         return None
 
 
+def top_depositors(records, limit=50):
+    """
+    Per-user total COMPLETED deposit amount for this scope, sorted
+    descending -- powers the Home page's Highest Deposit Users table.
+    """
+    totals = defaultdict(float)
+    for r in records:
+        if r["status"] == "COMPLETE" and r["user_id"] is not None:
+            totals[r["user_id"]] += r["amount"]
+    rows = [{"user_id": uid, "total_deposit": round(amt, 2)} for uid, amt in totals.items()]
+    rows.sort(key=lambda x: -x["total_deposit"])
+    return rows[:limit]
+
+
 def aggregate(records):
     """
     records: list of dicts with keys channel, amount, hour, status,
@@ -3192,6 +3206,7 @@ def main():
             "withdrawal_review_by_channel": withdrawal_review_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_completion_by_channel": withdrawal_completion_by_channel(by_date_withdrawal_full.get(date, [])),
             "withdrawal_orders": withdrawal_orders_export(by_date_withdrawal_full.get(date, []), vip_by_user, now, agent_by_user),
+            "top_depositors": top_depositors(by_date_records.get(date, [])),
         }
         for date in all_dates
     }

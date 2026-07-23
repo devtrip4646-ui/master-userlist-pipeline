@@ -432,7 +432,7 @@ function sortableTable(container, headers, rows, rowRenderer, numericCols) {
 const EMPTY_SCOPE = {
   totals: { count: 0, total_amount: 0 }, by_channel: [], by_amount_range: [], by_channel_and_range: [], hourly: [],
   success_by_range: [], success_by_channel: [], hourly_success_by_channel: [], hourly_success_by_range: [],
-  withdrawal_review_by_channel: [], withdrawal_completion_by_channel: [], withdrawal_orders: [],
+  withdrawal_review_by_channel: [], withdrawal_completion_by_channel: [], withdrawal_orders: [], top_depositors: [],
   summary: {
     total_deposit: 0, total_withdraw: 0, deposit_orders: 0, withdraw_orders: 0,
     deposit_users: 0, withdraw_users: 0, active_users: 0, difference: 0, withdraw_deposit_pct: null,
@@ -3487,17 +3487,26 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       </section>
     </div>
 
-    <section class="acc-cyan ac-compact">
-      <div class="section-head">
-        <div class="sec-title"><div class="badge b-cyan">&#128181;</div><h2>Withdrawal Amount Range</h2></div>
-        <button class="download-btn-sm" id="btn-dl-yesterday-wd-range">&#128190; Excel</button>
-      </div>
-      <div class="date-switch" id="yesterday-wd-switch">
-        <button data-day="today">Today</button>
-        <button data-day="yesterday" class="active">Yesterday</button>
-      </div>
-      <div id="yesterday-wd-range-table"></div>
-    </section>
+    <div class="row2col">
+      <section class="acc-cyan ac-compact">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-cyan">&#128181;</div><h2>Withdrawal Amount Range</h2></div>
+          <button class="download-btn-sm" id="btn-dl-yesterday-wd-range">&#128190; Excel</button>
+        </div>
+        <div class="date-switch" id="yesterday-wd-switch">
+          <button data-day="today">Today</button>
+          <button data-day="yesterday" class="active">Yesterday</button>
+        </div>
+        <div id="yesterday-wd-range-table"></div>
+      </section>
+      <section class="acc-cyan ac-compact">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-cyan">&#128176;</div><h2>Highest Deposit Users</h2></div>
+          <button class="download-btn-sm" id="btn-dl-highest-deposit-users">&#128190; Excel</button>
+        </div>
+        <div id="highest-deposit-table"></div>
+      </section>
+    </div>
   \`;
 
   let currentScope = null;
@@ -3571,6 +3580,19 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
 
     renderWithdrawalTimingTable('withdrawal-review-table', scope.withdrawal_review_by_channel || [], 'No processing (status 1) withdrawals for this date.');
     renderWithdrawalTimingTable('withdrawal-completion-table', scope.withdrawal_completion_by_channel || [], 'No completed (status 2) withdrawals for this date.');
+
+    const highestDepositContainer = document.getElementById('highest-deposit-table');
+    if (!scope.top_depositors || !scope.top_depositors.length) {
+      highestDepositContainer.innerHTML = '<div class="no-data">No completed deposits for this date.</div>';
+    } else {
+      sortableTable(
+        highestDepositContainer,
+        ['User ID', 'Total Deposit'],
+        scope.top_depositors.map(r => [r.user_id, r.total_deposit]),
+        r => '<tr><td>' + r[0] + '</td><td class="num">' + money(r[1]) + '</td></tr>',
+        [1]
+      );
+    }
   }
 
   function renderWithdrawalTimingTable(containerId, matrix, emptyMsg) {
@@ -4001,6 +4023,13 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       'Total Orders': row.total_orders, 'Total Amount': row.total_amount,
     }));
     downloadStyledExcel(exportRows, 'Withdrawal Amount Range - ' + yesterdayWdDay, 'withdrawal-amount-range-' + yesterdayWdDay + '-' + rep.date + '.xlsx');
+  });
+
+  document.getElementById('btn-dl-highest-deposit-users').addEventListener('click', () => {
+    const rows = (currentScope && currentScope.top_depositors) || [];
+    if (!rows.length) return;
+    const exportRows = rows.map(r => ({ 'User ID': r.user_id, 'Total Deposit': r.total_deposit }));
+    downloadStyledExcel(exportRows, 'Highest Deposit Users', 'highest-deposit-users-' + datePicker.value + '.xlsx');
   });
 
   // Date picker wiring
