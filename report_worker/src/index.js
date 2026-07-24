@@ -2275,6 +2275,7 @@ if (IS_PLATFORM_ANALYSIS) {
       { label: 'Deposit (3d)', render: r => money(r.deposit_amount), raw: r => r.deposit_amount, num: true },
       { label: 'Withdraw (3d)', render: r => money(r.withdraw_amount), raw: r => r.withdraw_amount, num: true },
       { label: 'Games Played (3d)', render: r => fmt(r.game_count), raw: r => r.game_count, num: true },
+      { label: 'In Review?', render: r => r.in_review ? 'Yes' : 'No', raw: r => r.in_review ? 1 : 0 },
     ];
     if (suspiciousWithdraw && suspiciousWithdraw.length) {
       paginatedTable('suspicious-withdraw-table', 'suspicious-withdraw-pagination', suspiciousWithdraw, suspiciousWithdrawCols, 10);
