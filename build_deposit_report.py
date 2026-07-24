@@ -95,16 +95,20 @@ def parse_dt(s):
         return None
 
 
-def top_depositors(records, limit=50):
+TOP_DEPOSITORS_MIN_TOTAL = 10000.0
+
+
+def top_depositors(records, min_total=TOP_DEPOSITORS_MIN_TOTAL, limit=500):
     """
-    Per-user total COMPLETED deposit amount for this scope, sorted
-    descending -- powers the Home page's Highest Deposit Users table.
+    Per-user total COMPLETED deposit amount for this scope, filtered to
+    users whose day total is >= min_total, sorted descending -- powers
+    the Home page's Highest Deposit Users table.
     """
     totals = defaultdict(float)
     for r in records:
         if r["status"] == "COMPLETE" and r["user_id"] is not None:
             totals[r["user_id"]] += r["amount"]
-    rows = [{"user_id": uid, "total_deposit": round(amt, 2)} for uid, amt in totals.items()]
+    rows = [{"user_id": uid, "total_deposit": round(amt, 2)} for uid, amt in totals.items() if amt >= min_total]
     rows.sort(key=lambda x: -x["total_deposit"])
     return rows[:limit]
 

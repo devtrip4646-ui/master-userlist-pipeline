@@ -3504,7 +3504,9 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
           <div class="sec-title"><div class="badge b-cyan">&#128176;</div><h2>Highest Deposit Users</h2></div>
           <button class="download-btn-sm" id="btn-dl-highest-deposit-users">&#128190; Excel</button>
         </div>
+        <div class="ac-note">Users with total deposits of Rs 10,000+ for the selected date</div>
         <div id="highest-deposit-table"></div>
+        <div class="ac-pagination" id="highest-deposit-pagination"></div>
       </section>
     </div>
   \`;
@@ -3581,18 +3583,11 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     renderWithdrawalTimingTable('withdrawal-review-table', scope.withdrawal_review_by_channel || [], 'No processing (status 1) withdrawals for this date.');
     renderWithdrawalTimingTable('withdrawal-completion-table', scope.withdrawal_completion_by_channel || [], 'No completed (status 2) withdrawals for this date.');
 
-    const highestDepositContainer = document.getElementById('highest-deposit-table');
-    if (!scope.top_depositors || !scope.top_depositors.length) {
-      highestDepositContainer.innerHTML = '<div class="no-data">No completed deposits for this date.</div>';
-    } else {
-      sortableTable(
-        highestDepositContainer,
-        ['User ID', 'Total Deposit'],
-        scope.top_depositors.map(r => [r.user_id, r.total_deposit]),
-        r => '<tr><td>' + r[0] + '</td><td class="num">' + money(r[1]) + '</td></tr>',
-        [1]
-      );
-    }
+    const highestDepositCols = [
+      { label: 'User ID', render: r => r.user_id },
+      { label: 'Total Deposit', num: true, render: r => money(r.total_deposit), raw: r => r.total_deposit },
+    ];
+    paginatedTable('highest-deposit-table', 'highest-deposit-pagination', scope.top_depositors || [], highestDepositCols, 6, { jumpDropdown: true });
   }
 
   function renderWithdrawalTimingTable(containerId, matrix, emptyMsg) {
