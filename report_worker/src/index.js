@@ -3587,6 +3587,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     const highestDepositCols = [
       { label: 'User ID', render: r => r.user_id },
       { label: 'Total Deposit', num: true, render: r => money(r.total_deposit), raw: r => r.total_deposit },
+      { label: 'Total Withdraw', num: true, render: r => money(r.total_withdraw), raw: r => r.total_withdraw },
     ];
     paginatedTable('highest-deposit-table', 'highest-deposit-pagination', scope.top_depositors || [], highestDepositCols, 6, { jumpDropdown: true });
   }
@@ -4024,7 +4025,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
   document.getElementById('btn-dl-highest-deposit-users').addEventListener('click', () => {
     const rows = (currentScope && currentScope.top_depositors) || [];
     if (!rows.length) return;
-    const exportRows = rows.map(r => ({ 'User ID': r.user_id, 'Total Deposit': r.total_deposit }));
+    const exportRows = rows.map(r => ({ 'User ID': r.user_id, 'Total Deposit': r.total_deposit, 'Total Withdraw': r.total_withdraw }));
     downloadStyledExcel(exportRows, 'Highest Deposit Users', 'highest-deposit-users-' + datePicker.value + '.xlsx');
   });
 
