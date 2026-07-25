@@ -2045,7 +2045,7 @@ if (IS_PLATFORM_ANALYSIS) {
             <div class="sec-title"><div class="badge b-emerald">&#128142;</div><h2>High Roller Active</h2><span class="today-tag" id="high-roller-count">&mdash;</span></div>
             <button class="download-btn-sm" id="btn-dl-high-roller">&#128190; Excel</button>
           </div>
-          <div class="ac-note">VIP 7+, avg lifetime deposit &#8377;10,000+, 500+ lifetime deposits, &#8377;5,00,000+ lifetime total deposit, avg bet size (last 15 days) over &#8377;500, active within 15 days.</div>
+          <div class="ac-note">VIP 7+, avg lifetime deposit &#8377;5,000+, 500+ lifetime deposits, &#8377;5,00,000+ lifetime total deposit, avg bet size (last 15 days) over &#8377;500, active within 15 days.</div>
           <div id="high-roller-table"></div>
           <div class="ac-pagination" id="high-roller-pagination"></div>
         </section>
@@ -2054,7 +2054,7 @@ if (IS_PLATFORM_ANALYSIS) {
             <div class="sec-title"><div class="badge b-rose">&#127183;</div><h2>Low Roller Active</h2><span class="today-tag" id="low-roller-count">&mdash;</span></div>
             <button class="download-btn-sm" id="btn-dl-low-roller">&#128190; Excel</button>
           </div>
-          <div class="ac-note">VIP 2-6, avg lifetime deposit under &#8377;10,000, under 500 lifetime deposits, under &#8377;5,00,000 lifetime total deposit, avg bet size (last 15 days) under &#8377;500, active within 10 days.</div>
+          <div class="ac-note">VIP 2-6, avg lifetime deposit under &#8377;5,000, under 500 lifetime deposits, under &#8377;5,00,000 lifetime total deposit, avg bet size (last 15 days) under &#8377;500, active within 10 days.</div>
           <div id="low-roller-table"></div>
           <div class="ac-pagination" id="low-roller-pagination"></div>
         </section>

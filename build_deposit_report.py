@@ -1979,14 +1979,14 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
 # just 33 days for almost anyone. Avg Bet Size and Top Game Played both use
 # the SAME fixed last-15-day wallet_transactions window regardless of
 # report (only the Last Active recency cutoff differs between the two).
-HIGH_ROLLER_MIN_AVG_DEPOSIT = 10000.0
+HIGH_ROLLER_MIN_AVG_DEPOSIT = 5000.0
 HIGH_ROLLER_MIN_DEPOSIT_COUNT = 500
 HIGH_ROLLER_MIN_TOTAL_DEPOSIT = 500000.0
 HIGH_ROLLER_MIN_AVG_BET = 500.0
 HIGH_ROLLER_MIN_VIP = 7
 HIGH_ROLLER_MAX_INACTIVE_DAYS = 15
 
-LOW_ROLLER_MAX_AVG_DEPOSIT = 10000.0
+LOW_ROLLER_MAX_AVG_DEPOSIT = 5000.0
 LOW_ROLLER_MAX_DEPOSIT_COUNT = 500
 LOW_ROLLER_MAX_TOTAL_DEPOSIT = 500000.0
 LOW_ROLLER_MAX_AVG_BET = 500.0
