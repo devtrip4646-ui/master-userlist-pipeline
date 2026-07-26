@@ -3502,7 +3502,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       </section>
       <section class="acc-cyan ac-compact">
         <div class="section-head">
-          <div class="sec-title"><div class="badge b-cyan">&#128176;</div><h2>Highest Deposit Users</h2></div>
+          <div class="sec-title"><div class="badge b-cyan">&#128176;</div><h2>Highest Deposit Users</h2><span class="today-tag" id="highest-deposit-count">&mdash;</span></div>
           <button class="download-btn-sm" id="btn-dl-highest-deposit-users">&#128190; Excel</button>
         </div>
         <div class="ac-note">Users with total deposits of Rs 10,000+ for the selected date</div>
@@ -3590,6 +3590,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       { label: 'Total Withdraw', num: true, render: r => money(r.total_withdraw), raw: r => r.total_withdraw },
     ];
     paginatedTable('highest-deposit-table', 'highest-deposit-pagination', scope.top_depositors || [], highestDepositCols, 6, { jumpDropdown: true });
+    document.getElementById('highest-deposit-count').textContent = fmt((scope.top_depositors || []).length);
   }
 
   function renderWithdrawalTimingTable(containerId, matrix, emptyMsg) {
