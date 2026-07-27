@@ -3030,7 +3030,7 @@ if (IS_SEARCH_USER) {
       });
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || res.status);
-      msg.textContent = 'Saved - ' + userIds.length + ' user(s) will show as ' + (select.value || 'Un-Assigned') + ' within a minute or two.';
+      msg.textContent = 'Saved - ' + userIds.length + ' user(s) will show as ' + (select.value || 'Un-Assigned') + ' on the dashboard within the hour (next scheduled refresh).';
       msg.className = 'su-reassign-msg ok';
     } catch (err) {
       msg.textContent = 'Error: ' + err.message;
@@ -3064,7 +3064,7 @@ if (IS_SEARCH_USER) {
       });
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || res.status);
-      msg.textContent = 'Saved - ' + (select.value || 'Un-Assigned') + ' will show for User #' + userId + ' within a minute or two.';
+      msg.textContent = 'Saved - ' + (select.value || 'Un-Assigned') + ' will show for User #' + userId + ' on the dashboard within the hour (next scheduled refresh).';
       msg.className = 'su-reassign-msg ok';
     } catch (err) {
       msg.textContent = 'Error: ' + err.message;

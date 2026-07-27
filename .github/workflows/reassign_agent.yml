@@ -37,12 +37,14 @@ jobs:
         run: |
           python3 reassign_agent.py --user-ids "${{ inputs.user_ids }}" --agent "${{ inputs.agent }}"
 
-      - name: Refresh deposit report
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: |
-          python3 build_deposit_report.py
+      # Deliberately NOT followed by a "Refresh deposit report" step: that
+      # rebuild now takes 15-33+ minutes as the report has grown, which made
+      # every reassignment hold the shared db-ingest concurrency slot that
+      # long -- any second reassign (or the hourly api_pull.yml cron) queued
+      # behind it would get silently cancelled by GitHub's one-pending-run-
+      # per-group limit, so the reassignment would appear to "fail" even
+      # though the dashboard had already told the user "Saved". Ending the
+      # job right after the DB write keeps it to ~10-30s, so it rarely holds
+      # the slot long enough to collide with anything. The change lands on
+      # the dashboard at the next scheduled api_pull.yml run (hourly) instead
+      # of immediately -- see the frontend's "within the hour" message.
