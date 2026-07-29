@@ -1675,12 +1675,12 @@ def new_vs_old_user_analysis(deposit_rows, withdrawal_rows, all_dates, today):
 # the workbook itself. When the current week moves past this date without
 # an update, the section simply stops showing a target (rather than
 # comparing against a stale one) until refreshed.
-WEEKLY_TARGET_WEEK_START = "2026-07-20"
+WEEKLY_TARGET_WEEK_START = "2026-07-27"
 WEEKLY_TARGET_VALUES = {
-    "old_users_count": 1876.0,
-    "old_users_avg_deposit": 2237.0,
-    "total_deposit": 4090000.0,
-    "total_depositor_count": 1975.0,
+    "old_users_count": 1700.0,
+    "old_users_avg_deposit": 2209.0,
+    "total_deposit": 3900000.0,
+    "total_depositor_count": 1850.0,
 }
 WEEKLY_TARGET_LABELS = {
     "old_users_count": "Old Users Count",
