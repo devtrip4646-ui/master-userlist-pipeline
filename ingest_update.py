@@ -456,35 +456,62 @@ def ingest_wallet(files):
     # CLASSIFY_BONUS_RULES_VERSION changes (a new/changed rule shipped), the
     # watermark is ignored for one run to fully re-scan under the new rules --
     # INSERT OR IGNORE on the shared id makes repeat scans a no-op regardless.
+    #
+    # NOT IN (subquery) + .fetchall() here used to load the ENTIRE candidate
+    # set into a Python list before processing anything -- fine for the
+    # watermarked incremental case (a handful of new rows), but for a
+    # version-bump full re-scan the candidate set is "everything not yet in
+    # bonuses", which on a 16.9M+ row table is nearly the whole table (bonuses
+    # only holds actual bonus credits, a small fraction). That blew past the
+    # GitHub Actions runner's memory and silently killed the job with no logs
+    # (confirmed 2026-07-30: a full re-scan for the "System Gift" rule ran
+    # ~56 minutes then failed with zero output). Fixed two ways: NOT EXISTS
+    # instead of NOT IN (uses bonuses' PRIMARY KEY index -- SQLite can't
+    # index-optimize NOT IN against a subquery the same way), and iterating
+    # the cursor directly in chunks instead of one giant fetchall(), with a
+    # periodic commit so a full re-scan makes durable progress instead of
+    # losing everything to one crash (INSERT OR IGNORE on the shared id makes
+    # redoing an already-committed chunk a safe no-op).
     cur.execute("CREATE TABLE IF NOT EXISTS backfill_state (key TEXT PRIMARY KEY, value TEXT)")
     stored_version_row = cur.execute("SELECT value FROM backfill_state WHERE key = 'rules_version'").fetchone()
     stored_version = int(stored_version_row[0]) if stored_version_row else None
     last_id_row = cur.execute("SELECT value FROM backfill_state WHERE key = 'last_backfilled_id'").fetchone()
     last_backfilled_id = int(last_id_row[0]) if last_id_row else 0
 
+    scan_cur = conn.cursor()
     if stored_version != CLASSIFY_BONUS_RULES_VERSION:
         print(f"Bonus classify rules changed ({stored_version} -> {CLASSIFY_BONUS_RULES_VERSION}) or first run with watermarking -- full backfill re-scan")
-        backfill_rows = cur.execute(
-            "SELECT id, game_name, user_id, change_value, change_after, create_time, source, source_id "
-            "FROM wallet_transactions WHERE id NOT IN (SELECT id FROM bonuses)"
-        ).fetchall()
-    else:
-        backfill_rows = cur.execute(
-            "SELECT id, game_name, user_id, change_value, change_after, create_time, source, source_id "
-            "FROM wallet_transactions WHERE id > ? AND id NOT IN (SELECT id FROM bonuses)",
-            (last_backfilled_id,),
-        ).fetchall()
-
-    backfilled = []
-    for _id, game_name, user_id, change_value, change_after, create_time, source, source_id in backfill_rows:
-        matched = classify_bonus(game_name, source, source_id)
-        if matched:
-            backfilled.append((_id, user_id, game_name, matched, change_value, change_after, create_time, source))
-    if backfilled:
-        cur.executemany(
-            "INSERT OR IGNORE INTO bonuses (id, user_id, bonus_name, matched_category, change_value, change_after, create_time, source) VALUES (?,?,?,?,?,?,?,?)",
-            backfilled,
+        scan_cur.execute(
+            "SELECT w.id, w.game_name, w.user_id, w.change_value, w.change_after, w.create_time, w.source, w.source_id "
+            "FROM wallet_transactions w WHERE NOT EXISTS (SELECT 1 FROM bonuses b WHERE b.id = w.id)"
         )
+    else:
+        scan_cur.execute(
+            "SELECT w.id, w.game_name, w.user_id, w.change_value, w.change_after, w.create_time, w.source, w.source_id "
+            "FROM wallet_transactions w WHERE w.id > ? AND NOT EXISTS (SELECT 1 FROM bonuses b WHERE b.id = w.id)",
+            (last_backfilled_id,),
+        )
+
+    BACKFILL_CHUNK_SIZE = 50_000
+    scanned = 0
+    total_backfilled = 0
+    while True:
+        chunk = scan_cur.fetchmany(BACKFILL_CHUNK_SIZE)
+        if not chunk:
+            break
+        scanned += len(chunk)
+        backfilled_chunk = []
+        for _id, game_name, user_id, change_value, change_after, create_time, source, source_id in chunk:
+            matched = classify_bonus(game_name, source, source_id)
+            if matched:
+                backfilled_chunk.append((_id, user_id, game_name, matched, change_value, change_after, create_time, source))
+        if backfilled_chunk:
+            cur.executemany(
+                "INSERT OR IGNORE INTO bonuses (id, user_id, bonus_name, matched_category, change_value, change_after, create_time, source) VALUES (?,?,?,?,?,?,?,?)",
+                backfilled_chunk,
+            )
+            total_backfilled += len(backfilled_chunk)
+        conn.commit()
 
     new_max_id = cur.execute("SELECT MAX(id) FROM wallet_transactions").fetchone()[0] or last_backfilled_id
     cur.execute(
@@ -496,7 +523,7 @@ def ingest_wallet(files):
         (str(new_max_id),),
     )
     conn.commit()
-    print(f"Bonus backfill: {len(backfilled)} previously-missed rows classified as bonuses (scanned {len(backfill_rows)} candidates)")
+    print(f"Bonus backfill: {total_backfilled} previously-missed rows classified as bonuses (scanned {scanned} candidates)")
     conn.close()
 
 
