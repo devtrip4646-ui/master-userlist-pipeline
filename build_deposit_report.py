@@ -3290,11 +3290,23 @@ def main():
     deposit_day_stats = build_deposit_day_stats(deposit_rows)
     dcb_rows_by_date = {}
     bonus_claims_by_date = {}
+    # Per-user claim_details (the "who claimed what" list, exported as the
+    # Excel report's "User Data" sheet) is only kept in full for the last 2
+    # days (today + yesterday) -- older dates keep the category-level summary
+    # only. Same size-tradeoff already applied to Week/Month below: detail
+    # lists are big (one row per claim) and storing them for all 33 retained
+    # dates was significant, mostly-unused storage, since claim-level detail
+    # is really only needed for recent days in practice.
+    bonus_detail_dates = {now.date().isoformat(), (now.date() - timedelta(days=1)).isoformat()}
     for date_str in all_dates:
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         dcb_rows_for_date = deposit_challenge_bonus_rows if d == now.date() else deposit_challenge_bonus(deposit_rows, deposit_day_stats, d, agent_by_user)
         dcb_rows_by_date[date_str] = dcb_rows_for_date
-        bonus_claims_by_date[date_str] = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, {date_str}, agent_by_user)
+        day_report = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, {date_str}, agent_by_user)
+        if date_str not in bonus_detail_dates:
+            day_report["wallet_claim_details"] = []
+            day_report["deposit_challenge_bonus_claim_details"] = []
+        bonus_claims_by_date[date_str] = day_report
     bonus_claims = bonus_claims_by_date.get(now.date().isoformat(), {
         "wallet_bonuses": [], "deposit_challenge_bonuses": [],
         "wallet_claim_details": [], "deposit_challenge_bonus_claim_details": [],
