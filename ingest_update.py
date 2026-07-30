@@ -18,6 +18,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+from datetime import datetime, timedelta
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 MASTER_DB = os.path.join(BASE, "master_userlist.db")
@@ -417,6 +418,13 @@ def ingest_wallet(files):
     conn.commit()
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_user ON bonuses(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_name ON bonuses(bonus_name)")
+    # bonuses had no create_time index at all -- every date-range query
+    # against it (build_recent_activity_by_user, bonus_claim_report's
+    # source read) was a full table scan. Small table relative to
+    # wallet_transactions (only actual bonus credits), so the size cost of
+    # this index is minor; IF NOT EXISTS makes it a no-op after the first
+    # run that creates it.
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_time ON bonuses(create_time)")
     added = 0
     new_bonus_rows = []
     for f in files:
@@ -530,13 +538,32 @@ def ingest_wallet(files):
 def purge_old_daily_records():
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
-    cutoff = f"datetime('now', '-{RETENTION_DAYS} days')"
+    # Plain string comparison against a precomputed cutoff, not
+    # datetime(time_col) < datetime('now', '-N days') -- wrapping the column
+    # in datetime() defeats idx_dep_time/idx_wd_time/idx_wt_time, forcing a
+    # full scan of all 4 tables (16.9M-40M+ rows for wallet_transactions)
+    # every single run even though a day only actually rolls off roughly
+    # once every 24 hourly runs. ISO 8601 strings sort identically to their
+    # datetime values, so this string comparison agrees with the old
+    # datetime()-wrapped one on every row. Cutoff computed against UTC "now"
+    # (datetime.utcnow()) to match what SQLite's own datetime('now') always
+    # returns, regardless of the OS timezone -- same reference point the
+    # old query used, so the retention boundary itself is unchanged.
+    cutoff = (datetime.utcnow() - timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
     for table, time_col in [("deposits", "create_time"), ("withdrawals", "create_time"),
                              ("wallet_transactions", "create_time"), ("bonuses", "create_time")]:
-        cur.execute(f"DELETE FROM {table} WHERE {time_col} IS NOT NULL AND datetime({time_col}) < {cutoff}")
+        cur.execute(f"DELETE FROM {table} WHERE {time_col} IS NOT NULL AND {time_col} < ?", (cutoff,))
         print(f"Purged {cur.rowcount} rows from {table} (older than {RETENTION_DAYS} days)")
     conn.commit()
-    conn.execute("VACUUM")
+    # VACUUM deliberately NOT run here -- it rewrites the entire 6.3GB+ file
+    # (briefly needing up to 2x its size in free disk space) for a purge
+    # that only actually removes rows roughly once every 24 hourly runs (a
+    # day rolls off the retention window once a day, not once an hour). A
+    # dedicated weekly workflow (vacuum_databases.yml, Sunday 02:00 UTC)
+    # already exists for exactly this -- confirmed actually firing (checked
+    # 2026-07-30: two successful runs, both Sundays, a few hours late each
+    # time, which is normal GitHub Actions schedule-trigger slop, not the
+    # "never fires" failure mode api_pull.yml's old schedule trigger had).
     conn.close()
 
 

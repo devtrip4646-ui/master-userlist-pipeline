@@ -182,6 +182,7 @@ CREATE TABLE bonuses (
 """)
 cur.execute("CREATE INDEX idx_bonus_user ON bonuses(user_id)")
 cur.execute("CREATE INDEX idx_bonus_name ON bonuses(bonus_name)")
+cur.execute("CREATE INDEX idx_bonus_time ON bonuses(create_time)")
 
 def normalize(s):
     return re.sub(r"\s+", " ", str(s).strip().lower())

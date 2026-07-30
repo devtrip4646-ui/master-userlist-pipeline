@@ -1910,12 +1910,21 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
     if not new_user_ids:
         return {"overall": empty, "by_date": {}, "by_week": {}, "by_month": {}, "dates": all_dates}
 
-    placeholders = ",".join("?" * len(new_user_ids))
+    # Filtered by date range ONLY (not "AND user_id IN (...)") -- same fix,
+    # same reasoning as high_low_roller_reports above: wallet_transactions
+    # only has single-column indexes, so combining a large IN-list with
+    # other filters forces SQLite to scan per candidate user instead of
+    # using idx_wt_time (measured there: 500 users -> 17s, 15,000 would be
+    # ~9 minutes). This function has no fixed lookback window like the
+    # roller's 15 days -- it needs the whole retention window since
+    # by_date/by_week/by_month cover every retained date -- so the date
+    # bound is the retention window's own start, with new_user_ids
+    # membership checked in Python instead of at the SQL level.
+    new_user_window_start = all_dates[0] if all_dates else today.isoformat()
     rows = daily_conn.execute(
         "SELECT user_id, game_name, change_value, create_time FROM wallet_transactions "
-        "WHERE direction = 1 AND game_name IS NOT NULL AND game_name != '' "
-        f"AND user_id IN ({placeholders})",
-        list(new_user_ids),
+        "WHERE direction = 1 AND game_name IS NOT NULL AND game_name != '' AND create_time >= ?",
+        (new_user_window_start,),
     ).fetchall()
 
     last_active_label_by_user = {}
@@ -1934,6 +1943,8 @@ def top_games_new_users(daily_conn, master_conn, deposit_rows, agent_by_user, al
 
     rows_by_date = defaultdict(list)
     for user_id, game_name, change_value, create_time in rows:
+        if user_id not in new_user_ids:
+            continue
         dt = parse_dt(create_time)
         if not dt:
             continue
@@ -2482,10 +2493,10 @@ def build_recent_activity_by_user(daily_conn, today):
     deposits (7 days, with order_no -- not in the shared deposit_rows tuple
     used everywhere else, so this is a dedicated query), recent withdrawals
     (7 days), and recent games played (2 days, excluding bonus payouts via
-    `id NOT IN (SELECT id FROM bonuses)` -- bonuses.id directly reuses the
-    source wallet_transactions.id, see ingest_wallet() in ingest_update.py,
-    so this is an exact join, not a name-matching heuristic repeated a third
-    time). Called while `conn` is still open, same as channel_performance_report,
+    `NOT EXISTS (SELECT 1 FROM bonuses WHERE id = ...)` -- bonuses.id directly
+    reuses the source wallet_transactions.id, see ingest_wallet() in
+    ingest_update.py, so this is an exact join, not a name-matching
+    heuristic repeated a third time). Called while `conn` is still open, same as channel_performance_report,
     since daily_records.db's connection is closed early in main()."""
     dep_start = (today - timedelta(days=6)).isoformat()
     deposits_by_user = defaultdict(list)
@@ -2523,9 +2534,9 @@ def build_recent_activity_by_user(daily_conn, today):
     games_start = (today - timedelta(days=1)).isoformat()
     games_by_user = defaultdict(list)
     for user_id, game_name, change_value, create_time, direction in daily_conn.execute(
-        "SELECT user_id, game_name, change_value, create_time, direction FROM wallet_transactions "
-        "WHERE game_name IS NOT NULL AND game_name != '' AND create_time >= ? "
-        "AND id NOT IN (SELECT id FROM bonuses)",
+        "SELECT w.user_id, w.game_name, w.change_value, w.create_time, w.direction FROM wallet_transactions w "
+        "WHERE w.game_name IS NOT NULL AND w.game_name != '' AND w.create_time >= ? "
+        "AND NOT EXISTS (SELECT 1 FROM bonuses b WHERE b.id = w.id)",
         (games_start,),
     ).fetchall():
         if user_id is None:
@@ -3066,8 +3077,8 @@ def slugify(name):
 
 
 def build_agent_home_report(
-    agent_name, all_records, by_date_records, all_withdrawals, by_date_withdrawals,
-    all_withdrawal_full, by_date_withdrawal_full, all_bet_users, by_date_bet_users,
+    agent_name, agent_all_records, by_date_records, agent_all_withdrawals, by_date_withdrawals,
+    agent_all_withdrawal_full, by_date_withdrawal_full, agent_bet_users_all, by_date_bet_users,
     all_dates, city_by_user, vip_by_user, agent_by_user, now,
 ):
     """Small supplementary per-agent JSON, uploaded alongside (not instead
@@ -3083,19 +3094,20 @@ def build_agent_home_report(
     orders) already carries an "agent" field per row in the main report and
     is scoped entirely client-side instead -- no duplication needed there.
 
+    agent_all_records/agent_all_withdrawals/agent_all_withdrawal_full/
+    agent_bet_users_all arrive PRE-FILTERED to this agent (see main()'s
+    per-agent loop, which groups the full all-agents lists by agent ONCE
+    before calling this per agent, instead of this function re-scanning
+    the whole all-agents list once per agent -- same total output, O(N)
+    grouping instead of O(agents x N) re-filtering). by_date_* are still
+    filtered here per call since they're already date-bucketed and
+    comparatively small.
+
     Reuses the exact same aggregate()/summarize()/withdrawal_*() functions
     the main report uses, just called again on this agent's own subset of
     records -- same math, smaller input, not a separate pipeline."""
     def flt(records):
         return [r for r in records if r["agent"] == agent_name]
-
-    agent_all_records = flt(all_records)
-    agent_all_withdrawals = flt(all_withdrawals)
-    agent_all_withdrawal_full = flt(all_withdrawal_full)
-    # all_bet_users/by_date_bet_users are plain sets of user_ids (from wallet
-    # activity, no per-row "agent" field of their own) -- scope via
-    # agent_by_user directly instead of the flt() row-filter above.
-    agent_bet_users_all = {uid for uid in all_bet_users if agent_for(agent_by_user, uid) == agent_name}
 
     by_date_records_agent = {d: flt(rows) for d, rows in by_date_records.items()}
     by_date_withdrawals_agent = {d: flt(rows) for d, rows in by_date_withdrawals.items()}
@@ -3161,12 +3173,20 @@ def main():
     # original master_userlist.db path ever gets re-uploaded to R2 (for the
     # agent_performance write further down), so nothing deleted here is
     # ever persisted.
+    #
+    # The 6.3GB copyfile only runs when there's actually a banned user to
+    # filter out -- on every other run (the vast majority; banning is rare)
+    # report_daily_db_path/report_master_db_path just point straight at the
+    # original files. Safe because every connection opened against these
+    # paths anywhere else in this function is read-only -- the only writes
+    # against them are the banned-user DELETE blocks themselves, gated the
+    # same way.
     master_db_path = os.path.join(BASE, "master_userlist.db")
     banned_ids = ban_utils.get_banned_user_ids(master_db_path) if os.path.exists(master_db_path) else []
 
-    report_daily_db_path = os.path.join(BASE, "daily_records_report.db")
-    shutil.copyfile(DB_PATH, report_daily_db_path)
     if banned_ids:
+        report_daily_db_path = os.path.join(BASE, "daily_records_report.db")
+        shutil.copyfile(DB_PATH, report_daily_db_path)
         placeholders = ",".join("?" * len(banned_ids))
         rdconn = sqlite3.connect(report_daily_db_path)
         for table in ["deposits", "withdrawals", "wallet_transactions", "bonuses"]:
@@ -3176,12 +3196,14 @@ def main():
                 pass
         rdconn.commit()
         rdconn.close()
+    else:
+        report_daily_db_path = DB_PATH
 
     report_master_db_path = None
     if os.path.exists(master_db_path):
-        report_master_db_path = os.path.join(BASE, "master_userlist_report.db")
-        shutil.copyfile(master_db_path, report_master_db_path)
         if banned_ids:
+            report_master_db_path = os.path.join(BASE, "master_userlist_report.db")
+            shutil.copyfile(master_db_path, report_master_db_path)
             placeholders = ",".join("?" * len(banned_ids))
             rmconn = sqlite3.connect(report_master_db_path)
             for table in ["users", "agent_assignments", "balance_adjustments"]:
@@ -3191,6 +3213,8 @@ def main():
                     pass
             rmconn.commit()
             rmconn.close()
+        else:
+            report_master_db_path = master_db_path
 
     conn = sqlite3.connect(report_daily_db_path)
     cur = conn.cursor()
@@ -3202,16 +3226,33 @@ def main():
         "SELECT withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, "
         "payment_center_order_id FROM withdrawals"
     ).fetchall()
+    # Deduped at the SQL level to (user_id, date) pairs instead of every raw
+    # transaction row -- the only thing the loop below does with this is
+    # build a user-id set and a date -> user-id-set map, so per-user-per-day
+    # is all the granularity that's ever used. Used to fetchall() every row
+    # in the whole table (16.9M-40M+), then call parse_dt()/strftime() once
+    # PER ROW in Python just to throw away the duplicates. substr(...,1,10)
+    # matches the create_time[:10] string-prefix convention already used
+    # elsewhere in this file (e.g. deposit_challenge_bonus, bonus_claim_report).
     wallet_rows = cur.execute(
-        "SELECT user_id, create_time FROM wallet_transactions WHERE user_id IS NOT NULL"
+        "SELECT DISTINCT user_id, substr(create_time, 1, 10) FROM wallet_transactions WHERE user_id IS NOT NULL"
     ).fetchall()
     # Actual game plays only -- excludes bonus payouts, same definition as
     # build_recent_activity_by_user's "games played" query -- used by
-    # suspicious_withdraw_users() below.
+    # suspicious_withdraw_users() below, which only ever looks at the last 3
+    # days (see its own window_start). Used to be an unbounded scan of the
+    # whole wallet_transactions table (16.9M-40M+ rows) with NOT IN (subquery)
+    # -- the exact pattern that silently OOM-killed the bonus backfill job --
+    # even though ~97%+ of the fetched rows were discarded in Python
+    # immediately after. Now filtered at the SQL level to the same 3-day
+    # window its only consumer actually uses, and NOT EXISTS instead of
+    # NOT IN so SQLite can use bonuses' PRIMARY KEY index.
+    game_play_window_start = (now.date() - timedelta(days=2)).isoformat()
     game_play_rows = cur.execute(
-        "SELECT user_id, create_time FROM wallet_transactions "
-        "WHERE game_name IS NOT NULL AND game_name != '' AND user_id IS NOT NULL "
-        "AND id NOT IN (SELECT id FROM bonuses)"
+        "SELECT w.user_id, w.create_time FROM wallet_transactions w "
+        "WHERE w.game_name IS NOT NULL AND w.game_name != '' AND w.user_id IS NOT NULL "
+        "AND w.create_time >= ? AND NOT EXISTS (SELECT 1 FROM bonuses b WHERE b.id = w.id)",
+        (game_play_window_start,),
     ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
@@ -3219,11 +3260,10 @@ def main():
 
     by_date_bet_users = defaultdict(set)
     all_bet_users = set()
-    for user_id, create_time in wallet_rows:
+    for user_id, date_str in wallet_rows:
         all_bet_users.add(user_id)
-        create_dt = parse_dt(create_time)
-        if create_dt:
-            by_date_bet_users[create_dt.strftime("%Y-%m-%d")].add(user_id)
+        if date_str:
+            by_date_bet_users[date_str].add(user_id)
 
     total_registered_users = None
     vip_by_user = {}
@@ -3237,9 +3277,13 @@ def main():
     profit_users = None
     if report_master_db_path:
         mconn = sqlite3.connect(report_master_db_path)
-        total_registered_users = mconn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        vip_by_user = dict(mconn.execute("SELECT user_id, vip_level FROM users").fetchall())
-        city_by_user = dict(mconn.execute("SELECT user_id, city FROM users").fetchall())
+        # One pass over the users table instead of three separate full reads
+        # for COUNT(*)/vip_level/city -- same rows, same connection, same
+        # point in the run.
+        users_snapshot_rows = mconn.execute("SELECT user_id, vip_level, city FROM users").fetchall()
+        total_registered_users = len(users_snapshot_rows)
+        vip_by_user = {uid: vip for uid, vip, city in users_snapshot_rows}
+        city_by_user = {uid: city for uid, vip, city in users_snapshot_rows}
         try:
             agent_by_user = dict(mconn.execute("SELECT user_id, agent_name FROM agent_assignments").fetchall())
         except sqlite3.OperationalError:
@@ -3418,6 +3462,31 @@ def main():
     deposit_day_stats = build_deposit_day_stats(deposit_rows)
     dcb_rows_by_date = {}
     bonus_claims_by_date = {}
+    # bonus_rows_all/deposit_rows are the FULL 33-day dataset -- bucketing
+    # them by date ONCE here (same pattern dcb_rows_by_date already uses)
+    # lets every bonus_claim_report() call below pass only the rows for the
+    # dates it actually covers, instead of the whole 33-day list every time.
+    # bonus_claim_report's own filtering (target_dates membership, plus its
+    # other per-row checks) still runs unchanged on this smaller input, so
+    # the output is identical -- this only skips scanning rows that would
+    # have been filtered out anyway. Matters most for the Day (1 date) and
+    # Week (7 date) views, which previously re-scanned the full 33-day
+    # dataset ~66 times combined for output that only ever needed a small
+    # fraction of it.
+    bonus_rows_by_date = defaultdict(list)
+    for row in bonus_rows_all:
+        create_time = row[3]
+        if create_time:
+            bonus_rows_by_date[str(create_time)[:10]].append(row)
+    deposit_rows_by_date = defaultdict(list)
+    for row in deposit_rows:
+        create_time = row[2]
+        if create_time:
+            deposit_rows_by_date[str(create_time)[:10]].append(row)
+
+    def rows_for_dates(rows_by_date, dates):
+        return [r for d in dates for r in rows_by_date.get(d, [])]
+
     # Per-user claim_details (the "who claimed what" list, exported as the
     # Excel report's "User Data" sheet) is only kept in full for the last 2
     # days (today + yesterday) -- older dates keep the category-level summary
@@ -3430,7 +3499,10 @@ def main():
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         dcb_rows_for_date = deposit_challenge_bonus_rows if d == now.date() else deposit_challenge_bonus(deposit_rows, deposit_day_stats, d, agent_by_user)
         dcb_rows_by_date[date_str] = dcb_rows_for_date
-        day_report = bonus_claim_report(bonus_rows_all, deposit_rows, dcb_rows_for_date, {date_str}, agent_by_user)
+        day_report = bonus_claim_report(
+            rows_for_dates(bonus_rows_by_date, {date_str}), rows_for_dates(deposit_rows_by_date, {date_str}),
+            dcb_rows_for_date, {date_str}, agent_by_user,
+        )
         if date_str not in bonus_detail_dates:
             day_report["wallet_claim_details"] = []
             day_report["deposit_challenge_bonus_claim_details"] = []
@@ -3469,8 +3541,14 @@ def main():
         month_dates = rolling_window(date_str, 30)
         week_dcb_rows = [r for d in week_dates for r in dcb_rows_by_date.get(d, [])]
         month_dcb_rows = [r for d in month_dates for r in dcb_rows_by_date.get(d, [])]
-        week_report = bonus_claim_report(bonus_rows_all, deposit_rows, week_dcb_rows, week_dates, agent_by_user)
-        month_report = bonus_claim_report(bonus_rows_all, deposit_rows, month_dcb_rows, month_dates, agent_by_user)
+        week_report = bonus_claim_report(
+            rows_for_dates(bonus_rows_by_date, week_dates), rows_for_dates(deposit_rows_by_date, week_dates),
+            week_dcb_rows, week_dates, agent_by_user,
+        )
+        month_report = bonus_claim_report(
+            rows_for_dates(bonus_rows_by_date, month_dates), rows_for_dates(deposit_rows_by_date, month_dates),
+            month_dcb_rows, month_dates, agent_by_user,
+        )
         week_report["wallet_claim_details"] = []
         week_report["deposit_challenge_bonus_claim_details"] = []
         month_report["wallet_claim_details"] = []
@@ -3670,10 +3748,29 @@ def main():
     # need a separate file. Everything else on an agent's dashboard filters
     # the SAME main deposit_report.json client-side using its existing
     # per-row "agent" field.
+    #
+    # Grouped by agent ONCE here instead of build_agent_home_report
+    # re-scanning the full all-agents list once per agent (O(N) grouping
+    # vs O(agents x N) re-filtering for the same total output).
+    records_by_agent = defaultdict(list)
+    for r in all_records:
+        records_by_agent[r["agent"]].append(r)
+    withdrawals_by_agent = defaultdict(list)
+    for r in all_withdrawals:
+        withdrawals_by_agent[r["agent"]].append(r)
+    withdrawal_full_by_agent = defaultdict(list)
+    for r in all_withdrawal_full:
+        withdrawal_full_by_agent[r["agent"]].append(r)
+    bet_users_by_agent = defaultdict(set)
+    for uid in all_bet_users:
+        bet_users_by_agent[agent_for(agent_by_user, uid)].add(uid)
+
     for agent_name in agent_list:
         agent_report = build_agent_home_report(
-            agent_name, all_records, by_date_records, all_withdrawals, by_date_withdrawals,
-            all_withdrawal_full, by_date_withdrawal_full, all_bet_users, by_date_bet_users,
+            agent_name, records_by_agent.get(agent_name, []), by_date_records,
+            withdrawals_by_agent.get(agent_name, []), by_date_withdrawals,
+            withdrawal_full_by_agent.get(agent_name, []), by_date_withdrawal_full,
+            bet_users_by_agent.get(agent_name, set()), by_date_bet_users,
             all_dates, city_by_user, vip_by_user, agent_by_user, now,
         )
         agent_out_path = os.path.join(BASE, "agent_report.json")
