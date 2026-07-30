@@ -3740,7 +3740,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     const grandArpu = grandCount ? Math.round((grandRecharge / grandCount) * 100) / 100 : 0;
 
     const cellHtml = (cell) => cell.user_count
-      ? '<div class="ucs-count">' + fmt(cell.user_count) + '</div><div class="ucs-arpu">' + money(cell.arpu) + '</div>'
+      ? '<div class="ucs-count">' + fmt(cell.user_count) + '</div><div class="ucs-arpu">ARPU ' + money(cell.arpu) + '</div>'
       : '<div class="ucs-count ucs-count-zero">0</div>';
 
     const thead = '<thead><tr><th>Category</th>' + ucs.statuses.map(s => '<th>' + s + '</th>').join('') + '<th>Total</th></tr></thead>';
@@ -3753,7 +3753,8 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       ucs.statuses.map(s => '<td>' + cellHtml(statusTotal(s)) + '</td>').join('') +
       '<td class="ucs-total-col">' + cellHtml({ user_count: grandCount, arpu: grandArpu }) + '</td></tr>';
 
-    container.innerHTML = '<div class="table-wrap"><table class="ucs-matrix-table">' + thead + '<tbody>' + bodyRows + totalRow + '</tbody></table></div>';
+    container.innerHTML = '<div class="ac-note">Each cell: user count, then lifetime ARPU (Average Recharge Per User) below it.</div>' +
+      '<div class="table-wrap"><table class="ucs-matrix-table">' + thead + '<tbody>' + bodyRows + totalRow + '</tbody></table></div>';
   }
 
   let yesterdayWdDay = 'yesterday';
