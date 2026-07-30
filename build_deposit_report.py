@@ -2203,16 +2203,17 @@ def user_category_status_report(mconn, now):
     """Home page report, above Deposit Analysis: every registered user
     classified into one Category x one Status cell (see
     _classify_user_category/_classify_user_status), reporting user count
-    and lifetime ARPU (Average Recharge Per User = total lifetime
-    recharge / user count, NOT the AOV used to decide category) for every
-    cell, plus category-only and status-only rollups. Iterates the users
-    cursor directly rather than fetchall() -- this table can run to
-    hundreds of thousands of rows, and a giant fetchall() is exactly what
-    silently OOM-killed the bonus backfill job on wallet_transactions
-    (16.9M+ rows) -- see classify_bonus's backfill in ingest_update.py."""
-    cells = {(c, s): {"count": 0, "total_recharge": 0.0} for c in USER_CATEGORIES for s in USER_STATUSES}
-    category_totals = {c: {"count": 0, "total_recharge": 0.0} for c in USER_CATEGORIES}
-    status_totals = {s: {"count": 0, "total_recharge": 0.0} for s in USER_STATUSES}
+    and ARPU (= total deposit amount / total deposit count across every
+    user in the bucket -- a blended average deposit size for the group,
+    NOT total deposit amount / number of users) for every cell, plus
+    category-only and status-only rollups. Iterates the users cursor
+    directly rather than fetchall() -- this table can run to hundreds of
+    thousands of rows, and a giant fetchall() is exactly what silently
+    OOM-killed the bonus backfill job on wallet_transactions (16.9M+
+    rows) -- see classify_bonus's backfill in ingest_update.py."""
+    cells = {(c, s): {"count": 0, "total_recharge": 0.0, "total_recharge_count": 0} for c in USER_CATEGORIES for s in USER_STATUSES}
+    category_totals = {c: {"count": 0, "total_recharge": 0.0, "total_recharge_count": 0} for c in USER_CATEGORIES}
+    status_totals = {s: {"count": 0, "total_recharge": 0.0, "total_recharge_count": 0} for s in USER_STATUSES}
 
     for total_recharge, recharge_count, total_withdrawal, last_active_time, create_time in mconn.execute(
         "SELECT total_recharge, recharge_count, total_withdrawal, last_active_time, create_time FROM users"
@@ -2231,9 +2232,10 @@ def user_category_status_report(mconn, now):
         for bucket in (cells[(category, status)], category_totals[category], status_totals[status]):
             bucket["count"] += 1
             bucket["total_recharge"] += total_recharge
+            bucket["total_recharge_count"] += recharge_count
 
     def arpu(bucket):
-        return round(bucket["total_recharge"] / bucket["count"], 2) if bucket["count"] else 0.0
+        return round(bucket["total_recharge"] / bucket["total_recharge_count"], 2) if bucket["total_recharge_count"] else 0.0
 
     matrix = [
         {"category": c, "status": s, "user_count": cells[(c, s)]["count"], "arpu": arpu(cells[(c, s)])}
