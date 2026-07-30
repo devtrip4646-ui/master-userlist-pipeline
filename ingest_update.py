@@ -316,7 +316,7 @@ def normalize(s):
 
 
 def classify_bonus(game_name, source, source_id):
-    """A wallet_transactions row is a bonus credit under any of four rules,
+    """A wallet_transactions row is a bonus credit under any of five rules,
     all confirmed against real data:
 
     1. game_name is a real bonus name (e.g. "Welcome Back Bonus", "VIP
@@ -366,6 +366,18 @@ def classify_bonus(game_name, source, source_id):
     if not game_name and source_id.upper().startswith("WEEKLY_SIGN"):
         return "Weekly Check-IN Bonus"
 
+    # 5. game_name is BLANK, source is BLANK, and source_id starts with
+    # "GiftCode-<random hex>" -- a fifth family, shown as "System Gift" in
+    # the business admin's own wallet-details view (confirmed by the user;
+    # that label doesn't appear anywhere in our ingested columns, only the
+    # GiftCode- source_id does). Same blank-game_name/blank-source bonus
+    # signature as every other rule here, previously falling through
+    # unclassified since it doesn't contain the word "bonus". Rolled up
+    # into one combined category, same as Daily Active Bonus / Weekly
+    # Check-IN Bonus, rather than exposing the raw per-instance hex suffix.
+    if not game_name and not source and source_id.startswith("GiftCode-"):
+        return "System Gift"
+
     return None
 
 
@@ -374,7 +386,7 @@ def classify_bonus(game_name, source, source_id):
 # under the new rules, then fall back to only scanning genuinely new rows.
 # Without this, a rule change would only apply to rows inserted AFTER the
 # change; existing rows that now match would silently stay unclassified.
-CLASSIFY_BONUS_RULES_VERSION = 4
+CLASSIFY_BONUS_RULES_VERSION = 5
 
 
 def ingest_wallet(files):
