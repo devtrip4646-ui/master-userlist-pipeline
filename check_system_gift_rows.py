@@ -32,11 +32,50 @@ def main():
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
 
-    print("=== Total wallet_transactions rows with game_name LIKE 'System Gift%' ===")
+    print("=== wallet_transactions column list ===")
+    print(" ", [c[1] for c in cur.execute("PRAGMA table_info(wallet_transactions)").fetchall()])
+
+    print("=== Any column containing 'gift' (case-insensitive), sampled across game_name/source/source_id/consume_type/bonus_name if present ===")
+    cols = [c[1] for c in cur.execute("PRAGMA table_info(wallet_transactions)").fetchall()]
+    text_cols = [c for c in cols if c in (
+        "game_name", "source", "source_id", "consume_type", "bonus_name", "direction", "remark", "type", "detail"
+    )]
+    for col in text_cols:
+        try:
+            rows = cur.execute(
+                f"SELECT DISTINCT {col} FROM wallet_transactions WHERE {col} LIKE '%gift%' COLLATE NOCASE LIMIT 20"
+            ).fetchall()
+            if rows:
+                print(f"  column '{col}' has 'gift' matches:", rows)
+        except sqlite3.OperationalError as e:
+            print(f"  column '{col}' query failed:", e)
+
+    print("=== Total wallet_transactions rows with game_name LIKE 'System Gift%' (case-insensitive) ===")
     total = cur.execute(
-        "SELECT COUNT(*) FROM wallet_transactions WHERE game_name LIKE 'System Gift%'"
+        "SELECT COUNT(*) FROM wallet_transactions WHERE game_name LIKE 'System Gift%' COLLATE NOCASE"
     ).fetchone()[0]
     print(" ", total)
+
+    print("=== Total wallet_transactions rows with game_name LIKE '%gift%' (anywhere, case-insensitive) ===")
+    total_anywhere = cur.execute(
+        "SELECT COUNT(*) FROM wallet_transactions WHERE game_name LIKE '%gift%' COLLATE NOCASE"
+    ).fetchone()[0]
+    print(" ", total_anywhere)
+    for row in cur.execute(
+        "SELECT DISTINCT game_name FROM wallet_transactions WHERE game_name LIKE '%gift%' COLLATE NOCASE LIMIT 30"
+    ).fetchall():
+        print("   distinct:", row)
+
+    print("=== Total wallet_transactions rows in 'bonuses' table with bonus_name/matched_category LIKE '%gift%' ===")
+    try:
+        for row in cur.execute(
+            "SELECT DISTINCT bonus_name, matched_category, COUNT(*) FROM bonuses "
+            "WHERE bonus_name LIKE '%gift%' COLLATE NOCASE OR matched_category LIKE '%gift%' COLLATE NOCASE "
+            "GROUP BY bonus_name, matched_category LIMIT 30"
+        ).fetchall():
+            print("  ", row)
+    except sqlite3.OperationalError as e:
+        print("  (bonuses gift check failed:", e, ")")
 
     print("=== Distinct game_name values matching 'System Gift%' ===")
     for row in cur.execute(
