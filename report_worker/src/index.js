@@ -347,6 +347,21 @@ const PAGE = `<!DOCTYPE html>
   .perf-bar-fill.pb-red { background: var(--perf-red); }
   .perf-bar-fill.pb-na { background: #d1d5db; }
   .perf-crit-na .pc-value { color: #9ca3af; font-style: italic; font-size: 11px; }
+
+  .ucs-defs { margin: 8px 0 12px; padding: 8px 10px; background: #f9fafb; border-radius: 8px; font-size: 11px; line-height: 1.7; }
+  .ucs-def-row { display: flex; gap: 8px; align-items: baseline; }
+  .ucs-def-row .badge-sm { flex-shrink: 0; width: 150px; font-weight: 700; font-size: 10px; padding: 2px 7px; border-radius: 999px; color: #fff; text-align: center; }
+  .ucs-def-row .ucs-def-text { color: #6b7280; }
+  .ucs-defs .ucs-defs-subhead { font-weight: 800; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: #9ca3af; margin: 6px 0 3px; }
+  .ucs-matrix-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .ucs-matrix-table th, .ucs-matrix-table td { padding: 6px 8px; border: 1px solid #eef0f4; text-align: center; }
+  .ucs-matrix-table th { background: #f9fafb; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.02em; color: #6b7280; }
+  .ucs-matrix-table td:first-child, .ucs-matrix-table th:first-child { text-align: left; font-weight: 700; }
+  .ucs-matrix-table tr.ucs-total-row { background: #f9fafb; font-weight: 800; }
+  .ucs-matrix-table td.ucs-total-col { background: #fafaff; font-weight: 800; }
+  .ucs-count { font-weight: 700; font-size: 12.5px; }
+  .ucs-arpu { font-size: 10px; color: #9ca3af; }
+  .ucs-count-zero { color: #d1d5db; font-weight: 400; }
 </style>
 </head>
 <body>
@@ -3382,6 +3397,17 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
       <div class="kpi c-purple"><div class="dash"></div><div class="value" id="k-active-users"></div><div class="label">Active Users</div><div class="desc">&#10003; Unique users with deposit history, active via deposit/withdraw/bets</div></div>
     </div>
 
+    \${IS_AGENT_SCOPED ? '' : \`
+    <section class="acc-purple">
+      <div class="section-head">
+        <div class="sec-title"><div class="badge b-purple">&#128100;</div><h2>User Category &amp; Status</h2></div>
+        <button class="download-btn-sm" id="btn-toggle-ucs-defs">&#8505;&#65039; Definitions</button>
+      </div>
+      <div id="ucs-definitions" class="ucs-defs" style="display:none"></div>
+      <div id="ucs-matrix-table"></div>
+    </section>
+    \`}
+
     <div class="analysis-heading deposit"><h2>Deposit Analysis</h2><div class="line"></div><span class="tag">DEPOSITS</span></div>
 
     <section class="acc-blue">
@@ -3653,6 +3679,81 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
         '<td class="num"><strong>' + row._totalCount + '</strong></td>' +
         '<td class="num">' + money(row._totalAmount) + '</td></tr>').join('') +
       '</tbody></table></div>';
+  }
+
+  const UCS_CATEGORY_COLORS = {
+    'VIP - High Roller': '#3b82f6', 'VIP - Low Roller': '#10b981',
+    'Retention - High': '#f59e0b', 'Retention - Mid': '#22c55e',
+    'Retention - Low': '#6366f1', 'Retention - Entry': '#f43f5e',
+    'New User': '#ec4899', 'Low Engagement / Churned': '#ef4444',
+  };
+  const UCS_CATEGORY_DEFS = {
+    'VIP - High Roller': 'Lifetime recharge \\u2265 ₹5,00,000 and AOV \\u2265 ₹2,000',
+    'VIP - Low Roller': 'Lifetime recharge \\u2265 ₹2,50,000 and AOV \\u2265 ₹1,000 (below High Roller)',
+    'Retention - High': '500+ total deposits made, regardless of amount',
+    'Retention - Mid': '100-499 total deposits made',
+    'Retention - Low': '20-99 total deposits made',
+    'Retention - Entry': '5-19 total deposits made, and has withdrawn at least once',
+    'New User': 'Registered within the last 30 days',
+    'Low Engagement / Churned': 'Everyone who does not match any category above',
+  };
+  const UCS_STATUS_COLORS = { Active: '#22c55e', Inactive: '#f59e0b', Churn: '#ef4444', 'Low-Engage': '#f97316' };
+  const UCS_STATUS_DEFS = {
+    Active: 'Last active within the last 15 days',
+    Inactive: 'Last active between 16 and 90 days ago',
+    Churn: 'Inactive 90+ days, made 3+ lifetime deposits',
+    'Low-Engage': 'Inactive 90+ days, made fewer than 3 lifetime deposits',
+  };
+  function renderUserCategoryStatus() {
+    const container = document.getElementById('ucs-matrix-table');
+    if (!container) return;
+    const ucs = data.user_category_status;
+    if (!ucs) {
+      container.innerHTML = '<div class="no-data">No data available.</div>';
+      return;
+    }
+    const defsEl = document.getElementById('ucs-definitions');
+    if (defsEl) {
+      defsEl.innerHTML =
+        '<div class="ucs-defs-subhead">Category</div>' +
+        ucs.categories.map(c => '<div class="ucs-def-row"><span class="badge-sm" style="background:' +
+          (UCS_CATEGORY_COLORS[c] || '#9ca3af') + '">' + c + '</span><span class="ucs-def-text">' +
+          (UCS_CATEGORY_DEFS[c] || '') + '</span></div>').join('') +
+        '<div class="ucs-defs-subhead">Status</div>' +
+        ucs.statuses.map(s => '<div class="ucs-def-row"><span class="badge-sm" style="background:' +
+          (UCS_STATUS_COLORS[s] || '#9ca3af') + '">' + s + '</span><span class="ucs-def-text">' +
+          (UCS_STATUS_DEFS[s] || '') + '</span></div>').join('');
+    }
+    const toggleBtn = document.getElementById('btn-toggle-ucs-defs');
+    if (toggleBtn && defsEl && !toggleBtn.dataset.wired) {
+      toggleBtn.dataset.wired = '1';
+      toggleBtn.addEventListener('click', () => {
+        defsEl.style.display = defsEl.style.display === 'none' ? 'block' : 'none';
+      });
+    }
+
+    const cellFor = (cat, status) => ucs.matrix.find(r => r.category === cat && r.status === status) || { user_count: 0, arpu: 0 };
+    const catTotal = (cat) => ucs.by_category.find(r => r.category === cat) || { user_count: 0, arpu: 0 };
+    const statusTotal = (status) => ucs.by_status.find(r => r.status === status) || { user_count: 0, arpu: 0 };
+    const grandCount = ucs.by_category.reduce((s, r) => s + r.user_count, 0);
+    const grandRecharge = ucs.by_category.reduce((s, r) => s + r.arpu * r.user_count, 0);
+    const grandArpu = grandCount ? Math.round((grandRecharge / grandCount) * 100) / 100 : 0;
+
+    const cellHtml = (cell) => cell.user_count
+      ? '<div class="ucs-count">' + fmt(cell.user_count) + '</div><div class="ucs-arpu">' + money(cell.arpu) + '</div>'
+      : '<div class="ucs-count ucs-count-zero">0</div>';
+
+    const thead = '<thead><tr><th>Category</th>' + ucs.statuses.map(s => '<th>' + s + '</th>').join('') + '<th>Total</th></tr></thead>';
+    const bodyRows = ucs.categories.map(cat =>
+      '<tr><td>' + cat + '</td>' +
+      ucs.statuses.map(s => '<td>' + cellHtml(cellFor(cat, s)) + '</td>').join('') +
+      '<td class="ucs-total-col">' + cellHtml(catTotal(cat)) + '</td></tr>'
+    ).join('');
+    const totalRow = '<tr class="ucs-total-row"><td>Total</td>' +
+      ucs.statuses.map(s => '<td>' + cellHtml(statusTotal(s)) + '</td>').join('') +
+      '<td class="ucs-total-col">' + cellHtml({ user_count: grandCount, arpu: grandArpu }) + '</td></tr>';
+
+    container.innerHTML = '<div class="table-wrap"><table class="ucs-matrix-table">' + thead + '<tbody>' + bodyRows + totalRow + '</tbody></table></div>';
   }
 
   let yesterdayWdDay = 'yesterday';
@@ -4061,6 +4162,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
   selectDate(todayLocalISO());
   renderBacklogCharts();
   renderYesterdayWithdrawalRange();
+  renderUserCategoryStatus();
 })();
 </script>
 </body>

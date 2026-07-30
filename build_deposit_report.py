@@ -2117,6 +2117,134 @@ def high_low_roller_reports(mconn, daily_conn, agent_by_user, today):
     return {"high_roller": high_roller, "low_roller": low_roller}
 
 
+# User Category & Status (Home page, above Deposit Analysis): every
+# registered user gets exactly ONE Category (8-way priority waterfall,
+# first matching rule wins) and separately exactly ONE Status (activity
+# recency) -- both business-defined per the dashboard's own reference
+# table, not derived from any other section. AOV here = "Average Order
+# Value" = total_recharge / recharge_count, used only to DECIDE category
+# (same formula _classify_roller above already uses for its own avg
+# deposit criterion) -- not the same thing as the report's ARPU output
+# (Average Recharge Per User = total lifetime recharge / USER count in a
+# bucket), which is a completely different denominator.
+USER_CATEGORY_HIGH_ROLLER_MIN_RECHARGE = 500000.0
+USER_CATEGORY_HIGH_ROLLER_MIN_AOV = 2000.0
+USER_CATEGORY_LOW_ROLLER_MIN_RECHARGE = 250000.0
+USER_CATEGORY_LOW_ROLLER_MIN_AOV = 1000.0
+USER_CATEGORY_RETENTION_HIGH_MIN_COUNT = 500
+USER_CATEGORY_RETENTION_MID_MIN_COUNT = 100
+USER_CATEGORY_RETENTION_LOW_MIN_COUNT = 20
+USER_CATEGORY_RETENTION_ENTRY_MIN_COUNT = 5
+USER_CATEGORY_NEW_USER_MAX_DAYS = 30
+
+USER_STATUS_ACTIVE_MAX_DAYS = 15
+USER_STATUS_INACTIVE_MAX_DAYS = 90
+USER_STATUS_CHURN_MIN_RECHARGE_COUNT = 3
+
+USER_CATEGORIES = [
+    "VIP - High Roller", "VIP - Low Roller", "Retention - High", "Retention - Mid",
+    "Retention - Low", "Retention - Entry", "New User", "Low Engagement / Churned",
+]
+USER_STATUSES = ["Active", "Inactive", "Churn", "Low-Engage"]
+
+
+def _classify_user_category(total_recharge, recharge_count, total_withdrawal, register_days_ago):
+    """Priority waterfall, first matching rule wins -- checked in this
+    exact order: VIP High Roller, VIP Low Roller, Retention High/Mid/Low/
+    Entry (by lifetime deposit COUNT, regardless of amount -- Entry
+    additionally requires at least one withdrawal), New User (registered
+    within the last 30 days), falling back to Low Engagement/Churned for
+    everyone else."""
+    aov = (total_recharge / recharge_count) if recharge_count else 0.0
+    if total_recharge >= USER_CATEGORY_HIGH_ROLLER_MIN_RECHARGE and aov >= USER_CATEGORY_HIGH_ROLLER_MIN_AOV:
+        return "VIP - High Roller"
+    if total_recharge >= USER_CATEGORY_LOW_ROLLER_MIN_RECHARGE and aov >= USER_CATEGORY_LOW_ROLLER_MIN_AOV:
+        return "VIP - Low Roller"
+    if recharge_count >= USER_CATEGORY_RETENTION_HIGH_MIN_COUNT:
+        return "Retention - High"
+    if recharge_count >= USER_CATEGORY_RETENTION_MID_MIN_COUNT:
+        return "Retention - Mid"
+    if recharge_count >= USER_CATEGORY_RETENTION_LOW_MIN_COUNT:
+        return "Retention - Low"
+    if recharge_count >= USER_CATEGORY_RETENTION_ENTRY_MIN_COUNT and (total_withdrawal or 0.0) > 0:
+        return "Retention - Entry"
+    if register_days_ago is not None and register_days_ago <= USER_CATEGORY_NEW_USER_MAX_DAYS:
+        return "New User"
+    return "Low Engagement / Churned"
+
+
+def _classify_user_status(inactive_days, recharge_count):
+    """Independent of Category -- purely activity recency, plus (past the
+    90-day cutoff) whether the user ever really engaged at all
+    (>=3 lifetime deposits) to split Churn from Low-Engage. A user who has
+    never been active at all (no last_active_time on record) is treated
+    as maximally inactive, same as if it had been years."""
+    if inactive_days is None:
+        inactive_days = 10 ** 9
+    if inactive_days <= USER_STATUS_ACTIVE_MAX_DAYS:
+        return "Active"
+    if inactive_days <= USER_STATUS_INACTIVE_MAX_DAYS:
+        return "Inactive"
+    return "Churn" if recharge_count >= USER_STATUS_CHURN_MIN_RECHARGE_COUNT else "Low-Engage"
+
+
+def user_category_status_report(mconn, now):
+    """Home page report, above Deposit Analysis: every registered user
+    classified into one Category x one Status cell (see
+    _classify_user_category/_classify_user_status), reporting user count
+    and lifetime ARPU (Average Recharge Per User = total lifetime
+    recharge / user count, NOT the AOV used to decide category) for every
+    cell, plus category-only and status-only rollups. Iterates the users
+    cursor directly rather than fetchall() -- this table can run to
+    hundreds of thousands of rows, and a giant fetchall() is exactly what
+    silently OOM-killed the bonus backfill job on wallet_transactions
+    (16.9M+ rows) -- see classify_bonus's backfill in ingest_update.py."""
+    cells = {(c, s): {"count": 0, "total_recharge": 0.0} for c in USER_CATEGORIES for s in USER_STATUSES}
+    category_totals = {c: {"count": 0, "total_recharge": 0.0} for c in USER_CATEGORIES}
+    status_totals = {s: {"count": 0, "total_recharge": 0.0} for s in USER_STATUSES}
+
+    for total_recharge, recharge_count, total_withdrawal, last_active_time, create_time in mconn.execute(
+        "SELECT total_recharge, recharge_count, total_withdrawal, last_active_time, create_time FROM users"
+    ):
+        total_recharge = total_recharge or 0.0
+        recharge_count = recharge_count or 0
+
+        register_dt = parse_dt(create_time)
+        register_days_ago = (now.date() - register_dt.date()).days if register_dt else None
+        category = _classify_user_category(total_recharge, recharge_count, total_withdrawal, register_days_ago)
+
+        active_dt = parse_dt(last_active_time)
+        inactive_days = (now.date() - active_dt.date()).days if active_dt else None
+        status = _classify_user_status(inactive_days, recharge_count)
+
+        for bucket in (cells[(category, status)], category_totals[category], status_totals[status]):
+            bucket["count"] += 1
+            bucket["total_recharge"] += total_recharge
+
+    def arpu(bucket):
+        return round(bucket["total_recharge"] / bucket["count"], 2) if bucket["count"] else 0.0
+
+    matrix = [
+        {"category": c, "status": s, "user_count": cells[(c, s)]["count"], "arpu": arpu(cells[(c, s)])}
+        for c in USER_CATEGORIES for s in USER_STATUSES
+    ]
+    by_category = [
+        {"category": c, "user_count": category_totals[c]["count"], "arpu": arpu(category_totals[c])}
+        for c in USER_CATEGORIES
+    ]
+    by_status = [
+        {"status": s, "user_count": status_totals[s]["count"], "arpu": arpu(status_totals[s])}
+        for s in USER_STATUSES
+    ]
+    return {
+        "categories": USER_CATEGORIES,
+        "statuses": USER_STATUSES,
+        "matrix": matrix,
+        "by_category": by_category,
+        "by_status": by_status,
+    }
+
+
 # Raw "city" values on user records are a messy mix of actual state/region
 # names and individual city names (some with inconsistent casing) --
 # REGION_MAPPING (from State_and_City_Mapping.xlsx) normalizes every known
@@ -3363,12 +3491,17 @@ def main():
     region_vip_matrix = region_vip_depositor_matrix(deposit_rows, city_by_user, vip_by_user, all_dates)
 
     roller_reports = {"high_roller": [], "low_roller": []}
+    user_category_status = None
     if report_master_db_path:
         roller_daily_conn = sqlite3.connect(report_daily_db_path)
         roller_master_conn = sqlite3.connect(report_master_db_path)
         roller_reports = high_low_roller_reports(roller_master_conn, roller_daily_conn, agent_by_user, now.date())
         roller_daily_conn.close()
         roller_master_conn.close()
+
+        ucs_conn = sqlite3.connect(report_master_db_path)
+        user_category_status = user_category_status_report(ucs_conn, now)
+        ucs_conn.close()
 
     # Persist today's per-agent performance, then read back the full rolling
     # window for the Performance page -- small enough (agents x 7 categories
@@ -3468,6 +3601,7 @@ def main():
         "profit_users": profit_users,
         "channel_performance": channel_performance,
         "suspicious_withdraw_users": suspicious_withdraw,
+        "user_category_status": user_category_status,
         "bonus_claims": bonus_claims,
         "new_old_user_analysis": new_old_user_analysis,
         # Distinct real agent names (never includes AGENT_UNASSIGNED) -- powers
