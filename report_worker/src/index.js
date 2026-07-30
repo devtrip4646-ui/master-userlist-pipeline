@@ -3697,12 +3697,12 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     'New User': 'Registered within the last 30 days',
     'Low Engagement / Churned': 'Everyone who does not match any category above',
   };
-  const UCS_STATUS_COLORS = { Active: '#22c55e', Inactive: '#f59e0b', Churn: '#ef4444', 'Low-Engage': '#f97316' };
+  const UCS_STATUS_COLORS = { Active: '#22c55e', Inactive: '#f59e0b', Churn: '#ef4444', 'Dormant / chutiya': '#f97316' };
   const UCS_STATUS_DEFS = {
     Active: 'Last active within the last 15 days',
     Inactive: 'Last active between 16 and 90 days ago',
     Churn: 'Inactive 90+ days, made 3+ lifetime deposits',
-    'Low-Engage': 'Inactive 90+ days, made fewer than 3 lifetime deposits',
+    'Dormant / chutiya': 'Inactive 90+ days, made fewer than 3 lifetime deposits',
   };
   function renderUserCategoryStatus() {
     const container = document.getElementById('ucs-matrix-table');
