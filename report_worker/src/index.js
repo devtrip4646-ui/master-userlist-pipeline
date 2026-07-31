@@ -1050,6 +1050,7 @@ if (IS_PERFORMANCE) {
         <div>
           <div class="perf-dept-panel-head" style="margin-bottom:12px"><span class="dp-icon">&#127942;</span><h4>Overall Ranking -- average across all departments</h4></div>
           <div class="perf-controls" id="perf-overall-range-controls" style="margin-bottom:14px">
+            <button class="perf-preset" data-overall-preset="today">Today</button>
             <button class="perf-preset active" data-overall-preset="month">This Month</button>
             <button class="perf-preset" data-overall-preset="yesterday">Till Yesterday</button>
             <span class="perf-to">|</span>
@@ -1482,6 +1483,9 @@ if (IS_PERFORMANCE) {
         if (btn.dataset.overallPreset === 'month') {
           overallDateRangeLabel.textContent = 'This Month';
           renderLeaderboardSection(monthFrom, monthTo);
+        } else if (btn.dataset.overallPreset === 'today') {
+          overallDateRangeLabel.textContent = 'Today';
+          renderLeaderboardSection(todayStr, todayStr);
         } else {
           // If today is the 1st of the month, "yesterday" falls in the
           // previous month -- clamp to a same-day range at month start
