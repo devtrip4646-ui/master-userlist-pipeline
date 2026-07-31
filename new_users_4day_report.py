@@ -55,7 +55,6 @@ dconn.close()
 
 mconn = sqlite3.connect(MASTER_DB)
 region_by_user = dict(mconn.execute("SELECT user_id, city FROM users").fetchall())
-reg_channel_by_user = dict(mconn.execute("SELECT user_id, register_channel FROM users").fetchall())
 agent_by_user = {}
 try:
     agent_by_user = dict(mconn.execute("SELECT user_id, agent_name FROM agent_assignments").fetchall())
@@ -70,17 +69,18 @@ mconn.close()
 
 REFERRAL_SET = {"indusbet", "appshare", "ins"}
 
-def channel_group(t):
-    if t is None:
-        return "Other"
-    tl = str(t).strip().lower()
-    if tl in REFERRAL_SET:
+def channel_group(ch):
+    # NOTE: production users.register_channel is entirely NULL (not populated
+    # by ingestion) so the Referral/Organic/Promotion/Other split used for
+    # the June test-data cohort cannot be reproduced the same way here.
+    # Falls back to classifying directly off the deposit's own channel value:
+    # Referral (indusbet/appshare/ins) vs every other channel code (agent/paid).
+    if ch is None:
+        return "Other Channels"
+    cl = str(ch).strip().lower()
+    if cl in REFERRAL_SET:
         return "Referral"
-    if tl == "organic":
-        return "Organic"
-    if tl == "promotion":
-        return "Promotion"
-    return "Other"
+    return "Other Channels"
 
 # Identify new-user cohort + their first-deposit channel/date
 new_user_channel = {}
@@ -125,9 +125,8 @@ def retained_on_day(uid, n):
 user_rows = []
 for uid in cohort:
     region = region_by_user.get(uid) or "Unknown"
-    reg_ch = reg_channel_by_user.get(uid)
-    grp = channel_group(reg_ch)
     ch = new_user_channel[uid]
+    grp = channel_group(ch)
     cnt = dep_count_by_user.get(uid, 0)
     d1 = retained_on_day(uid, 1)
     d2 = retained_on_day(uid, 2)
