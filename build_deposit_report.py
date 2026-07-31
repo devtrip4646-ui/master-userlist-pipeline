@@ -2154,7 +2154,7 @@ USER_STATUS_CHURN_MIN_RECHARGE_COUNT = 3
 
 USER_CATEGORIES = [
     "VIP - High Roller", "VIP - Low Roller", "Retention - High", "Retention - Mid",
-    "Retention - Low", "Retention - Entry", "New User", "Dormant / Chutiya",
+    "Retention - Low", "Retention - Entry", "New User", "Low Engage",
 ]
 USER_STATUSES = ["Active", "Inactive", "Churn", "Dormant / Chutiya"]
 
@@ -2164,7 +2164,7 @@ def _classify_user_category(total_recharge, recharge_count, total_withdrawal, re
     exact order: VIP High Roller, VIP Low Roller, Retention High/Mid/Low/
     Entry (by lifetime deposit COUNT, regardless of amount -- Entry
     additionally requires at least one withdrawal), New User (registered
-    within the last 30 days), falling back to Dormant / Chutiya for
+    within the last 30 days), falling back to Low Engage for
     everyone else."""
     aov = (total_recharge / recharge_count) if recharge_count else 0.0
     if total_recharge >= USER_CATEGORY_HIGH_ROLLER_MIN_RECHARGE and aov >= USER_CATEGORY_HIGH_ROLLER_MIN_AOV:
@@ -2181,7 +2181,7 @@ def _classify_user_category(total_recharge, recharge_count, total_withdrawal, re
         return "Retention - Entry"
     if register_days_ago is not None and register_days_ago <= USER_CATEGORY_NEW_USER_MAX_DAYS:
         return "New User"
-    return "Dormant / Chutiya"
+    return "Low Engage"
 
 
 def _classify_user_status(inactive_days, recharge_count):
