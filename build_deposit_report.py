@@ -2154,9 +2154,9 @@ USER_STATUS_CHURN_MIN_RECHARGE_COUNT = 3
 
 USER_CATEGORIES = [
     "VIP - High Roller", "VIP - Low Roller", "Retention - High", "Retention - Mid",
-    "Retention - Low", "Retention - Entry", "New User", "Low Engagement / Churned",
+    "Retention - Low", "Retention - Entry", "New User", "Dormant / Chutiya",
 ]
-USER_STATUSES = ["Active", "Inactive", "Churn", "Dormant / chutiya"]
+USER_STATUSES = ["Active", "Inactive", "Churn", "Dormant / Chutiya"]
 
 
 def _classify_user_category(total_recharge, recharge_count, total_withdrawal, register_days_ago):
@@ -2164,7 +2164,7 @@ def _classify_user_category(total_recharge, recharge_count, total_withdrawal, re
     exact order: VIP High Roller, VIP Low Roller, Retention High/Mid/Low/
     Entry (by lifetime deposit COUNT, regardless of amount -- Entry
     additionally requires at least one withdrawal), New User (registered
-    within the last 30 days), falling back to Low Engagement/Churned for
+    within the last 30 days), falling back to Dormant / Chutiya for
     everyone else."""
     aov = (total_recharge / recharge_count) if recharge_count else 0.0
     if total_recharge >= USER_CATEGORY_HIGH_ROLLER_MIN_RECHARGE and aov >= USER_CATEGORY_HIGH_ROLLER_MIN_AOV:
@@ -2181,13 +2181,13 @@ def _classify_user_category(total_recharge, recharge_count, total_withdrawal, re
         return "Retention - Entry"
     if register_days_ago is not None and register_days_ago <= USER_CATEGORY_NEW_USER_MAX_DAYS:
         return "New User"
-    return "Low Engagement / Churned"
+    return "Dormant / Chutiya"
 
 
 def _classify_user_status(inactive_days, recharge_count):
     """Independent of Category -- purely activity recency, plus (past the
     90-day cutoff) whether the user ever really engaged at all
-    (>=3 lifetime deposits) to split Churn from Dormant / chutiya. A user
+    (>=3 lifetime deposits) to split Churn from Dormant / Chutiya. A user
     who has never been active at all (no last_active_time on record) is
     treated as maximally inactive, same as if it had been years."""
     if inactive_days is None:
@@ -2196,7 +2196,7 @@ def _classify_user_status(inactive_days, recharge_count):
         return "Active"
     if inactive_days <= USER_STATUS_INACTIVE_MAX_DAYS:
         return "Inactive"
-    return "Churn" if recharge_count >= USER_STATUS_CHURN_MIN_RECHARGE_COUNT else "Dormant / chutiya"
+    return "Churn" if recharge_count >= USER_STATUS_CHURN_MIN_RECHARGE_COUNT else "Dormant / Chutiya"
 
 
 def user_category_status_report(mconn, now):

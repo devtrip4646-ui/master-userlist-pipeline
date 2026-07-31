@@ -3685,7 +3685,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     'VIP - High Roller': '#3b82f6', 'VIP - Low Roller': '#10b981',
     'Retention - High': '#f59e0b', 'Retention - Mid': '#22c55e',
     'Retention - Low': '#6366f1', 'Retention - Entry': '#f43f5e',
-    'New User': '#ec4899', 'Low Engagement / Churned': '#ef4444',
+    'New User': '#ec4899', 'Dormant / Chutiya': '#ef4444',
   };
   const UCS_CATEGORY_DEFS = {
     'VIP - High Roller': 'Lifetime recharge \\u2265 ₹5,00,000 and AOV \\u2265 ₹2,000',
@@ -3695,14 +3695,14 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     'Retention - Low': '20-99 total deposits made',
     'Retention - Entry': '5-19 total deposits made, and has withdrawn at least once',
     'New User': 'Registered within the last 30 days',
-    'Low Engagement / Churned': 'Everyone who does not match any category above',
+    'Dormant / Chutiya': 'Everyone who does not match any category above',
   };
-  const UCS_STATUS_COLORS = { Active: '#22c55e', Inactive: '#f59e0b', Churn: '#ef4444', 'Dormant / chutiya': '#f97316' };
+  const UCS_STATUS_COLORS = { Active: '#22c55e', Inactive: '#f59e0b', Churn: '#ef4444', 'Dormant / Chutiya': '#f97316' };
   const UCS_STATUS_DEFS = {
     Active: 'Last active within the last 15 days',
     Inactive: 'Last active between 16 and 90 days ago',
     Churn: 'Inactive 90+ days, made 3+ lifetime deposits',
-    'Dormant / chutiya': 'Inactive 90+ days, made fewer than 3 lifetime deposits',
+    'Dormant / Chutiya': 'Inactive 90+ days, made fewer than 3 lifetime deposits',
   };
   function renderUserCategoryStatus() {
     const container = document.getElementById('ucs-matrix-table');
