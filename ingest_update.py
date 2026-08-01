@@ -390,6 +390,34 @@ def classify_bonus(game_name, source, source_id):
 CLASSIFY_BONUS_RULES_VERSION = 5
 
 
+def stable_wallet_id(raw_id, create_time):
+    """The source's numeric `id` is only unique within roughly a calendar
+    month -- confirmed 2026-08-01 that August's ids restart from a low base
+    and land in the exact same range July 1's did a month earlier. Since
+    wallet_transactions/bonuses retain a rolling 33-day window, the prior
+    month's rows are still physically present when a new month starts, so
+    INSERT OR IGNORE was silently discarding nearly all of the new month's
+    real transactions as false-positive duplicates of the equivalent day a
+    month back (measured: 0 of ~750k fetched rows added across five
+    consecutive runs on 2026-08-01). Folding in a year-month component
+    keeps ids globally unique going forward without touching the ~43M
+    already-stored historical rows; the original id is still recoverable
+    via `stable_id % 1_000_000_000`."""
+    try:
+        raw_id = int(raw_id)
+    except (TypeError, ValueError):
+        return raw_id
+    ct = str(create_time) if create_time else ""
+    if len(ct) < 7:
+        return raw_id
+    try:
+        year, month = int(ct[0:4]), int(ct[5:7])
+    except ValueError:
+        return raw_id
+    month_index = year * 12 + month
+    return month_index * 1_000_000_000 + raw_id
+
+
 def ingest_wallet(files):
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
@@ -434,6 +462,7 @@ def ingest_wallet(files):
         _, rows = load_sheet(f)
         for row in rows:
             row = clean(row)
+            row = (stable_wallet_id(row[0], row[17]),) + row[1:]
             cur.execute(f"INSERT OR IGNORE INTO wallet_transactions VALUES ({','.join(['?']*n_cols)})", row)
             if cur.rowcount:
                 added += 1
