@@ -1053,15 +1053,7 @@ if (IS_PERFORMANCE) {
             <button class="perf-preset" data-overall-preset="today">Today</button>
             <button class="perf-preset active" data-overall-preset="month">This Month</button>
             <button class="perf-preset" data-overall-preset="yesterday">Till Yesterday</button>
-            <span class="perf-to">|</span>
-            <div class="perf-daterange">
-              <button type="button" id="perf-overall-daterange-btn" class="perf-daterange-btn">&#128197; <span id="perf-overall-daterange-label">This Month</span></button>
-              <div id="perf-overall-daterange-popover" class="perf-daterange-popover" style="display:none">
-                <label>From<input type="date" id="perf-overall-from"></label>
-                <label>To<input type="date" id="perf-overall-to"></label>
-                <button type="button" id="perf-overall-daterange-apply">Apply</button>
-              </div>
-            </div>
+            <button class="perf-preset" data-overall-preset="lastmonth">Last Month</button>
           </div>
           <div id="perf-podium-overall" class="perf-overall-podium"></div>
         </div>
@@ -1450,17 +1442,11 @@ if (IS_PERFORMANCE) {
       render(from, to);
     });
 
-    // Overall Ranking's own date-range control (This Month / Till
-    // Yesterday / custom From-To) -- independent of the Daily/Range
-    // Performance controls above and of the department mini-lists, which
-    // both stay pinned to the current calendar month.
+    // Overall Ranking's own date-range control (Today / This Month / Till
+    // Yesterday / Last Month) -- independent of the Daily/Range Performance
+    // controls above and of the department mini-lists, which both stay
+    // pinned to the current calendar month.
     const overallPresetBtns = Array.from(document.querySelectorAll('#perf-overall-range-controls .perf-preset'));
-    const overallDateRangeBtn = document.getElementById('perf-overall-daterange-btn');
-    const overallDateRangeLabel = document.getElementById('perf-overall-daterange-label');
-    const overallDateRangePopover = document.getElementById('perf-overall-daterange-popover');
-    const overallFromInput = document.getElementById('perf-overall-from');
-    const overallToInput = document.getElementById('perf-overall-to');
-    const overallDateRangeApply = document.getElementById('perf-overall-daterange-apply');
 
     function yesterdayStr() {
       const idx = allDates.indexOf(todayStr);
@@ -1469,44 +1455,32 @@ if (IS_PERFORMANCE) {
       return allDates[yIdx] || todayStr;
     }
 
-    if (overallDateRangeBtn) {
-      overallDateRangeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        overallDateRangePopover.style.display = overallDateRangePopover.style.display === 'none' ? 'flex' : 'none';
-      });
-      overallDateRangePopover.addEventListener('click', (e) => e.stopPropagation());
-      document.addEventListener('click', () => { overallDateRangePopover.style.display = 'none'; });
-
-      overallPresetBtns.forEach(btn => btn.addEventListener('click', () => {
-        overallPresetBtns.forEach(b => b.classList.toggle('active', b === btn));
-        overallDateRangePopover.style.display = 'none';
-        if (btn.dataset.overallPreset === 'month') {
-          overallDateRangeLabel.textContent = 'This Month';
-          renderLeaderboardSection(monthFrom, monthTo);
-        } else if (btn.dataset.overallPreset === 'today') {
-          overallDateRangeLabel.textContent = 'Today';
-          renderLeaderboardSection(todayStr, todayStr);
-        } else {
-          // If today is the 1st of the month, "yesterday" falls in the
-          // previous month -- clamp to a same-day range at month start
-          // rather than reaching into last month's data.
-          const y = yesterdayStr();
-          const to = y >= monthFrom ? y : monthFrom;
-          overallDateRangeLabel.textContent = shortDate(monthFrom) + ' \\u2013 ' + shortDate(to);
-          renderLeaderboardSection(monthFrom, to);
-        }
-      }));
-
-      overallDateRangeApply.addEventListener('click', () => {
-        const from = overallFromInput.value || overallToInput.value;
-        const to = overallToInput.value || overallFromInput.value;
-        if (!from || !to) return;
-        overallPresetBtns.forEach(b => b.classList.remove('active'));
-        overallDateRangeLabel.textContent = from === to ? shortDate(from) : shortDate(from) + ' \\u2013 ' + shortDate(to);
-        overallDateRangePopover.style.display = 'none';
-        renderLeaderboardSection(from, to);
-      });
+    function lastMonthRange() {
+      const [ty, tm] = todayStr.split('-').map(Number);
+      const lastDayPrevMonth = new Date(Date.UTC(ty, tm - 1, 0));
+      const to = lastDayPrevMonth.toISOString().slice(0, 10);
+      const from = to.slice(0, 7) + '-01';
+      return { from, to };
     }
+
+    overallPresetBtns.forEach(btn => btn.addEventListener('click', () => {
+      overallPresetBtns.forEach(b => b.classList.toggle('active', b === btn));
+      if (btn.dataset.overallPreset === 'month') {
+        renderLeaderboardSection(monthFrom, monthTo);
+      } else if (btn.dataset.overallPreset === 'today') {
+        renderLeaderboardSection(todayStr, todayStr);
+      } else if (btn.dataset.overallPreset === 'lastmonth') {
+        const { from, to } = lastMonthRange();
+        renderLeaderboardSection(from, to);
+      } else {
+        // If today is the 1st of the month, "yesterday" falls in the
+        // previous month -- clamp to a same-day range at month start
+        // rather than reaching into last month's data.
+        const y = yesterdayStr();
+        const to = y >= monthFrom ? y : monthFrom;
+        renderLeaderboardSection(monthFrom, to);
+      }
+    }));
 
     renderPodium();
     applyPreset('today');
