@@ -358,6 +358,19 @@ def classify_bonus(game_name, source, source_id):
             return "Daily Active Bonus Low"
         if lowered.startswith("daily active bonus"):
             return "Daily Active Bonus"
+        # Confirmed 2026-08-02: "Weekly Loss Bonus" arrives with
+        # inconsistent casing at the source ("Weekly Loss Bonus" vs "Weekly
+        # Loss BONUS", 3464 vs 870 rows, with individual users' own claim
+        # history split across both) -- the fallback below used to pass
+        # source_id through unnormalized, splitting one bonus type into two
+        # different matched_category values depending on incidental
+        # casing, which is why it looked present for some users and
+        # missing for others on the Search User page. Deliberately does
+        # NOT match "Weekly Loss Back Bonus" (a single, textually distinct
+        # occurrence) -- left as its own category rather than assumed to
+        # be the same thing.
+        if lowered.startswith("weekly loss bonus"):
+            return "Weekly Loss Bonus"
         return source_id
 
     # 4. game_name is BLANK and source_id starts with "WEEKLY_SIGN" -- a
@@ -387,7 +400,7 @@ def classify_bonus(game_name, source, source_id):
 # under the new rules, then fall back to only scanning genuinely new rows.
 # Without this, a rule change would only apply to rows inserted AFTER the
 # change; existing rows that now match would silently stay unclassified.
-CLASSIFY_BONUS_RULES_VERSION = 5
+CLASSIFY_BONUS_RULES_VERSION = 6
 
 
 def stable_wallet_id(raw_id, create_time):
@@ -443,6 +456,15 @@ def ingest_wallet(files):
         "DELETE FROM bonuses WHERE bonus_name IN ('Chicken Road Bonus', 'Bonus Hunter') "
         "OR matched_category IN ('Chicken Road Bonus', 'Bonus Hunter')"
     )
+    conn.commit()
+    # Retroactive cleanup: already-stored rows classified under the old
+    # unnormalized "Weekly Loss BONUS" casing (classify_bonus() now folds
+    # this into "Weekly Loss Bonus" going forward, see rule 3 above) --
+    # already-classified rows aren't touched by the backfill scan below
+    # (it only looks at rows with no bonuses entry at all), so they need
+    # an explicit one-time merge here. Safe to run every time (a no-op
+    # once merged).
+    cur.execute("UPDATE bonuses SET matched_category = 'Weekly Loss Bonus' WHERE matched_category = 'Weekly Loss BONUS'")
     conn.commit()
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_user ON bonuses(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_name ON bonuses(bonus_name)")
