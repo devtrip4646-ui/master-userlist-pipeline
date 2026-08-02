@@ -1,14 +1,16 @@
-"""One-off read-only check: user reports "Weekly Loss Bonus" shows up in
-the Search User page's Bonuses Claimed list for some users but not others.
-classify_bonus()'s rule 1 requires game_name to be a real bonus name AND
-source to be BLANK -- if "Weekly Loss Bonus" rows sometimes carry a
-non-blank source, those instances would never make it into the `bonuses`
-table at all (classify_bonus returns None), explaining inconsistent
-per-user visibility. Check the actual distribution.
+"""One-off read-only check (v2): "Weekly Loss Bonus" is not a game_name in
+wallet_transactions (confirmed: zero matches). Check whether it comes
+through via source_id instead, the same way "Daily Active Bonus" does --
+classify_bonus()'s rule 3 only normalizes source_id text that starts with
+"daily active bonus"/"daily active bonus low"; any OTHER source_id
+containing the word "bonus" (e.g. "Weekly Loss Bonus-<random hex>") falls
+through to `return source_id` UNNORMALIZED, meaning each instance gets a
+different matched_category (the random suffix included) instead of one
+clean rolled-up label -- which would explain why it looks
+present/inconsistent across users.
 """
 import os
 import sqlite3
-from collections import Counter
 
 import boto3
 
@@ -34,41 +36,44 @@ def main():
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
 
-    print("=== distinct game_name values LIKE '%Weekly Loss%' (catches whitespace/case variants) ===")
-    for row in cur.execute(
-        "SELECT game_name, COUNT(*) FROM wallet_transactions WHERE game_name LIKE '%Weekly Loss%' GROUP BY game_name"
-    ).fetchall():
-        print(" ", repr(row[0]), row[1])
+    print("=== wallet_transactions: source_id LIKE '%Weekly Loss%' -- total count ===")
+    print(" ", cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE '%Weekly Loss%'").fetchone()[0])
 
-    print("=== exact game_name = 'Weekly Loss Bonus': total count, and count by (source IS blank) ===")
-    print(" total:", cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE game_name = 'Weekly Loss Bonus'").fetchone()[0])
+    print("=== sample of 15 such rows (id, user_id, game_name, source, source_id, create_time) ===")
     for row in cur.execute(
-        "SELECT CASE WHEN source IS NULL OR source = '' THEN 'BLANK' ELSE source END AS src, COUNT(*) "
-        "FROM wallet_transactions WHERE game_name = 'Weekly Loss Bonus' GROUP BY src ORDER BY COUNT(*) DESC LIMIT 20"
+        "SELECT id, user_id, game_name, source, source_id, create_time FROM wallet_transactions "
+        "WHERE source_id LIKE '%Weekly Loss%' ORDER BY create_time DESC LIMIT 15"
     ).fetchall():
         print(" ", row)
 
-    print("=== sample of 10 'Weekly Loss Bonus' rows (id, user_id, source, source_id, create_time) ===")
+    print("=== bonuses table: matched_category LIKE '%Weekly Loss%' -- distinct categories + counts ===")
     for row in cur.execute(
-        "SELECT id, user_id, source, source_id, create_time FROM wallet_transactions "
-        "WHERE game_name = 'Weekly Loss Bonus' ORDER BY create_time DESC LIMIT 10"
+        "SELECT matched_category, COUNT(*) FROM bonuses WHERE matched_category LIKE '%Weekly Loss%' "
+        "GROUP BY matched_category ORDER BY COUNT(*) DESC LIMIT 30"
     ).fetchall():
         print(" ", row)
 
-    print("=== how many of those ids are actually present in bonuses table ===")
-    total_wt = cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE game_name = 'Weekly Loss Bonus'").fetchone()[0]
-    matched_in_bonuses = cur.execute(
-        "SELECT COUNT(*) FROM wallet_transactions w WHERE w.game_name = 'Weekly Loss Bonus' "
-        "AND EXISTS (SELECT 1 FROM bonuses b WHERE b.id = w.id AND b.matched_category = 'Weekly Loss Bonus')"
+    print("=== how many 'Weekly Loss' source_id wallet_transactions rows made it into bonuses at all ===")
+    total_wt = cur.execute("SELECT COUNT(*) FROM wallet_transactions WHERE source_id LIKE '%Weekly Loss%'").fetchone()[0]
+    in_bonuses = cur.execute(
+        "SELECT COUNT(*) FROM wallet_transactions w WHERE w.source_id LIKE '%Weekly Loss%' "
+        "AND EXISTS (SELECT 1 FROM bonuses b WHERE b.id = w.id)"
     ).fetchone()[0]
-    print(f"  wallet_transactions rows: {total_wt}, classified into bonuses table: {matched_in_bonuses}, MISSING: {total_wt - matched_in_bonuses}")
+    print(f"  wallet_transactions rows: {total_wt}, present in bonuses (any category): {in_bonuses}, MISSING: {total_wt - in_bonuses}")
 
-    print("=== sample of 'Weekly Loss Bonus' rows that did NOT make it into bonuses (source, source_id shown) ===")
+    print("=== of those NOT in bonuses, sample game_name/source (why classify_bonus rejected them) ===")
     for row in cur.execute(
-        "SELECT w.id, w.user_id, w.source, w.source_id, w.create_time FROM wallet_transactions w "
-        "WHERE w.game_name = 'Weekly Loss Bonus' "
-        "AND NOT EXISTS (SELECT 1 FROM bonuses b WHERE b.id = w.id) "
+        "SELECT w.id, w.user_id, w.game_name, w.source, w.source_id, w.create_time FROM wallet_transactions w "
+        "WHERE w.source_id LIKE '%Weekly Loss%' AND NOT EXISTS (SELECT 1 FROM bonuses b WHERE b.id = w.id) "
         "ORDER BY w.create_time DESC LIMIT 15"
+    ).fetchall():
+        print(" ", row)
+
+    print("=== per-user distinct matched_category count for users who have ANY 'Weekly Loss' bonus row ===")
+    for row in cur.execute(
+        "SELECT w.user_id, COUNT(DISTINCT b.matched_category) AS distinct_cats, COUNT(*) AS n "
+        "FROM wallet_transactions w JOIN bonuses b ON b.id = w.id "
+        "WHERE w.source_id LIKE '%Weekly Loss%' GROUP BY w.user_id ORDER BY n DESC LIMIT 10"
     ).fetchall():
         print(" ", row)
 
