@@ -907,6 +907,16 @@ def main():
         wallet_balance_by_user, bonus_rows_for_sync, dep_info, today
     )
     if ok:
+        # Merge in whatever agent_assignments R2 currently has right before
+        # uploading -- reassign_agent.py writes directly to R2 and can land
+        # in between this job's own master_userlist.db download (several
+        # minutes ago) and this upload; without this, that reassignment
+        # would be silently reverted by this job's now-stale copy. See
+        # ci_ingest.refresh_table_from_r2 for the full race explanation.
+        ci_ingest.refresh_table_from_r2(
+            s3, bucket, "master_userlist.db", master_db_path, "agent_assignments",
+            "CREATE TABLE IF NOT EXISTS agent_assignments (user_id INTEGER PRIMARY KEY, agent_name TEXT)",
+        )
         subprocess.run(
             [sys.executable, os.path.join(ci_ingest.BASE, "upload_to_r2.py"), "--files", "master_userlist.db"],
             check=True,

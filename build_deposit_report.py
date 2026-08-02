@@ -20,6 +20,7 @@ from datetime import time as dtime
 import boto3
 
 import ban_utils
+import ci_ingest
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE, "daily_records.db")
@@ -3631,6 +3632,16 @@ def main():
             aws_access_key_id=upload_creds["R2_ACCESS_KEY_ID"],
             aws_secret_access_key=upload_creds["R2_SECRET_ACCESS_KEY"],
             region_name="auto",
+        )
+        # Merge in whatever agent_assignments R2 currently has right before
+        # this run's own upload -- this is the LAST write master_userlist.db
+        # gets in a normal pipeline run, ~20 minutes after the run started
+        # downloading its own copy. A reassign_agent.py run (writes directly
+        # to R2) landing anywhere in that window would otherwise be silently
+        # reverted by this now-stale copy. See ci_ingest.refresh_table_from_r2.
+        ci_ingest.refresh_table_from_r2(
+            upload_s3, upload_creds["R2_BUCKET"], "master_userlist.db", master_db_path, "agent_assignments",
+            "CREATE TABLE IF NOT EXISTS agent_assignments (user_id INTEGER PRIMARY KEY, agent_name TEXT)",
         )
         upload_s3.upload_file(master_db_path, upload_creds["R2_BUCKET"], "master_userlist.db")
         print("Uploaded master_userlist.db (agent_performance rows persisted)")

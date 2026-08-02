@@ -7,6 +7,7 @@ Usage: python3 ci_ingest.py --file-type userlist --key incoming/userlist/foo.xls
 """
 import argparse
 import os
+import sqlite3
 import subprocess
 import sys
 import time
@@ -37,6 +38,56 @@ def download_with_retry(s3, bucket, key, local_path, attempts=3):
             if attempt < attempts:
                 time.sleep(5 * attempt)
     raise last_err
+
+
+def refresh_table_from_r2(s3, bucket, remote_key, local_db_path, table_name, create_sql):
+    """Re-fetch `table_name` from R2's CURRENT copy of `remote_key` and
+    overlay it onto `local_db_path`, immediately before uploading a change
+    back to R2.
+
+    master_userlist.db is written by multiple independent processes
+    (api_pull_ingest.py's hourly sync, build_deposit_report.py's
+    agent_performance persistence, reassign_agent.py's on-demand
+    reassignments) that each download a copy, modify it, and re-upload the
+    whole file. The two pipeline steps can each take several minutes, so
+    their local copy can be stale by the time they upload -- if a fast
+    reassign_agent.py run wrote a change to R2 in between, the pipeline's
+    later blind re-upload of its own (older) copy would silently revert
+    it. Calling this right before a slow writer's own upload shrinks that
+    staleness window from "however long this job took" down to the couple
+    of seconds between this call and the caller's own upload. Best-effort:
+    if the refresh fails for any reason, logs a warning and leaves the
+    local copy untouched rather than blocking the caller's own upload."""
+    fresh_path = local_db_path + ".fresh_merge_tmp"
+    try:
+        download_with_retry(s3, bucket, remote_key, fresh_path, attempts=2)
+    except Exception as e:
+        print(f"WARNING: could not refresh {table_name} before upload, keeping local copy: {e}")
+        return
+    try:
+        conn = sqlite3.connect(local_db_path)
+        cur = conn.cursor()
+        cur.execute(create_sql)
+        try:
+            cur.execute("ATTACH DATABASE ? AS fresh_merge_src", (fresh_path,))
+            cur.execute(f"DELETE FROM {table_name}")
+            cur.execute(f"INSERT INTO {table_name} SELECT * FROM fresh_merge_src.{table_name}")
+            conn.commit()
+        except sqlite3.OperationalError as e:
+            # Fresh copy has no such table yet (e.g. very first run) --
+            # nothing to merge, local copy (already CREATE-TABLE-IF-NOT-
+            # EXISTS'd above) stays as the source of truth.
+            print(f"  (nothing to merge for {table_name}: {e})")
+            conn.rollback()
+        finally:
+            try:
+                cur.execute("DETACH DATABASE fresh_merge_src")
+            except sqlite3.OperationalError:
+                pass
+        conn.close()
+    finally:
+        if os.path.exists(fresh_path):
+            os.remove(fresh_path)
 
 
 def main():
