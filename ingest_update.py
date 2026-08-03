@@ -235,11 +235,17 @@ def ingest_userlist(files):
     insert_cols_sql = ", ".join(file_cols)
     update_cols_sql = ", ".join(f"{c} = ?" for c in file_cols[1:])  # skip user_id (WHERE key, not SET)
     updated, inserted, skipped_files, skipped_rows = 0, 0, 0, 0
+    present_ids = set()
     for f in files:
-        if already_ingested(conn, f):
+        skip_write = already_ingested(conn, f)
+        if skip_write:
             print(f"  skip (already ingested): {f}")
             skipped_files += 1
-            continue
+        # Rows are read even for an already-ingested file: `present_ids`
+        # below needs every user_id this file lists regardless of whether
+        # its insert/update work was already applied in a prior run --
+        # skipping the read here would make the prune step below think
+        # those users are no longer in the platform's userlist at all.
         _, rows = load_sheet(f)
         for row in rows:
             if row[0] is None:
@@ -255,6 +261,9 @@ def ingest_userlist(files):
                 continue
             row[0] = int(float(row[0]))
             uid = row[0]
+            present_ids.add(uid)
+            if skip_write:
+                continue
             existing = cur.execute("SELECT update_time FROM users WHERE user_id = ?", (uid,)).fetchone()
             if existing is None:
                 cur.execute(f"INSERT INTO users ({insert_cols_sql}) VALUES ({','.join(['?']*n_cols)})", row)
@@ -264,9 +273,47 @@ def ingest_userlist(files):
                 if new_ut is not None and (old_ut is None or str(new_ut) > str(old_ut)):
                     cur.execute(f"UPDATE users SET {update_cols_sql} WHERE user_id = ?", row[1:] + [uid])
                     updated += 1
-        mark_ingested(conn, f)
+        if not skip_write:
+            mark_ingested(conn, f)
         conn.commit()
     print(f"Master Userlist: {inserted} new, {updated} updated, {skipped_rows} rows skipped (bad shape), {skipped_files} files already ingested")
+
+    # Prune users no longer present in the platform's own userlist export.
+    # Confirmed with the user: a "new userlist" always arrives as a single
+    # file (never split across multiple uploads), so `present_ids` -- built
+    # from every file passed to this call -- is safe to treat as the
+    # complete, current set of real users; anyone in `users` but not in it
+    # is gone from the platform and gets removed here. No safety threshold
+    # on how many get removed -- explicit user decision to trust every
+    # userlist upload at face value, so an unexpectedly-shaped or
+    # truncated file WILL wipe out most of `users` rather than being
+    # rejected.
+    #
+    # Cascades to every other user_id-keyed table in master_userlist.db
+    # (agent_assignments, balance_adjustments, banned_users) so nothing is
+    # left pointing at a user_id that no longer exists in `users`.
+    # Deliberately does NOT touch daily_records.db -- a removed user's
+    # recent deposit/withdrawal/wallet/bonus history (33-day rolling
+    # window) is kept for reporting/audit purposes even after their
+    # profile is gone, per explicit user decision.
+    if present_ids:
+        existing_ids = {r[0] for r in cur.execute("SELECT user_id FROM users").fetchall()}
+        remove_ids = list(existing_ids - present_ids)
+        if remove_ids:
+            cur.execute("CREATE TABLE IF NOT EXISTS agent_assignments (user_id INTEGER PRIMARY KEY, agent_name TEXT)")
+            CHUNK = 500  # stay well under SQLite's per-statement variable limit
+            for i in range(0, len(remove_ids), CHUNK):
+                chunk = remove_ids[i:i + CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                cur.execute(f"DELETE FROM users WHERE user_id IN ({placeholders})", chunk)
+                cur.execute(f"DELETE FROM agent_assignments WHERE user_id IN ({placeholders})", chunk)
+                for table in ("balance_adjustments", "banned_users"):
+                    try:
+                        cur.execute(f"DELETE FROM {table} WHERE user_id IN ({placeholders})", chunk)
+                    except sqlite3.OperationalError:
+                        pass  # table doesn't exist yet on a from-scratch DB
+            conn.commit()
+        print(f"Master Userlist prune: {len(remove_ids)} user(s) removed (no longer in the uploaded userlist)")
     conn.close()
 
 
