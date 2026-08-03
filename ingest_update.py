@@ -296,12 +296,26 @@ def ingest_userlist(files):
     # recent deposit/withdrawal/wallet/bonus history (33-day rolling
     # window) is kept for reporting/audit purposes even after their
     # profile is gone, per explicit user decision.
+    #
+    # Also tombstones every removed user_id in `removed_users`. This is
+    # required, not optional: since transaction history is kept, the very
+    # next hourly api_pull_ingest.py run would otherwise see a removed
+    # user's retained deposit/withdrawal/wallet activity, find no `users`
+    # row for them, and silently re-insert them as a "new" user --
+    # confirmed in production 2026-08-03, where a prune of 12224 users was
+    # undone down to 651 within one hourly cycle. sync_master_userlist()
+    # checks this table before treating an unrecognized user_id as
+    # genuinely new. A user_id is un-tombstoned below if they reappear in
+    # a later userlist upload, so a real returning user isn't blocked
+    # forever by an old removal.
     if present_ids:
+        cur.execute("CREATE TABLE IF NOT EXISTS removed_users (user_id INTEGER PRIMARY KEY, removed_at TEXT)")
         existing_ids = {r[0] for r in cur.execute("SELECT user_id FROM users").fetchall()}
         remove_ids = list(existing_ids - present_ids)
+        CHUNK = 500  # stay well under SQLite's per-statement variable limit
         if remove_ids:
             cur.execute("CREATE TABLE IF NOT EXISTS agent_assignments (user_id INTEGER PRIMARY KEY, agent_name TEXT)")
-            CHUNK = 500  # stay well under SQLite's per-statement variable limit
+            removed_at = datetime.utcnow().isoformat()
             for i in range(0, len(remove_ids), CHUNK):
                 chunk = remove_ids[i:i + CHUNK]
                 placeholders = ",".join("?" * len(chunk))
@@ -312,8 +326,25 @@ def ingest_userlist(files):
                         cur.execute(f"DELETE FROM {table} WHERE user_id IN ({placeholders})", chunk)
                     except sqlite3.OperationalError:
                         pass  # table doesn't exist yet on a from-scratch DB
+                cur.executemany(
+                    "INSERT OR REPLACE INTO removed_users (user_id, removed_at) VALUES (?, ?)",
+                    [(uid, removed_at) for uid in chunk],
+                )
             conn.commit()
         print(f"Master Userlist prune: {len(remove_ids)} user(s) removed (no longer in the uploaded userlist)")
+
+        # Un-tombstone anyone who's reappeared in this upload -- they're
+        # confirmed real again by the platform's own current userlist.
+        present_list = list(present_ids)
+        untombstoned = 0
+        for i in range(0, len(present_list), CHUNK):
+            chunk = present_list[i:i + CHUNK]
+            placeholders = ",".join("?" * len(chunk))
+            cur.execute(f"DELETE FROM removed_users WHERE user_id IN ({placeholders})", chunk)
+            untombstoned += cur.rowcount
+        if untombstoned:
+            conn.commit()
+            print(f"Master Userlist prune: {untombstoned} previously-removed user(s) un-tombstoned (reappeared in this upload)")
     conn.close()
 
 
