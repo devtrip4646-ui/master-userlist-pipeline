@@ -9,7 +9,7 @@ Usage:
   python3 ingest_update.py --deposits a.xlsx --withdrawals b.xlsx --wallet c.xlsx --userlist d.xlsx
 
 Any combination of the four flags can be passed in one run. After ingest, Daily
-Records tables are purged to a rolling 33-day window (by create_time), and both
+Records tables are purged to a rolling 32-day window (by create_time), and both
 DBs are re-uploaded to R2 automatically unless --no-upload is passed.
 """
 import argparse
@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 BASE = os.path.dirname(os.path.abspath(__file__))
 MASTER_DB = os.path.join(BASE, "master_userlist.db")
 DAILY_DB = os.path.join(BASE, "daily_records.db")
-RETENTION_DAYS = 33
+RETENTION_DAYS = 32
 
 import openpyxl
 
