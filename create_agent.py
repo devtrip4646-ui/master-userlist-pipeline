@@ -32,6 +32,7 @@ import sqlite3
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 MASTER_DB = os.path.join(BASE, "master_userlist.db")
+DAILY_DB = os.path.join(BASE, "daily_records.db")
 
 
 def r2_client():
@@ -61,8 +62,14 @@ def main():
     s3 = r2_client()
     try:
         s3.download_file(bucket, "master_userlist.db", MASTER_DB)
+        # Not modified here, but build_deposit_report.py (run right after
+        # this script, in the same job workspace, since create_agent.yml
+        # -- unlike reassign_agent.yml -- refreshes the report
+        # synchronously) needs it present locally. Same pattern as
+        # ban_user.py.
+        s3.download_file(bucket, "daily_records.db", DAILY_DB)
     except Exception as e:
-        print(f"FATAL: could not download master_userlist.db from R2: {e}", file=sys.stderr)
+        print(f"FATAL: could not download DBs from R2: {e}", file=sys.stderr)
         sys.exit(1)
 
     conn = sqlite3.connect(MASTER_DB)
