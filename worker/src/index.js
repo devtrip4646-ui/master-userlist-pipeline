@@ -89,8 +89,50 @@ document.getElementById('triggerPipelineBtn').addEventListener('click', async ()
 
 <hr style="margin:40px 0;border:none;border-top:1px solid #eee;">
 
+<h1>Create New Agent</h1>
+<p>Adds a new agent with no users assigned yet, so it appears in the Reassign Agent dropdown right away -- create the agent here first, then reassign users to them from the dashboard's Search User page.</p>
+<form id="createAgentForm">
+  <input type="text" id="createAgentInput" placeholder="New agent name, e.g. Priya (WFH)" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:13px;box-sizing:border-box;">
+  <button type="submit" id="createAgentBtn" style="margin-top:10px;background:#4f46e5;">Create Agent</button>
+</form>
+<div id="createAgentMsg" style="margin-top:10px;font-size:14px;"></div>
+
+<script>
+document.getElementById('createAgentForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('createAgentBtn');
+  const msg = document.getElementById('createAgentMsg');
+  const input = document.getElementById('createAgentInput');
+  const agent_name = input.value.trim();
+  if (!agent_name) return;
+  const password = prompt('Enter password to create a new agent:');
+  if (password === null) return;
+  btn.disabled = true;
+  msg.textContent = 'Creating...';
+  msg.className = '';
+  try {
+    const res = await fetch('/create-agent', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agent_name, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.status);
+    msg.textContent = '"' + agent_name + '" created -- will appear in the Reassign Agent dropdown in a few minutes, once the report refreshes.';
+    msg.className = 'ok';
+    input.value = '';
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.className = 'err';
+  }
+  btn.disabled = false;
+});
+</script>
+
+<hr style="margin:40px 0;border:none;border-top:1px solid #eee;">
+
 <h1>Agent Logins</h1>
-<p>Every agent currently in the agent list, with their dashboard login password (first 2 letters of their name + "0987", bumped to 3 letters for any agent whose 2-letter prefix collides with another -- or a custom password, if you've changed one). Computed fresh from the current list every time -- a newly added agent shows up here automatically, nothing to separately create. Use "Change" to set a custom password for any agent; it replaces their default one.</p>
+<p>Every agent currently in the agent list, with their dashboard login password (first 2 letters of their name + "0987", bumped to 3 letters for any agent whose 2-letter prefix collides with another -- or a custom password, if you've changed one). Computed fresh from the current agent list every time -- any agent (created above, or with users already assigned) shows up here automatically. Use "Change" to set a custom password for any agent; it replaces their default one.</p>
 <button id="agentLoginsBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:14px;cursor:pointer;">Show Agent Logins</button>
 <div id="agentLoginsMsg" style="margin-top:10px;font-size:14px;"></div>
 <div id="agentLoginsTable" style="margin-top:12px;"></div>
@@ -352,6 +394,10 @@ async function triggerReassign(env, userIds, agent) {
   return dispatchWorkflow(env, "reassign_agent.yml", { user_ids: ids.join(","), agent: agent || "" });
 }
 
+async function triggerCreateAgent(env, agentName) {
+  return dispatchWorkflow(env, "create_agent.yml", { agent_name: agentName });
+}
+
 async function triggerBanUser(env, userId) {
   return dispatchWorkflow(env, "ban_user.yml", { user_id: String(userId) });
 }
@@ -597,6 +643,28 @@ export default {
         });
       } catch (err) {
         return jsonError(err.message || "Unknown error", 500, CORS_HEADERS);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/create-agent") {
+      try {
+        const { agent_name, password } = await request.json();
+        if (password !== env.ACTION_PASSWORD) {
+          return jsonError("Access Denied", 403);
+        }
+        const agentName = typeof agent_name === "string" ? agent_name.trim() : "";
+        if (!agentName) {
+          return jsonError("agent_name is required", 400);
+        }
+        if (agentName === "Un-Assigned") {
+          return jsonError('"Un-Assigned" is a reserved label, not a real agent name', 400);
+        }
+        await triggerCreateAgent(env, agentName);
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      } catch (err) {
+        return jsonError(err.message || "Unknown error", 500);
       }
     }
 

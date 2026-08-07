@@ -3588,7 +3588,22 @@ def main():
     # window for the Performance page -- small enough (agents x 7 categories
     # x up to 35 days) to ship in full and let the frontend do date-range
     # filtering/aggregation client-side, same pattern as premium_active etc.
-    agent_list = sorted(set(agent_by_user.values()))
+    #
+    # agent_list is the union of agent_assignments' distinct values (agents
+    # with at least one user) and agent_roster (agents explicitly created
+    # via create_agent.py, possibly with zero users so far) -- see
+    # create_agent.py for why the roster exists: without it, a brand-new
+    # agent had no way to appear in the Reassign Agent dropdown (which reads
+    # this same agent_list) until after they already had a user assigned.
+    roster_names = set()
+    if os.path.exists(master_db_path):
+        try:
+            rconn = sqlite3.connect(master_db_path)
+            roster_names = {r[0] for r in rconn.execute("SELECT agent_name FROM agent_roster").fetchall()}
+            rconn.close()
+        except sqlite3.OperationalError:
+            pass  # table doesn't exist yet -- no agent has ever been created via the roster
+    agent_list = sorted(set(agent_by_user.values()) | roster_names)
     agent_performance_rows = []
     if os.path.exists(master_db_path) and agent_list:
         mconn4 = sqlite3.connect(master_db_path)
