@@ -1,4 +1,4 @@
-name: Check 4-5AM IST activity (read-only diagnostic)
+name: Check 4-5AM IST activity detail (read-only diagnostic)
 
 on:
   workflow_dispatch: {}
@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - name: Check 4-5AM IST activity
+      - name: Check 4-5AM IST activity detail
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -20,4 +20,4 @@ jobs:
           R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          python3 check_4to5am_activity.py
+          python3 check_4to5am_detail.py

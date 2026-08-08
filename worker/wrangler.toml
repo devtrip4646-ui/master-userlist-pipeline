@@ -1,0 +1,24 @@
+name = "master-userlist-upload"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[[r2_buckets]]
+binding = "USERLIST_BUCKET"
+bucket_name = "master-userlist-db"
+
+[vars]
+GITHUB_OWNER = "devtrip4646-ui"
+GITHUB_REPO = "master-userlist-pipeline"
+R2_S3_ENDPOINT = "https://c1223b5cd793d0566f75f2868dce049f.r2.cloudflarestorage.com"
+R2_BUCKET_NAME = "master-userlist-db"
+
+[triggers]
+# GitHub Actions' own `schedule:` trigger stopped firing entirely for this repo
+# (confirmed dead for 30+ min across two workflows, survived disable/re-enable and
+# a fresh commit). Cloudflare Cron Triggers are independent of GitHub's scheduler
+# and dispatch the same workflows via the GitHub API instead.
+# Sweep only rescues orphaned MANUAL uploads (web-form ingests dropped by a GitHub
+# Actions concurrency race) -- it has no effect on master DB freshness, which
+# comes entirely from the hourly pull. So it runs just once/day (offset 30min
+# from the pull) instead of every 20min, which alone was ~2,160 billed min/month.
+crons = ["0 * * * *", "30 0 * * *"]
