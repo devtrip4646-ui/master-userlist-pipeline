@@ -394,6 +394,25 @@ def normalize(s):
     return re.sub(r"\s+", " ", str(s).strip().lower())
 
 
+def _normalize_weekly_loss_bonus(source_id):
+    """Shared by classify_bonus()'s rules 2 and 3: "Weekly Loss Bonus"
+    arrives with a per-instance suffix appended directly to source_id --
+    confirmed in two different shapes so far ("Weekly Loss Bonus-<random
+    hex>" via rule 3's blank-game_name path, and, confirmed 2026-08-09,
+    "Weekly Loss Bonus:<timestamp>:<random>" via rule 2's "Elle Import
+    Excel Add" wrapper path) -- without normalizing, each instance splits
+    into its own near-duplicate matched_category (811 separate one-row
+    "categories" confirmed on 2026-08-09 alone), instead of rolling up
+    into a single "Weekly Loss Bonus" report row. Deliberately does NOT
+    match "Weekly Loss Back Bonus" (a single, textually distinct
+    occurrence, confirmed 2026-08-02) -- left as its own category rather
+    than assumed to be the same thing. Returns the normalized label, or
+    None if source_id doesn't match (caller falls back to raw source_id)."""
+    if source_id.lower().startswith("weekly loss bonus"):
+        return "Weekly Loss Bonus"
+    return None
+
+
 def classify_bonus(game_name, source, source_id):
     """A wallet_transactions row is a bonus credit under any of five rules,
     all confirmed against real data:
@@ -409,7 +428,10 @@ def classify_bonus(game_name, source, source_id):
        would otherwise match it too, but lump every row under the
        meaningless label "Elle Import Excel Add"): the real bonus identity
        lives in source_id instead (confirmed values: "Daily Active Low",
-       "Daily Active Low VIP"), always with a blank source too.
+       "Daily Active Low VIP", and -- confirmed 2026-08-09 -- "Weekly Loss
+       Bonus:<timestamp>:<random>", which needs the same normalization as
+       rule 3's own "Weekly Loss Bonus" family), always with a blank
+       source too.
 
     3. game_name is BLANK and source_id contains the word "bonus" -- a third
        family ("Daily Active Bonus-<random hex>", "Daily Active Bonus
@@ -425,6 +447,10 @@ def classify_bonus(game_name, source, source_id):
     source_id = str(source_id).strip() if source_id else ""
 
     if game_name == "Elle Import Excel Add":
+        if source_id:
+            normalized = _normalize_weekly_loss_bonus(source_id)
+            if normalized:
+                return normalized
         return source_id or game_name
 
     if game_name and not source:
@@ -443,12 +469,10 @@ def classify_bonus(game_name, source, source_id):
         # source_id through unnormalized, splitting one bonus type into two
         # different matched_category values depending on incidental
         # casing, which is why it looked present for some users and
-        # missing for others on the Search User page. Deliberately does
-        # NOT match "Weekly Loss Back Bonus" (a single, textually distinct
-        # occurrence) -- left as its own category rather than assumed to
-        # be the same thing.
-        if lowered.startswith("weekly loss bonus"):
-            return "Weekly Loss Bonus"
+        # missing for others on the Search User page.
+        normalized = _normalize_weekly_loss_bonus(source_id)
+        if normalized:
+            return normalized
         return source_id
 
     # 4. game_name is BLANK and source_id starts with "WEEKLY_SIGN" -- a
@@ -478,7 +502,7 @@ def classify_bonus(game_name, source, source_id):
 # under the new rules, then fall back to only scanning genuinely new rows.
 # Without this, a rule change would only apply to rows inserted AFTER the
 # change; existing rows that now match would silently stay unclassified.
-CLASSIFY_BONUS_RULES_VERSION = 6
+CLASSIFY_BONUS_RULES_VERSION = 7
 
 
 def stable_wallet_id(raw_id, create_time):
@@ -535,14 +559,23 @@ def ingest_wallet(files):
         "OR matched_category IN ('Chicken Road Bonus', 'Bonus Hunter')"
     )
     conn.commit()
-    # Retroactive cleanup: already-stored rows classified under the old
-    # unnormalized "Weekly Loss BONUS" casing (classify_bonus() now folds
-    # this into "Weekly Loss Bonus" going forward, see rule 3 above) --
-    # already-classified rows aren't touched by the backfill scan below
-    # (it only looks at rows with no bonuses entry at all), so they need
-    # an explicit one-time merge here. Safe to run every time (a no-op
-    # once merged).
-    cur.execute("UPDATE bonuses SET matched_category = 'Weekly Loss Bonus' WHERE matched_category = 'Weekly Loss BONUS'")
+    # Retroactive cleanup: already-stored rows classified under an
+    # unnormalized "Weekly Loss Bonus" variant -- the old "Weekly Loss
+    # BONUS" casing (2026-08-02 fix), and, confirmed 2026-08-09, a
+    # per-instance "Weekly Loss Bonus:<timestamp>:<random>" suffix that
+    # was slipping through rule 2's "Elle Import Excel Add" path
+    # unnormalized (811 separate one-row "categories" on 2026-08-09
+    # alone -- see _normalize_weekly_loss_bonus()). Already-classified
+    # rows aren't touched by the backfill scan below (it only looks at
+    # rows with no bonuses entry at all), so they need an explicit
+    # one-time merge here. LIKE 'Weekly Loss Bonus%' is safe against
+    # "Weekly Loss Back Bonus" (a single, textually distinct occurrence)
+    # since "Back" doesn't fall after "Weekly Loss Bonus" in that string.
+    # Safe to run every time (a no-op once merged).
+    cur.execute(
+        "UPDATE bonuses SET matched_category = 'Weekly Loss Bonus' "
+        "WHERE matched_category LIKE 'Weekly Loss Bonus%' AND matched_category != 'Weekly Loss Bonus'"
+    )
     conn.commit()
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_user ON bonuses(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_name ON bonuses(bonus_name)")
