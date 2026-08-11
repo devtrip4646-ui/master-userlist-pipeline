@@ -2200,7 +2200,24 @@ def _classify_user_status(inactive_days, recharge_count):
     return "Churn" if recharge_count >= USER_STATUS_CHURN_MIN_RECHARGE_COUNT else "Dormant / Chutiya"
 
 
-def user_category_status_report(mconn, now):
+def user_category_status_slug(category=None, status=None):
+    """R2 object key (without the reports/user_category_status/ prefix or
+    .json suffix) for a given category/status export -- category=None
+    means "every category" (a column/status total), status=None means
+    "every status" (a row/category total), both None means the grand
+    total. Matches the four export button targets on the Home page
+    matrix: individual cell, row header, column header, and the
+    bottom-right grand total."""
+    if category is None and status is None:
+        return "total"
+    if status is None:
+        return f"row__{slugify(category)}"
+    if category is None:
+        return f"col__{slugify(status)}"
+    return f"{slugify(category)}__{slugify(status)}"
+
+
+def user_category_status_report(mconn, now, agent_by_user):
     """Home page report, above Deposit Analysis: every registered user
     classified into one Category x one Status cell (see
     _classify_user_category/_classify_user_status), reporting user count
@@ -2211,13 +2228,23 @@ def user_category_status_report(mconn, now):
     directly rather than fetchall() -- this table can run to hundreds of
     thousands of rows, and a giant fetchall() is exactly what silently
     OOM-killed the bonus backfill job on wallet_transactions (16.9M+
-    rows) -- see classify_bonus's backfill in ingest_update.py."""
+    rows) -- see classify_bonus's backfill in ingest_update.py.
+
+    Also returns cell_users: {(category, status): [per-user row dicts]},
+    the raw membership backing each cell -- used by
+    upload_user_category_status_exports() to build the "download this
+    cell's userlist" files behind the matrix's export buttons. Held
+    entirely in memory (like deposit_rows/withdrawal_rows elsewhere in
+    this file) rather than streamed -- at ~150-200 bytes/row this is
+    tens of MB even at the current ~350k total users, well within what
+    this process already holds for other full-dataset reports."""
     cells = {(c, s): {"count": 0, "total_recharge": 0.0, "total_recharge_count": 0} for c in USER_CATEGORIES for s in USER_STATUSES}
     category_totals = {c: {"count": 0, "total_recharge": 0.0, "total_recharge_count": 0} for c in USER_CATEGORIES}
     status_totals = {s: {"count": 0, "total_recharge": 0.0, "total_recharge_count": 0} for s in USER_STATUSES}
+    cell_users = {(c, s): [] for c in USER_CATEGORIES for s in USER_STATUSES}
 
-    for total_recharge, recharge_count, total_withdrawal, last_active_time, create_time in mconn.execute(
-        "SELECT total_recharge, recharge_count, total_withdrawal, last_active_time, create_time FROM users"
+    for user_id, vip_level, city, total_recharge, recharge_count, total_withdrawal, last_active_time, create_time in mconn.execute(
+        "SELECT user_id, vip_level, city, total_recharge, recharge_count, total_withdrawal, last_active_time, create_time FROM users"
     ):
         total_recharge = total_recharge or 0.0
         recharge_count = recharge_count or 0
@@ -2234,6 +2261,21 @@ def user_category_status_report(mconn, now):
             bucket["count"] += 1
             bucket["total_recharge"] += total_recharge
             bucket["total_recharge_count"] += recharge_count
+
+        cell_users[(category, status)].append({
+            "user_id": user_id,
+            "agent": agent_for(agent_by_user, user_id),
+            "vip_level": vip_level,
+            "city": city,
+            "category": category,
+            "status": status,
+            "total_recharge": round(total_recharge, 2),
+            "recharge_count": recharge_count,
+            "aov": round(total_recharge / recharge_count, 2) if recharge_count else 0.0,
+            "total_withdrawal": round(total_withdrawal or 0.0, 2),
+            "last_active_time": last_active_time,
+            "register_time": create_time,
+        })
 
     def arpu(bucket):
         return round(bucket["total_recharge"] / bucket["total_recharge_count"], 2) if bucket["total_recharge_count"] else 0.0
@@ -2256,7 +2298,35 @@ def user_category_status_report(mconn, now):
         "matrix": matrix,
         "by_category": by_category,
         "by_status": by_status,
-    }
+    }, cell_users
+
+
+def upload_user_category_status_exports(cell_users, s3, bucket):
+    """Uploads the 45 files (32 cells + 8 row/category totals + 4 column/
+    status totals + 1 grand total) backing the Home page matrix's export
+    buttons, to reports/user_category_status/<key>.json -- see
+    user_category_status_slug() for the key scheme. Row/column/grand
+    totals are built by concatenating the relevant cells' already-built
+    lists (list concatenation copies references, not the row dicts
+    themselves, so this doesn't meaningfully multiply memory use)."""
+    def put(key, rows):
+        body = json.dumps({"count": len(rows), "users": rows}).encode("utf-8")
+        s3.put_object(Bucket=bucket, Key=f"reports/user_category_status/{key}.json", Body=body, ContentType="application/json")
+
+    all_users = []
+    for category in USER_CATEGORIES:
+        row_users = []
+        for status in USER_STATUSES:
+            rows = cell_users[(category, status)]
+            put(user_category_status_slug(category, status), rows)
+            row_users.extend(rows)
+        put(user_category_status_slug(category, None), row_users)
+        all_users.extend(row_users)
+    for status in USER_STATUSES:
+        col_users = [r for c in USER_CATEGORIES for r in cell_users[(c, status)]]
+        put(user_category_status_slug(None, status), col_users)
+    put(user_category_status_slug(None, None), all_users)
+    print(f"Uploaded 45 user-category-status export files ({len(all_users)} users total)")
 
 
 # Raw "city" values on user records are a messy mix of actual state/region
@@ -3581,8 +3651,17 @@ def main():
         roller_master_conn.close()
 
         ucs_conn = sqlite3.connect(report_master_db_path)
-        user_category_status = user_category_status_report(ucs_conn, now)
+        user_category_status, ucs_cell_users = user_category_status_report(ucs_conn, now, agent_by_user)
         ucs_conn.close()
+        ucs_creds = load_creds()
+        ucs_s3 = boto3.client(
+            "s3",
+            endpoint_url=ucs_creds["R2_ENDPOINT_URL"],
+            aws_access_key_id=ucs_creds["R2_ACCESS_KEY_ID"],
+            aws_secret_access_key=ucs_creds["R2_SECRET_ACCESS_KEY"],
+            region_name="auto",
+        )
+        upload_user_category_status_exports(ucs_cell_users, ucs_s3, ucs_creds["R2_BUCKET"])
 
     # Persist today's per-agent performance, then read back the full rolling
     # window for the Performance page -- small enough (agents x 7 categories

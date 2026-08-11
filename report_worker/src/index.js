@@ -362,6 +362,10 @@ const PAGE = `<!DOCTYPE html>
   .ucs-count { font-weight: 700; font-size: 12.5px; }
   .ucs-arpu { font-size: 10px; color: #9ca3af; }
   .ucs-count-zero { color: #d1d5db; font-weight: 400; }
+  span.ucs-clickable { cursor: pointer; border-radius: 4px; padding: 2px 4px; display: inline-block; }
+  span.ucs-clickable:hover { background: #eef2ff; }
+  td.ucs-clickable, th.ucs-clickable { cursor: pointer; }
+  td.ucs-clickable:hover, th.ucs-clickable:hover { background: #eef2ff; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -3717,22 +3721,80 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     const grandRecharge = ucs.by_category.reduce((s, r) => s + r.arpu * r.user_count, 0);
     const grandArpu = grandCount ? Math.round((grandRecharge / grandCount) * 100) / 100 : 0;
 
-    const cellHtml = (cell) => cell.user_count
-      ? '<div class="ucs-count">' + fmt(cell.user_count) + '</div><div class="ucs-arpu">ARPU ' + money(cell.arpu) + '</div>'
-      : '<div class="ucs-count ucs-count-zero">0</div>';
+    // Mirrors user_category_status_slug() in build_deposit_report.py exactly
+    // -- category/status null means "every category"/"every status" (a
+    // column/row total), both null is the grand total.
+    const ucsSlug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
+    const ucsExportKey = (cat, status) => {
+      if (cat == null && status == null) return 'total';
+      if (status == null) return 'row__' + ucsSlug(cat);
+      if (cat == null) return 'col__' + ucsSlug(status);
+      return ucsSlug(cat) + '__' + ucsSlug(status);
+    };
 
-    const thead = '<thead><tr><th>Category</th>' + ucs.statuses.map(s => '<th>' + s + '</th>').join('') + '<th>Total</th></tr></thead>';
-    const bodyRows = ucs.categories.map(cat =>
-      '<tr><td>' + cat + '</td>' +
-      ucs.statuses.map(s => '<td>' + cellHtml(cellFor(cat, s)) + '</td>').join('') +
-      '<td class="ucs-total-col">' + cellHtml(catTotal(cat)) + '</td></tr>'
-    ).join('');
+    // cat/status follow ucsExportKey's null convention; label is used in
+    // the downloaded filename. Non-clickable (no data-ucs-key, no pointer
+    // cursor) when the cell/total is empty -- nothing to export.
+    const cellHtml = (cell, cat, status, label) => {
+      const inner = cell.user_count
+        ? '<div class="ucs-count">' + fmt(cell.user_count) + '</div><div class="ucs-arpu">ARPU ' + money(cell.arpu) + '</div>'
+        : '<div class="ucs-count ucs-count-zero">0</div>';
+      if (!cell.user_count) return inner;
+      return '<span class="ucs-clickable" data-ucs-key="' + ucsExportKey(cat, status) +
+        '" data-ucs-label="' + label.replace(/"/g, '&quot;') + '" title="Click to download this userlist">' + inner + '</span>';
+    };
+
+    const thead = '<thead><tr><th>Category</th>' +
+      ucs.statuses.map(s => {
+        const t = statusTotal(s);
+        return '<th' + (t.user_count ? ' class="ucs-clickable" data-ucs-key="' + ucsExportKey(null, s) +
+          '" data-ucs-label="' + s.replace(/"/g, '&quot;') + '" title="Click to download every ' + s + ' user"' : '') + '>' + s + '</th>';
+      }).join('') +
+      '<th>Total</th></tr></thead>';
+    const bodyRows = ucs.categories.map(cat => {
+      const rowTotal = catTotal(cat);
+      const rowHeader = rowTotal.user_count
+        ? '<td class="ucs-clickable" data-ucs-key="' + ucsExportKey(cat, null) + '" data-ucs-label="' +
+          cat.replace(/"/g, '&quot;') + '" title="Click to download every ' + cat + ' user">' + cat + '</td>'
+        : '<td>' + cat + '</td>';
+      return '<tr>' + rowHeader +
+        ucs.statuses.map(s => '<td>' + cellHtml(cellFor(cat, s), cat, s, cat + ' / ' + s) + '</td>').join('') +
+        '<td class="ucs-total-col">' + cellHtml(rowTotal, cat, null, cat) + '</td></tr>';
+    }).join('');
     const totalRow = '<tr class="ucs-total-row"><td>Total</td>' +
-      ucs.statuses.map(s => '<td>' + cellHtml(statusTotal(s)) + '</td>').join('') +
-      '<td class="ucs-total-col">' + cellHtml({ user_count: grandCount, arpu: grandArpu }) + '</td></tr>';
+      ucs.statuses.map(s => '<td>' + cellHtml(statusTotal(s), null, s, s) + '</td>').join('') +
+      '<td class="ucs-total-col">' + cellHtml({ user_count: grandCount, arpu: grandArpu }, null, null, 'All Users') + '</td></tr>';
 
-    container.innerHTML = '<div class="ac-note">Each cell: user count, then lifetime ARPU (Average Recharge Per User) below it.</div>' +
+    container.innerHTML = '<div class="ac-note">Each cell: user count, then lifetime ARPU (Average Recharge Per User) below it. Click any count (or a row/column/Total label) to download that userlist.</div>' +
       '<div class="table-wrap"><table class="ucs-matrix-table">' + thead + '<tbody>' + bodyRows + totalRow + '</tbody></table></div>';
+
+    if (!container.dataset.ucsWired) {
+      container.dataset.ucsWired = '1';
+      container.addEventListener('click', async (e) => {
+        const el = e.target.closest('[data-ucs-key]');
+        if (!el) return;
+        const key = el.dataset.ucsKey;
+        const label = el.dataset.ucsLabel || key;
+        const prevTitle = el.title;
+        el.title = 'Downloading...';
+        try {
+          const res = await fetch('/api/user-category-status-export?key=' + encodeURIComponent(key));
+          const payload = await res.json();
+          if (!res.ok) throw new Error(payload.error || res.status);
+          const rows = (payload.users || []).map(u => ({
+            'User ID': u.user_id, 'Agent': u.agent || 'Un-Assigned', 'VIP Level': u.vip_level,
+            'City': u.city, 'Category': u.category, 'Status': u.status,
+            'Total Recharge': u.total_recharge, 'Recharge Count': u.recharge_count, 'AOV': u.aov,
+            'Total Withdrawal': u.total_withdrawal, 'Last Active': u.last_active_time, 'Registered': u.register_time,
+          }));
+          await downloadStyledExcel(rows, label.slice(0, 31) || 'Users', 'user-category-status-' + ucsSlug(label) + '.xlsx');
+        } catch (err) {
+          alert('Download failed: ' + err.message);
+        } finally {
+          el.title = prevTitle;
+        }
+      });
+    }
   }
 
   let yesterdayWdDay = 'yesterday';
@@ -4541,6 +4603,40 @@ export default {
       });
       ctx.waitUntil(edgeCache.put(cacheKey, response.clone()));
       return response;
+    }
+
+    // Admin-only: serves one of the 45 precomputed userlist export files
+    // behind the Home page's User Category & Status matrix (built by
+    // upload_user_category_status_exports() in build_deposit_report.py --
+    // see user_category_status_slug() there for the key scheme: a cell
+    // is "<category-slug>__<status-slug>", a row/category total is
+    // "row__<category-slug>", a column/status total is
+    // "col__<status-slug>", and the grand total is "total"). This report
+    // is never shown to agent logins, so the export is admin-only too --
+    // key is whitelisted to a narrow charset so it can only ever resolve
+    // to a path inside reports/user_category_status/, never escape it.
+    if (request.method === "GET" && url.pathname === "/api/user-category-status-export") {
+      if (sessionAgent) {
+        return new Response(JSON.stringify({ error: "Admin only" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const key = url.searchParams.get("key") || "";
+      if (!/^[a-z0-9_-]+$/.test(key)) {
+        return new Response(JSON.stringify({ error: "Invalid key" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const obj = await env.USERLIST_BUCKET.get(`reports/user_category_status/${key}.json`);
+      if (!obj) {
+        return new Response(JSON.stringify({ error: "No export found for this selection -- run the pipeline once after this deploy" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(obj.body, { headers: { "content-type": "application/json" } });
     }
 
     // Admin-only: generates every current agent's private access link,
