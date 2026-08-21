@@ -3529,7 +3529,7 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
           <div class="sec-title"><div class="badge b-cyan">&#128184;</div><h2>Highest Withdraw Users</h2><span class="today-tag" id="highest-withdraw-count">&mdash;</span></div>
           <button class="download-btn-sm" id="btn-dl-highest-withdraw-users">&#128190; Excel</button>
         </div>
-        <div class="ac-note">Users with lifetime total withdrawals of Rs 10,000+ (deposit column is today's deposit only, 0 if none)</div>
+        <div class="ac-note">Users with total withdrawals of Rs 10,000+ for today (deposit column is today's deposit only, 0 if none)</div>
         <div id="highest-withdraw-table"></div>
         <div class="ac-pagination" id="highest-withdraw-pagination"></div>
       </section>
@@ -3616,8 +3616,9 @@ if (!IS_ACTION_CENTER && !IS_PERFORMANCE && !IS_ANALYTICS && !IS_PLATFORM_ANALYS
     paginatedTable('highest-deposit-table', 'highest-deposit-pagination', scope.top_depositors || [], highestDepositCols, 6, { jumpDropdown: true });
     document.getElementById('highest-deposit-count').textContent = fmt((scope.top_depositors || []).length);
 
-    // top_withdrawers is lifetime, not scoped to the selected date (unlike
-    // top_depositors above) -- lives on the top-level data object, not scope.
+    // top_withdrawers is always TODAY's totals, fixed regardless of which
+    // date is selected on the page (unlike top_depositors above, which
+    // follows the date picker) -- lives on the top-level data object, not scope.
     const highestWithdrawCols = [
       { label: 'User ID', render: r => r.user_id },
       { label: 'Total Withdraw', num: true, render: r => money(r.total_withdraw), raw: r => r.total_withdraw },
