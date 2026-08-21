@@ -126,6 +126,36 @@ def top_depositors(records, withdrawal_records, min_total=TOP_DEPOSITORS_MIN_TOT
     return rows[:limit]
 
 
+TOP_WITHDRAWERS_MIN_TOTAL = 10000.0
+
+
+def top_withdrawers(mconn, today_deposit_records, min_total=TOP_WITHDRAWERS_MIN_TOTAL, limit=500):
+    """Lifetime highest-withdrawal users -- unlike top_depositors() above,
+    this isn't scoped to any single date: total_withdraw is
+    users.total_withdrawal from master_userlist.db, the permanent
+    cumulative lifetime total (maintained by sync_master_userlist() in
+    api_pull_ingest.py, never subject to daily_records.db's rolling
+    retention window), filtered to users whose LIFETIME total is
+    >= min_total. total_deposit is deliberately different-scoped: TODAY's
+    completed deposit total only (0 if none), not lifetime -- matches the
+    explicit user request to pair "have they ever withdrawn a lot" against
+    "did they deposit today" rather than against their own lifetime
+    deposit total. Powers the Home page's Highest Withdraw Users table."""
+    today_deposit_totals = defaultdict(float)
+    for r in today_deposit_records:
+        if r["status"] == "COMPLETE" and r["user_id"] is not None:
+            today_deposit_totals[r["user_id"]] += r["amount"]
+
+    rows = [
+        {"user_id": uid, "total_withdraw": round(total_withdrawal or 0.0, 2), "total_deposit": round(today_deposit_totals.get(uid, 0.0), 2)}
+        for uid, total_withdrawal in mconn.execute(
+            "SELECT user_id, total_withdrawal FROM users WHERE total_withdrawal >= ?", (min_total,)
+        ).fetchall()
+    ]
+    rows.sort(key=lambda x: -x["total_withdraw"])
+    return rows[:limit]
+
+
 def aggregate(records):
     """
     records: list of dicts with keys channel, amount, hour, status,
@@ -3494,6 +3524,13 @@ def main():
 
     today_str = now.date().isoformat()
     yesterday_str = (now.date() - timedelta(days=1)).isoformat()
+
+    top_withdrawer_rows = []
+    if report_master_db_path:
+        tw_conn = sqlite3.connect(report_master_db_path)
+        top_withdrawer_rows = top_withdrawers(tw_conn, by_date_records.get(today_str, []))
+        tw_conn.close()
+
     withdrawal_amount_range_by_day = {
         "today": withdrawal_amount_range_day_report(by_date_withdrawal_full.get(today_str, []), today_str),
         "yesterday": withdrawal_amount_range_day_report(by_date_withdrawal_full.get(yesterday_str, []), yesterday_str),
@@ -3769,6 +3806,7 @@ def main():
         },
         "withdrawal_analysis": withdrawal_analysis,
         "withdrawal_amount_range_by_day": withdrawal_amount_range_by_day,
+        "top_withdrawers": top_withdrawer_rows,
         # All-dates raw order rows (unlike by_date[...].withdrawal_orders,
         # which is scoped to a single selected date) -- needed for the
         # Processing/In-Review aging charts and the Last-4-Days completed
