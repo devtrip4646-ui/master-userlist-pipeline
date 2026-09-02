@@ -375,6 +375,22 @@ def ingest_withdrawals(files):
     # later) must overwrite the existing row, not be silently skipped.
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
+    # Confirmed 2026-09-02: the business API's withdraw export gained a new
+    # trailing column ("updateBy", position 36) with no warning -- every
+    # other column stayed in the same position, only this one is new. The
+    # INSERT below is purely positional (n_cols placeholders, no column
+    # names), so an unmigrated table with 36 columns crashed on the first
+    # row with 37 values: "Incorrect number of bindings supplied." Since
+    # the new column is always the LAST one and the schema-vs-export
+    # column count can only ever differ by whether this migration has run
+    # yet, this is safe to check unconditionally on every ingest (a no-op
+    # once applied) rather than needing a version bump like
+    # classify_bonus()'s CLASSIFY_BONUS_RULES_VERSION.
+    existing_cols = [r[1] for r in cur.execute("PRAGMA table_info(withdrawals)").fetchall()]
+    if "update_by" not in existing_cols:
+        cur.execute("ALTER TABLE withdrawals ADD COLUMN update_by TEXT")
+        conn.commit()
+        print("  migrated: added update_by column to withdrawals table")
     n_cols = len(cur.execute("PRAGMA table_info(withdrawals)").fetchall())
     added = 0
     for f in files:

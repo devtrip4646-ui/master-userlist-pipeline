@@ -106,7 +106,8 @@ CREATE TABLE withdrawals (
     manual_transfer_img TEXT,
     create_time TEXT,
     update_time TEXT,
-    package_id REAL
+    package_id REAL,
+    update_by TEXT
 )
 """)
 cur.execute("CREATE INDEX idx_wd_user ON withdrawals(user_id)")
