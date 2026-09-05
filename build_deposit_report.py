@@ -3190,7 +3190,12 @@ def new_users_lossback(mconn, master_db_path, deposit_rows, withdrawal_rows, age
                 "reward_pct": round(reward_pct * 100, 2), "seen_above_threshold": 0,
             }
         else:
-            # claim_count == 1 here (>=2 already handled above).
+            # claim_count == 1 here (>=2 already handled above). Recovery
+            # ("seen_above_threshold") still requires climbing back above
+            # the full eligible range (>20%) -- confirmed with the user
+            # 2026-09-05 -- but the claim-2 TRIGGER is the tighter 10%
+            # tier specifically, not the wider 20% tier claim 1 could have
+            # used (also confirmed 2026-09-05).
             if balance_pct > NEW_USER_LOSSBACK_TIER2_MAX_PCT:
                 if not claim["seen_above_threshold"]:
                     claims_cur.execute(
@@ -3200,6 +3205,8 @@ def new_users_lossback(mconn, master_db_path, deposit_rows, withdrawal_rows, age
                 continue
             if not claim["seen_above_threshold"]:
                 continue  # still the same low balance claim 1 already covered -- not a new loss event
+            if balance_pct > NEW_USER_LOSSBACK_TIER1_MAX_PCT:
+                continue  # recovered, but not back down to the tight tier yet
             claims_cur.execute(
                 "UPDATE new_user_lossback_claims SET claim_count = 2 WHERE user_id = ?", (user_id,)
             )

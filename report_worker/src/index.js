@@ -987,7 +987,7 @@ if (IS_ACTION_CENTER) {
           <div class="rh-count">\${fmt(nul.eligible_count)}<small>Eligible Users</small></div>
           <div class="rh-pct">\${money(nul.total_reward)}<small>Total Reward Payable</small></div>
         </div>
-        <div class="ac-note">Today's first-time depositors only &middot; no withdrawal applied today (any status, permanent for the day) &middot; wallet balance &le;10% of today's deposit: 20% reward &middot; balance &gt;10%-20%: 13% reward &middot; balance above 20%: not eligible &middot; max 2 claims ever -- 2nd claim needs balance to recover above 20% then drop back down again, at the same reward amount as the 1st claim</div>
+        <div class="ac-note">Today's first-time depositors only &middot; no withdrawal applied today (any status, permanent for the day) &middot; wallet balance &le;10% of today's deposit: 20% reward &middot; balance &gt;10%-20%: 13% reward &middot; balance above 20%: not eligible &middot; max 2 claims ever -- 2nd claim needs balance to recover above 20% then drop back down to &le;10% specifically, at the same reward amount as the 1st claim</div>
         <div id="new-users-lossback-table"></div>
         <div class="ac-pagination" id="new-users-lossback-pagination"></div>
       </section>
