@@ -590,7 +590,7 @@ function scopeReportToAgent(data, agentName) {
       ...scoped.new_users_lossback,
       rows,
       eligible_count: rows.length,
-      total_reward: Math.round(rows.reduce((s, r) => s + r.total_reward_amount, 0) * 100) / 100,
+      total_reward: Math.round(rows.reduce((s, r) => s + r.reward_amount, 0) * 100) / 100,
     };
   }
 
@@ -862,10 +862,9 @@ if (IS_ACTION_CENTER) {
       { label: 'VIP', render: r => (r.vip_level == null ? '&mdash;' : r.vip_level), raw: r => r.vip_level, num: true },
       { label: 'Total Deposit', render: r => money(r.total_deposit), raw: r => r.total_deposit, num: true },
       { label: 'Wallet Balance', render: r => money(r.wallet_balance), raw: r => r.wallet_balance, num: true },
+      { label: 'Balance %', render: r => Number(r.balance_pct).toFixed(2) + '%', raw: r => r.balance_pct, num: true },
       { label: 'Reward %', render: r => Number(r.reward_pct).toFixed(2) + '%', raw: r => r.reward_pct, num: true },
-      { label: 'Claims', render: r => r.claim_count + ' / 2', raw: r => r.claim_count, num: true },
-      { label: 'Reward Per Claim', render: r => money(r.reward_amount_per_claim), raw: r => r.reward_amount_per_claim, num: true },
-      { label: 'Total Reward', render: r => money(r.total_reward_amount), raw: r => r.total_reward_amount, num: true },
+      { label: 'Reward Amount', render: r => money(r.reward_amount), raw: r => r.reward_amount, num: true },
     ];
     const nul = data.new_users_lossback;
 
@@ -987,7 +986,7 @@ if (IS_ACTION_CENTER) {
           <div class="rh-count">\${fmt(nul.eligible_count)}<small>Eligible Users</small></div>
           <div class="rh-pct">\${money(nul.total_reward)}<small>Total Reward Payable</small></div>
         </div>
-        <div class="ac-note">Today's first-time depositors only &middot; no withdrawal applied today (any status, permanent for the day) &middot; wallet balance &le;10% of today's deposit: 20% reward &middot; balance &gt;10%-20%: 13% reward &middot; balance above 20%: not eligible &middot; max 2 claims ever -- 2nd claim needs balance to recover above 20% then drop back down to &le;10% specifically, at the same reward amount as the 1st claim</div>
+        <div class="ac-note">Today's first-time depositors only &middot; no withdrawal applied today (any status) &middot; wallet balance &le;10% of today's deposit: 20% reward &middot; balance &gt;10%-20%: 13% reward &middot; balance above 20%: not eligible</div>
         <div id="new-users-lossback-table"></div>
         <div class="ac-pagination" id="new-users-lossback-pagination"></div>
       </section>

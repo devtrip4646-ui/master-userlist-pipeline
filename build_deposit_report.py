@@ -3084,38 +3084,19 @@ def new_user_lossback_reward_pct(balance_pct):
     return None
 
 
-def new_users_lossback(mconn, master_db_path, deposit_rows, withdrawal_rows, agent_by_user, today):
+def new_users_lossback(mconn, deposit_rows, withdrawal_rows, agent_by_user, today):
     """Second Action Center section under Weekly Cashback Shield: TODAY's
     first-time depositors (source system's own is_first_deposit flag, same
     authoritative-over-33-day-retention reasoning as
     yesterday_first_deposit_users) who have NOT applied for any withdrawal
-    today (confirmed with the user: ANY withdrawal request today, any
-    status, is a PERMANENT disqualification for the rest of today -- even
-    a later run seeing them withdrawal-free again doesn't undo it, since
-    the check below only ever looks at the pipeline's own state, not a
-    live re-scan, once a user has been excluded).
-
-    Claim cap, confirmed explicitly with the user (this pipeline runs
-    hourly, so a single day's balance can dip below 20% more than once):
-    a user can be rewarded at most TWICE, ever (this whole feature is a
-    same-day-only thing, so "ever" == "today"). Claim 2 requires a
-    genuine round trip -- balance must climb back ABOVE the top tier
-    (20%) at some point after claim 1 (their wallet being credited
-    externally should naturally do this) and then drop back to <=20%
-    again with still no withdrawal -- not just still sitting at the same
-    low balance claim 1 already covered. Claim 2's reward amount is
-    frozen to EXACTLY claim 1's amount, even if they've deposited more
-    since (confirmed with the user) -- rate is not recalculated.
-
-    This needs real persistent state across separate hourly pipeline
-    runs (each one is an independent fresh computation otherwise), so it
-    tracks claims in a dedicated new_user_lossback_claims table -- opened
-    against master_db_path specifically, NOT mconn/report_master_db_path,
-    because on any day with banned users report_master_db_path points at
-    a throwaway filtered copy that's discarded at the end of this run,
-    which would silently lose every claim record. is_first_deposit can
-    only be true once in a user's lifetime, so user_id alone is a safe
-    primary key here -- this table never needs a per-day reset."""
+    today -- confirmed with the user that ANY withdrawal request today,
+    regardless of status, disqualifies them, since even a Rejected/Failed
+    attempt means they already tried to cash out. Reward tiers are keyed
+    off their CURRENT wallet balance as a percentage of what they
+    deposited today (see new_user_lossback_reward_pct). One-time only,
+    same-day check -- confirmed with the user 2026-09-05 after briefly
+    trying a 2-claim version, reverted back to this simpler single-claim
+    design."""
     withdrew_today = set()
     for withdraw_amount, create_time, status, user_id, *_rest in withdrawal_rows:
         if user_id is None:
@@ -3138,122 +3119,42 @@ def new_users_lossback(mconn, master_db_path, deposit_rows, withdrawal_rows, age
         if is_first_deposit == 1:
             first_deposit_users.add(user_id)
 
-    claims_conn = sqlite3.connect(master_db_path)
-    claims_cur = claims_conn.cursor()
-    claims_cur.execute(
-        "CREATE TABLE IF NOT EXISTS new_user_lossback_claims ("
-        "user_id INTEGER PRIMARY KEY, claim_date TEXT, claim_count INTEGER, "
-        "reward_amount REAL, reward_pct REAL, seen_above_threshold INTEGER DEFAULT 0)"
-    )
-    claims_by_user = {}
-    for uid, claim_date, claim_count, reward_amount, reward_pct, seen_above in claims_cur.execute(
-        "SELECT user_id, claim_date, claim_count, reward_amount, reward_pct, seen_above_threshold "
-        "FROM new_user_lossback_claims"
-    ).fetchall():
-        claims_by_user[uid] = {
-            "claim_date": claim_date, "claim_count": claim_count, "reward_amount": reward_amount,
-            "reward_pct": reward_pct, "seen_above_threshold": seen_above,
-        }
-
-    # Only users still eligible to be ACTED on this run (not withdrawn,
-    # made their first deposit today) can trigger a NEW state transition.
-    # A user who already claimed earlier today and has SINCE withdrawn
-    # keeps their existing claim(s) on the books (a later withdrawal
-    # doesn't retroactively erase a reward already earned) but can't
-    # progress to claim 2 -- excluding them from `candidates` here
-    # achieves exactly that.
     candidates = first_deposit_users - withdrew_today
-    today_str = today.isoformat()
-    for user_id in candidates:
-        total_deposit = round(day_stats[user_id]["amount"], 2)
-        if total_deposit <= 0:
-            continue
-        claim = claims_by_user.get(user_id)
-        if claim is not None and claim["claim_count"] >= 2:
-            continue  # maxed out -- not eligible again no matter what (confirmed with user)
-
-        balance = round((mconn.execute("SELECT user_balance FROM users WHERE user_id = ?", (user_id,)).fetchone() or [0.0])[0] or 0.0, 2)
-        balance_pct = round(balance / total_deposit * 100, 2)
-
-        if claim is None:
-            reward_pct = new_user_lossback_reward_pct(balance_pct)
-            if reward_pct is None:
-                continue  # not yet eligible for claim 1 -- balance still above 20%
-            reward_amount = round(total_deposit * reward_pct, 2)
-            claims_cur.execute(
-                "INSERT INTO new_user_lossback_claims (user_id, claim_date, claim_count, reward_amount, reward_pct, seen_above_threshold) "
-                "VALUES (?, ?, 1, ?, ?, 0)",
-                (user_id, today_str, reward_amount, round(reward_pct * 100, 2)),
-            )
-            claims_by_user[user_id] = {
-                "claim_date": today_str, "claim_count": 1, "reward_amount": reward_amount,
-                "reward_pct": round(reward_pct * 100, 2), "seen_above_threshold": 0,
-            }
-        else:
-            # claim_count == 1 here (>=2 already handled above). Recovery
-            # ("seen_above_threshold") still requires climbing back above
-            # the full eligible range (>20%) -- confirmed with the user
-            # 2026-09-05 -- but the claim-2 TRIGGER is the tighter 10%
-            # tier specifically, not the wider 20% tier claim 1 could have
-            # used (also confirmed 2026-09-05).
-            if balance_pct > NEW_USER_LOSSBACK_TIER2_MAX_PCT:
-                if not claim["seen_above_threshold"]:
-                    claims_cur.execute(
-                        "UPDATE new_user_lossback_claims SET seen_above_threshold = 1 WHERE user_id = ?", (user_id,)
-                    )
-                    claim["seen_above_threshold"] = 1
-                continue
-            if not claim["seen_above_threshold"]:
-                continue  # still the same low balance claim 1 already covered -- not a new loss event
-            if balance_pct > NEW_USER_LOSSBACK_TIER1_MAX_PCT:
-                continue  # recovered, but not back down to the tight tier yet
-            claims_cur.execute(
-                "UPDATE new_user_lossback_claims SET claim_count = 2 WHERE user_id = ?", (user_id,)
-            )
-            claim["claim_count"] = 2
-
-    claims_conn.commit()
-
-    # Build the final display from the claims table itself (cumulative
-    # for today), not from just this run's transitions -- an admin
-    # checking the dashboard mid-afternoon should still see everyone
-    # who's earned a reward today, not only whoever triggered a NEW
-    # event in the last hour.
-    today_claim_rows = claims_cur.execute(
-        "SELECT user_id, claim_count, reward_amount, reward_pct FROM new_user_lossback_claims WHERE claim_date = ?",
-        (today_str,),
-    ).fetchall()
-    relevant_ids = {uid for uid, *_r in today_claim_rows}
-    claims_conn.close()
-
     vip_by_user, balance_by_user = {}, {}
-    if relevant_ids:
-        placeholders = ",".join("?" * len(relevant_ids))
+    if candidates:
+        placeholders = ",".join("?" * len(candidates))
         for uid, vip, bal in mconn.execute(
-            f"SELECT user_id, vip_level, user_balance FROM users WHERE user_id IN ({placeholders})", list(relevant_ids)
+            f"SELECT user_id, vip_level, user_balance FROM users WHERE user_id IN ({placeholders})", list(candidates)
         ).fetchall():
             vip_by_user[uid] = vip
             balance_by_user[uid] = bal or 0.0
 
     rows = []
-    for user_id, claim_count, reward_amount, reward_pct in today_claim_rows:
+    for user_id in candidates:
+        total_deposit = round(day_stats[user_id]["amount"], 2)
+        if total_deposit <= 0:
+            continue
+        balance = round(balance_by_user.get(user_id, 0.0), 2)
+        balance_pct = balance / total_deposit * 100
+        reward_pct = new_user_lossback_reward_pct(balance_pct)
+        if reward_pct is None:
+            continue
         rows.append({
             "user_id": user_id,
             "agent": agent_for(agent_by_user, user_id),
             "vip_level": vip_by_user.get(user_id),
-            "total_deposit": round(day_stats.get(user_id, {}).get("amount", 0.0), 2),
-            "wallet_balance": round(balance_by_user.get(user_id, 0.0), 2),
-            "claim_count": claim_count,
-            "reward_pct": reward_pct,
-            "reward_amount_per_claim": reward_amount,
-            "total_reward_amount": round(reward_amount * claim_count, 2),
+            "total_deposit": total_deposit,
+            "wallet_balance": balance,
+            "balance_pct": round(balance_pct, 2),
+            "reward_pct": round(reward_pct * 100, 2),
+            "reward_amount": round(total_deposit * reward_pct, 2),
         })
-    rows.sort(key=lambda r: -r["total_reward_amount"])
+    rows.sort(key=lambda r: -r["reward_amount"])
 
     return {
-        "date": today_str,
+        "date": today.isoformat(),
         "eligible_count": len(rows),
-        "total_reward": round(sum(r["total_reward_amount"] for r in rows), 2),
+        "total_reward": round(sum(r["reward_amount"] for r in rows), 2),
         "rows": rows,
     }
 
@@ -3594,7 +3495,7 @@ def main():
             agent_by_user = {}  # table doesn't exist yet -- pre-dates this feature
         action_center = action_center_reports(mconn, now, agent_by_user)
         weekly_cashback = weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, now)
-        new_users_lossback_report = new_users_lossback(mconn, master_db_path, deposit_rows, withdrawal_rows, agent_by_user, now.date())
+        new_users_lossback_report = new_users_lossback(mconn, deposit_rows, withdrawal_rows, agent_by_user, now.date())
         fallback_creds = load_creds()
         reactivation_candidates_path = os.path.join(BASE, "reactivation_candidates.json")
         reactivation_candidates = load_json_with_r2_fallback(
