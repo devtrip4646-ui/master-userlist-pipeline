@@ -457,7 +457,16 @@ def classify_bonus(game_name, source, source_id):
        per-instance random suffix is stripped so every instance rolls up
        into one combined category each, rather than ~900 near-duplicate
        ones (confirmed: 911 total split exactly 617 "Daily Active Bonus" +
-       294 "Daily Active Bonus Low", no overlap)."""
+       294 "Daily Active Bonus Low", no overlap).
+
+    3b. game_name is literally "04Siya Import Excel Add" -- a wrapper label
+        for the New Users Lossback payout (this pipeline's own manually
+        applied reward, confirmed by the user 2026-09-05), same shape as
+        "Elle Import Excel Add": real identity lives in source_id, which
+        starts with some casing of "New Users Lossback" plus a per-instance
+        suffix -- normalized the same way Weekly Loss Bonus is, so every
+        instance rolls up into one "New Users Lossback" category instead of
+        splitting into near-duplicates."""
     game_name = str(game_name).strip() if game_name else ""
     source = str(source).strip() if source else ""
     source_id = str(source_id).strip() if source_id else ""
@@ -467,6 +476,11 @@ def classify_bonus(game_name, source, source_id):
             normalized = _normalize_weekly_loss_bonus(source_id)
             if normalized:
                 return normalized
+        return source_id or game_name
+
+    if game_name == "04Siya Import Excel Add":
+        if source_id.lower().startswith("new users lossback"):
+            return "New Users Lossback"
         return source_id or game_name
 
     if game_name and not source:
@@ -518,7 +532,7 @@ def classify_bonus(game_name, source, source_id):
 # under the new rules, then fall back to only scanning genuinely new rows.
 # Without this, a rule change would only apply to rows inserted AFTER the
 # change; existing rows that now match would silently stay unclassified.
-CLASSIFY_BONUS_RULES_VERSION = 7
+CLASSIFY_BONUS_RULES_VERSION = 8
 
 
 def stable_wallet_id(raw_id, create_time):
