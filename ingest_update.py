@@ -607,6 +607,32 @@ def ingest_wallet(files):
         "WHERE matched_category LIKE 'Weekly Loss Bonus%' AND matched_category != 'Weekly Loss Bonus'"
     )
     conn.commit()
+
+    # Retroactive cleanup: rows with game_name "04Siya Import Excel Add"
+    # ingested before classify_bonus() had a rule for it fell through to
+    # the generic "game_name and not source" rule and got stuck with the
+    # literal wrapper label "04Siya Import Excel Add" as their
+    # matched_category forever -- same "backfill only touches rows with
+    # no bonuses entry yet" blind spot as the Weekly Loss Bonus cleanup
+    # above (confirmed 2026-09-05: 61 of 61 sampled rows' real source_id
+    # actually started with "New Users lossback" or "System", none were
+    # genuinely unclassifiable). Re-classifies by joining back to
+    # wallet_transactions for the real source_id. Safe to run every time
+    # (a no-op once none remain wrongly tagged).
+    mis_wrapped = cur.execute(
+        "SELECT b.id, w.game_name, w.source, w.source_id FROM bonuses b "
+        "JOIN wallet_transactions w ON w.id = b.id "
+        "WHERE b.matched_category = '04Siya Import Excel Add'"
+    ).fetchall()
+    fixed = 0
+    for bonus_id, game_name, source, source_id in mis_wrapped:
+        matched = classify_bonus(game_name, source, source_id)
+        if matched and matched != "04Siya Import Excel Add":
+            cur.execute("UPDATE bonuses SET matched_category = ? WHERE id = ?", (matched, bonus_id))
+            fixed += 1
+    if fixed:
+        conn.commit()
+        print(f"  re-classified {fixed} previously-mis-tagged '04Siya Import Excel Add' rows")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_user ON bonuses(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bonus_name ON bonuses(bonus_name)")
     # bonuses had no create_time index at all -- every date-range query
