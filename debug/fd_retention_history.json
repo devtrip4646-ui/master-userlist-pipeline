@@ -1,0 +1,80 @@
+[
+  {
+    "date": "2026-09-01",
+    "fd_users": 270,
+    "total_deposit": 92700.0,
+    "bonus_added_users": 264,
+    "total_bonus": 7616.0,
+    "bonus_utilised_users": 259,
+    "bonus_utilised_pct": 98.11,
+    "second_deposit_same_day": 57,
+    "second_deposit_pct": 21.11,
+    "withdraw_same_day_users": 60,
+    "withdraw_same_day_pct": 22.22
+  },
+  {
+    "date": "2026-09-02",
+    "fd_users": 194,
+    "total_deposit": 72650.0,
+    "bonus_added_users": 185,
+    "total_bonus": 5364.0,
+    "bonus_utilised_users": 185,
+    "bonus_utilised_pct": 100.0,
+    "second_deposit_same_day": 36,
+    "second_deposit_pct": 18.56,
+    "withdraw_same_day_users": 58,
+    "withdraw_same_day_pct": 29.9
+  },
+  {
+    "date": "2026-09-03",
+    "fd_users": 175,
+    "total_deposit": 71800.0,
+    "bonus_added_users": 163,
+    "total_bonus": 5911.0,
+    "bonus_utilised_users": 163,
+    "bonus_utilised_pct": 100.0,
+    "second_deposit_same_day": 35,
+    "second_deposit_pct": 20.0,
+    "withdraw_same_day_users": 40,
+    "withdraw_same_day_pct": 22.86
+  },
+  {
+    "date": "2026-09-04",
+    "fd_users": 169,
+    "total_deposit": 70150.0,
+    "bonus_added_users": 160,
+    "total_bonus": 6102.0,
+    "bonus_utilised_users": 159,
+    "bonus_utilised_pct": 99.38,
+    "second_deposit_same_day": 41,
+    "second_deposit_pct": 24.26,
+    "withdraw_same_day_users": 42,
+    "withdraw_same_day_pct": 24.85
+  },
+  {
+    "date": "2026-09-05",
+    "fd_users": 123,
+    "total_deposit": 43400.0,
+    "bonus_added_users": 121,
+    "total_bonus": 10645.0,
+    "bonus_utilised_users": 116,
+    "bonus_utilised_pct": 95.87,
+    "second_deposit_same_day": 24,
+    "second_deposit_pct": 19.51,
+    "withdraw_same_day_users": 33,
+    "withdraw_same_day_pct": 26.83
+  },
+  {
+    "date": "2026-09-06",
+    "fd_users": 126,
+    "total_deposit": 38800.0,
+    "bonus_added_users": 119,
+    "total_bonus": 5462.0,
+    "bonus_utilised_users": 116,
+    "bonus_utilised_pct": 97.48,
+    "second_deposit_same_day": 21,
+    "second_deposit_pct": 16.67,
+    "withdraw_same_day_users": 25,
+    "withdraw_same_day_pct": 19.84
+  }
+]
