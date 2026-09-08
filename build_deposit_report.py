@@ -3159,6 +3159,102 @@ def new_users_lossback(mconn, deposit_rows, withdrawal_rows, agent_by_user, toda
     }
 
 
+def fd_users_retention_report(report_daily_db_path, deposit_rows, withdrawal_rows, now):
+    """Action Center summary card: YESTERDAY's first-time depositors
+    (is_first_deposit flag, same reasoning as new_users_lossback/
+    yesterday_first_deposit_users) -- total deposit, total bonus credited
+    to them that same day and how many of them actually used it (placed a
+    bet -- wallet_transactions direction=1 -- any time after their bonus
+    was credited, same day, rather than just having it sit unused or being
+    withdrawn untouched), how many made a 2nd deposit the same day, and how
+    many applied for a withdrawal the same day. "Yesterday" is computed
+    against `now` (already normalized to IST by the caller), so this is
+    always a fully-closed day, never a still-in-progress one. Confirmed
+    with the user 2026-09-08 -- delivered ad hoc as a diagnostic first,
+    then folded into the regular hourly pipeline here so it's always fresh
+    without needing a separate cron or manual trigger."""
+    yesterday = (now - timedelta(days=1)).date()
+    y_str = yesterday.isoformat()
+
+    conn = sqlite3.connect(report_daily_db_path)
+    cur = conn.cursor()
+
+    fd_user_ids = {
+        uid for (uid,) in cur.execute(
+            "SELECT DISTINCT user_id FROM deposits "
+            "WHERE status = 'COMPLETE' AND is_first_deposit = 1 AND substr(create_time, 1, 10) = ?",
+            (y_str,),
+        ).fetchall()
+        if uid is not None
+    }
+    fd_count = len(fd_user_ids)
+
+    total_deposit = 0.0
+    deposit_count_by_user = {}
+    if fd_user_ids:
+        placeholders = ",".join("?" * len(fd_user_ids))
+        for user_id, order_amount in cur.execute(
+            f"SELECT user_id, order_amount FROM deposits "
+            f"WHERE status = 'COMPLETE' AND user_id IN ({placeholders}) AND substr(create_time, 1, 10) = ?",
+            list(fd_user_ids) + [y_str],
+        ).fetchall():
+            total_deposit += order_amount or 0.0
+            deposit_count_by_user[user_id] = deposit_count_by_user.get(user_id, 0) + 1
+    second_deposit_same_day = sum(1 for c in deposit_count_by_user.values() if c >= 2)
+
+    bonus_first_credit = {}
+    total_bonus = 0.0
+    if fd_user_ids:
+        placeholders = ",".join("?" * len(fd_user_ids))
+        for user_id, first_credit, total in cur.execute(
+            f"SELECT user_id, MIN(create_time), SUM(change_value) FROM bonuses "
+            f"WHERE user_id IN ({placeholders}) AND substr(create_time, 1, 10) = ? GROUP BY user_id",
+            list(fd_user_ids) + [y_str],
+        ).fetchall():
+            bonus_first_credit[user_id] = first_credit
+            total_bonus += total or 0.0
+    bonus_added_users = len(bonus_first_credit)
+
+    bonus_utilised_users = 0
+    for user_id, credit_time in bonus_first_credit.items():
+        row = cur.execute(
+            "SELECT 1 FROM wallet_transactions "
+            "WHERE user_id = ? AND direction = 1 AND create_time > ? AND substr(create_time, 1, 10) = ? LIMIT 1",
+            (user_id, credit_time, y_str),
+        ).fetchone()
+        if row:
+            bonus_utilised_users += 1
+
+    withdraw_same_day_users = set()
+    if fd_user_ids:
+        placeholders = ",".join("?" * len(fd_user_ids))
+        for (user_id,) in cur.execute(
+            f"SELECT DISTINCT user_id FROM withdrawals "
+            f"WHERE user_id IN ({placeholders}) AND substr(create_time, 1, 10) = ?",
+            list(fd_user_ids) + [y_str],
+        ).fetchall():
+            withdraw_same_day_users.add(user_id)
+
+    conn.close()
+
+    def pct(n):
+        return round(n / fd_count * 100, 2) if fd_count else 0.0
+
+    return {
+        "date": y_str,
+        "fd_users": fd_count,
+        "total_deposit": round(total_deposit, 2),
+        "bonus_added_users": bonus_added_users,
+        "total_bonus": round(total_bonus, 2),
+        "bonus_utilised_users": bonus_utilised_users,
+        "bonus_utilised_pct": round(bonus_utilised_users / bonus_added_users * 100, 2) if bonus_added_users else 0.0,
+        "second_deposit_same_day": second_deposit_same_day,
+        "second_deposit_pct": pct(second_deposit_same_day),
+        "withdraw_same_day_users": len(withdraw_same_day_users),
+        "withdraw_same_day_pct": pct(len(withdraw_same_day_users)),
+    }
+
+
 # Powers the "Performance" leaderboard: for each agent, per criterion, how
 # much they achieved vs a daily target. Two shapes:
 #   "count" -- a flat per-day headcount target (e.g. 7 reactivations/day).
@@ -3430,6 +3526,8 @@ def main():
         "SELECT withdraw_amount, create_time, status, user_id, payment_channel, review_time, update_time, order_no, "
         "payment_center_order_id FROM withdrawals"
     ).fetchall()
+
+    fd_retention_report = fd_users_retention_report(report_daily_db_path, deposit_rows, withdrawal_rows, now)
     # Deduped at the SQL level to (user_id, date) pairs instead of every raw
     # transaction row -- the only thing the loop below does with this is
     # build a user-id set and a date -> user-id-set map, so per-user-per-day
@@ -3915,6 +4013,7 @@ def main():
         "action_center_extra": action_center_extra,
         "weekly_cashback_shield": weekly_cashback,
         "new_users_lossback": new_users_lossback_report,
+        "fd_retention_report": fd_retention_report,
         "region_vip_analytics": region_vip_analytics_data,
         "reactivation": reactivation,
         "vip_upgrade": vip_upgrade,
