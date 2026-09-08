@@ -2475,6 +2475,45 @@ REGION_MAPPING = {
     'shāhpur': 'Unknown',
     'dehradun': 'Uttarakhand',
     'pollachi': 'Tamil Nadu',
+    # Added from cities_states.xlsx (user-supplied, 2026-09-08) -- the top
+    # 33 raw `users.city` values by user count that were falling into
+    # "Unknown" on the Region vs VIP Depositor Matrix. Keys match the
+    # DATABASE's actual spelling (including diacritics, e.g. 'kolhāpur'),
+    # not the plain-ASCII spelling in the source spreadsheet, since lookup
+    # is an exact (lowercased) string match.
+    'bhopal': 'Madhya Pradesh',
+    'baharampur': 'West Bengal',
+    'guwahati': 'Assam',
+    'erode': 'Tamil Nadu',
+    'prayagraj': 'Uttar Pradesh',
+    'sholapur': 'Maharashtra',
+    'hubballi': 'Karnataka',
+    'new delhi': 'Delhi NCR',
+    'tirunelveli': 'Tamil Nadu',
+    'kharagpur': 'West Bengal',
+    'ambattur': 'Tamil Nadu',
+    'haldia': 'West Bengal',
+    'nagpur': 'Maharashtra',
+    'jamnagar': 'Gujarat',
+    'kolhāpur': 'Maharashtra',
+    'sonīpat': 'Haryana',
+    'kurnool': 'Andhra Pradesh',
+    'jabalpur': 'Madhya Pradesh',
+    'thoothukudi': 'Tamil Nadu',
+    'krishnanagar': 'West Bengal',
+    'thanjavur': 'Tamil Nadu',
+    'belagavi': 'Karnataka',
+    'silchar': 'Assam',
+    'sivakasi': 'Tamil Nadu',
+    'guntur': 'Andhra Pradesh',
+    'bangaon': 'West Bengal',
+    'anantapur': 'Andhra Pradesh',
+    'rourkela': 'Odisha',
+    'ranchi': 'Jharkhand',
+    'kochi': 'Kerala',
+    'mathura': 'Uttar Pradesh',
+    'karur': 'Tamil Nadu',
+    'vellore': 'Tamil Nadu',
 }
 
 
