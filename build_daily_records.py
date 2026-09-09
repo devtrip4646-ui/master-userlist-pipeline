@@ -120,6 +120,14 @@ print("withdrawals:", len(wd_rows))
 # status: 0 Under review, 1 Payment processing, 2 Completed, 3 Rejected, 4 Failed
 
 # ---------------- wallet_transactions (detail_*.xlsx) ----------------
+# Schema shrunk 2026-09-09: the raw export has 20 columns, but a full
+# codebase check found only these 10 are ever read anywhere (see
+# ingest_update.py's ingest_wallet() for the same migration applied to an
+# already-live table via ALTER TABLE DROP COLUMN). This bootstrap script
+# builds the table lean from the start instead, so raw rows must be
+# trimmed to matching positions before insert -- see the column comment
+# above each index below for the raw export's original position of each
+# kept field.
 cur.execute("""
 CREATE TABLE wallet_transactions (
     id INTEGER PRIMARY KEY,
@@ -129,29 +137,26 @@ CREATE TABLE wallet_transactions (
     direction INTEGER,
     change_value REAL,
     change_after REAL,
-    change_desc REAL,
     source_id TEXT,
-    user_phone TEXT,
-    table_name TEXT,
-    create_date REAL,
     source TEXT,
-    tripartite_uniqueness TEXT,
-    l1_category_id REAL,
-    l2_category_id REAL,
-    status TEXT,
-    create_time TEXT,
-    update_time TEXT,
-    package_id REAL
+    create_time TEXT
 )
 """)
 cur.execute("CREATE INDEX idx_wt_user ON wallet_transactions(user_id)")
 cur.execute("CREATE INDEX idx_wt_time ON wallet_transactions(create_time)")
 cur.execute("CREATE INDEX idx_wt_game ON wallet_transactions(game_name)")
 
+# Raw export column positions (0-indexed) for the fields kept above:
+# id=0, game_name=1, user_id=2, consume_type=3, direction=4,
+# change_value=5, change_after=6, source_id=8, source=12, create_time=17.
 wt_total = 0
 for f in ["/Users/devtr/Downloads/detail_1782976836062.xlsx", "/Users/devtr/Downloads/detail_1782976976094.xlsx"]:
     rows = load_sheet(f)
-    cur.executemany(f"INSERT OR IGNORE INTO wallet_transactions VALUES ({','.join(['?']*20)})", [clean(r) for r in rows])
+    trimmed_rows = [
+        (r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[8], r[12], r[17])
+        for r in (clean(row) for row in rows)
+    ]
+    cur.executemany(f"INSERT OR IGNORE INTO wallet_transactions VALUES ({','.join(['?']*10)})", trimmed_rows)
     wt_total += len(rows)
     conn.commit()
 print("wallet_transactions rows loaded (raw):", wt_total)

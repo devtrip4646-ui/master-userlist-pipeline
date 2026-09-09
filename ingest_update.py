@@ -566,6 +566,30 @@ def stable_wallet_id(raw_id, create_time):
 def ingest_wallet(files):
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
+
+    # One-time schema shrink (2026-09-09): wallet_transactions carries 20
+    # columns copied verbatim from the raw business-API export, but a full
+    # codebase check found only 10 are ever read anywhere -- the other 10
+    # (table_name, user_phone, create_date, tripartite_uniqueness,
+    # l1_category_id, l2_category_id, status, change_desc, update_time,
+    # package_id) are pure dead weight, and at 44.9M rows this table alone
+    # was 98% of daily_records.db's 8.6GB. DROP COLUMN in SQLite 3.35+ is a
+    # cheap schema-only edit (no table rewrite, no index touched -- none of
+    # these columns are indexed), so this runs safely inside the regular
+    # hourly ingest rather than needing a special migration job. The actual
+    # disk space isn't reclaimed until the next VACUUM (vacuum_databases.yml,
+    # weekly) -- expected and fine, matching how every other retention purge
+    # in this file already works. Idempotent: skips columns already dropped.
+    existing_cols = {r[1] for r in cur.execute("PRAGMA table_info(wallet_transactions)").fetchall()}
+    for col in (
+        "table_name", "user_phone", "create_date", "tripartite_uniqueness",
+        "l1_category_id", "l2_category_id", "status", "change_desc",
+        "update_time", "package_id",
+    ):
+        if col in existing_cols:
+            cur.execute(f"ALTER TABLE wallet_transactions DROP COLUMN {col}")
+    conn.commit()
+
     n_cols = len(cur.execute("PRAGMA table_info(wallet_transactions)").fetchall())
     # bonuses is normally created once by the original bootstrap (build_daily_records.py),
     # not by this ongoing script -- IF NOT EXISTS here so a from-scratch daily_records.db
@@ -651,14 +675,20 @@ def ingest_wallet(files):
         _, rows = load_sheet(f)
         for row in rows:
             row = clean(row)
-            row = (stable_wallet_id(row[0], row[17]),) + row[1:]
-            cur.execute(f"INSERT OR IGNORE INTO wallet_transactions VALUES ({','.join(['?']*n_cols)})", row)
+            # `row` here is still the FULL raw 20-column export shape --
+            # these positional indices (game_name=1, user_id=2, consume_type=3,
+            # direction=4, change_value=5, change_after=6, source_id=8,
+            # source=12, create_time=17) are the raw export's, not the
+            # (now 10-column) wallet_transactions table's, and stay fixed
+            # regardless of which columns the table above just dropped.
+            _id = stable_wallet_id(row[0], row[17])
+            game_name, user_id, consume_type, direction = row[1], row[2], row[3], row[4]
+            change_value, change_after = row[5], row[6]
+            source_id, source, create_time = row[8], row[12], row[17]
+            trimmed = (_id, game_name, user_id, consume_type, direction, change_value, change_after, source_id, source, create_time)
+            cur.execute(f"INSERT OR IGNORE INTO wallet_transactions VALUES ({','.join(['?']*n_cols)})", trimmed)
             if cur.rowcount:
                 added += 1
-                _id, game_name, user_id = row[0], row[1], row[2]
-                change_value, change_after = row[5], row[6]
-                create_time, source = row[17], row[12]
-                source_id = row[8]
                 matched = classify_bonus(game_name, source, source_id)
                 if matched:
                     new_bonus_rows.append((_id, user_id, game_name, matched, change_value, change_after, create_time, source))
