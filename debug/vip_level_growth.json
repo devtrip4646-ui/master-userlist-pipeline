@@ -1,0 +1,119 @@
+{
+  "earliest_reconstructable_date": "2026-08-08",
+  "total_users_now": 375489,
+  "total_users_at_start": 375489,
+  "rows": [
+    {
+      "vip_level": 0,
+      "users_at_start": 41553,
+      "users_now": 35837,
+      "increase": -5716,
+      "increase_pct": -13.76
+    },
+    {
+      "vip_level": 1,
+      "users_at_start": 275624,
+      "users_now": 280084,
+      "increase": 4460,
+      "increase_pct": 1.62
+    },
+    {
+      "vip_level": 2,
+      "users_at_start": 42678,
+      "users_now": 43449,
+      "increase": 771,
+      "increase_pct": 1.81
+    },
+    {
+      "vip_level": 3,
+      "users_at_start": 5949,
+      "users_now": 6105,
+      "increase": 156,
+      "increase_pct": 2.62
+    },
+    {
+      "vip_level": 4,
+      "users_at_start": 6476,
+      "users_now": 6647,
+      "increase": 171,
+      "increase_pct": 2.64
+    },
+    {
+      "vip_level": 5,
+      "users_at_start": 2066,
+      "users_now": 2147,
+      "increase": 81,
+      "increase_pct": 3.92
+    },
+    {
+      "vip_level": 6,
+      "users_at_start": 749,
+      "users_now": 797,
+      "increase": 48,
+      "increase_pct": 6.41
+    },
+    {
+      "vip_level": 7,
+      "users_at_start": 271,
+      "users_now": 290,
+      "increase": 19,
+      "increase_pct": 7.01
+    },
+    {
+      "vip_level": 8,
+      "users_at_start": 94,
+      "users_now": 101,
+      "increase": 7,
+      "increase_pct": 7.45
+    },
+    {
+      "vip_level": 9,
+      "users_at_start": 25,
+      "users_now": 28,
+      "increase": 3,
+      "increase_pct": 12.0
+    },
+    {
+      "vip_level": 10,
+      "users_at_start": 4,
+      "users_now": 4,
+      "increase": 0,
+      "increase_pct": 0.0
+    },
+    {
+      "vip_level": 11,
+      "users_at_start": 0,
+      "users_now": 0,
+      "increase": 0,
+      "increase_pct": null
+    },
+    {
+      "vip_level": 12,
+      "users_at_start": 0,
+      "users_now": 0,
+      "increase": 0,
+      "increase_pct": null
+    },
+    {
+      "vip_level": 13,
+      "users_at_start": 0,
+      "users_now": 0,
+      "increase": 0,
+      "increase_pct": null
+    },
+    {
+      "vip_level": 14,
+      "users_at_start": 0,
+      "users_now": 0,
+      "increase": 0,
+      "increase_pct": null
+    },
+    {
+      "vip_level": 15,
+      "users_at_start": 0,
+      "users_now": 0,
+      "increase": 0,
+      "increase_pct": null
+    }
+  ]
+}
