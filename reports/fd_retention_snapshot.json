@@ -1,0 +1,13 @@
+{
+  "date": "2026-09-08",
+  "fd_users": 264,
+  "total_deposit": 103350.0,
+  "bonus_added_users": 260,
+  "total_bonus": 23322.5,
+  "bonus_utilised_users": 255,
+  "bonus_utilised_pct": 98.08,
+  "second_deposit_same_day": 56,
+  "second_deposit_pct": 21.21,
+  "withdraw_same_day_users": 63,
+  "withdraw_same_day_pct": 23.86
+}
