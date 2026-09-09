@@ -1006,8 +1006,10 @@ if (IS_ACTION_CENTER) {
           <div class="rh-pct">\${fmt(fdr.bonus_utilised_users)} (\${fdr.bonus_utilised_pct}%)<small>Bonus Utilised</small></div>
           <div class="rh-pct">\${fmt(fdr.second_deposit_same_day)} (\${fdr.second_deposit_pct}%)<small>2nd Deposit Same Day</small></div>
           <div class="rh-pct">\${fmt(fdr.withdraw_same_day_users)} (\${fdr.withdraw_same_day_pct}%)<small>Withdrawal Same Day</small></div>
+          <div class="rh-pct">\${fmt(fdr.lossback_claimed_users)}<small>New Users Lossback Claimed</small></div>
+          <div class="rh-pct">\${fmt(fdr.lossback_then_deposited_users)} (\${fdr.lossback_then_deposited_pct}%)<small>Deposited After Lossback</small></div>
         </div>
-        <div class="ac-note">Yesterday's first-time depositors only &middot; Bonus Utilised = placed at least one bet after the bonus was credited, same day &middot; all conversions are against 1st Deposit Users</div>
+        <div class="ac-note">Yesterday's first-time depositors only &middot; Bonus Utilised = placed at least one bet after the bonus was credited, same day &middot; Deposited After Lossback = of those who claimed New Users Lossback, made another completed deposit afterward, same day &middot; all conversions are against 1st Deposit Users (Deposited After Lossback is against New Users Lossback Claimed)</div>
       </section>
       \` : ''}
     \`;
