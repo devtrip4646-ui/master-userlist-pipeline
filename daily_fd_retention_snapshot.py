@@ -47,7 +47,22 @@ def main():
     subprocess.run(["git", "config", "user.name", "pipeline-bot"], check=True)
     subprocess.run(["git", "add", "reports/fd_retention_snapshot.json"], check=True)
     subprocess.run(["git", "commit", "-m", "FD retention snapshot for " + result["date"], "--allow-empty"], check=True)
-    subprocess.run(["git", "push"], check=True)
+
+    # This repo sees other pushes land around the same time (manual
+    # diagnostic commits, feature commits), and a plain `git push` fails
+    # outright if origin/main moved since checkout -- confirmed as the
+    # cause of the 2026-09-13 run's silent failure (no new snapshot
+    # committed that day). Retry with a rebase onto the latest origin/main
+    # instead of giving up on the first race.
+    for attempt in range(5):
+        push = subprocess.run(["git", "push"], capture_output=True, text=True)
+        if push.returncode == 0:
+            break
+        print(f"push attempt {attempt + 1} failed, rebasing and retrying:\n{push.stderr}")
+        subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=True)
+    else:
+        raise RuntimeError("git push failed after 5 rebase-and-retry attempts")
+
     print(json.dumps(result, indent=2))
 
 
