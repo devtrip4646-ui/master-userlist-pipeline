@@ -3308,6 +3308,21 @@ def fd_users_retention_report(report_daily_db_path, deposit_rows, withdrawal_row
         if row:
             lossback_then_deposited_users += 1
 
+    # New Users Lossback utilisation specifically -- same "placed a bet
+    # (wallet_transactions direction=1) after the credit, same day" check
+    # as bonus_utilised_users above, but scoped to lossback claimants only
+    # rather than all bonus recipients, since a user could have a Welcome
+    # Back Bonus (say) they used but never touch their Lossback credit.
+    lossback_utilised_users = 0
+    for user_id, credit_time in lossback_first_credit.items():
+        row = cur.execute(
+            "SELECT 1 FROM wallet_transactions "
+            "WHERE user_id = ? AND direction = 1 AND create_time > ? AND substr(create_time, 1, 10) = ? LIMIT 1",
+            (user_id, credit_time, y_str),
+        ).fetchone()
+        if row:
+            lossback_utilised_users += 1
+
     conn.close()
 
     def pct(n):
@@ -3330,6 +3345,8 @@ def fd_users_retention_report(report_daily_db_path, deposit_rows, withdrawal_row
         "lossback_claimed_users": lossback_claimed_users,
         "lossback_then_deposited_users": lossback_then_deposited_users,
         "lossback_then_deposited_pct": round(lossback_then_deposited_users / lossback_claimed_users * 100, 2) if lossback_claimed_users else 0.0,
+        "lossback_utilised_users": lossback_utilised_users,
+        "lossback_utilised_pct": round(lossback_utilised_users / lossback_claimed_users * 100, 2) if lossback_claimed_users else 0.0,
     }
 
 
