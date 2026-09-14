@@ -3285,15 +3285,17 @@ def fd_users_retention_report(report_daily_db_path, deposit_rows, withdrawal_row
     # same-day-only feature, so a later day's deposit wouldn't be a
     # response to it).
     lossback_first_credit = {}
+    lossback_amount = 0.0
     if fd_user_ids:
         placeholders = ",".join("?" * len(fd_user_ids))
-        for user_id, first_credit in cur.execute(
-            f"SELECT user_id, MIN(create_time) FROM bonuses "
+        for user_id, first_credit, credited_amount in cur.execute(
+            f"SELECT user_id, MIN(create_time), SUM(change_value) FROM bonuses "
             f"WHERE user_id IN ({placeholders}) AND matched_category = 'New Users Lossback' "
             f"AND substr(create_time, 1, 10) = ? GROUP BY user_id",
             list(fd_user_ids) + [y_str],
         ).fetchall():
             lossback_first_credit[user_id] = first_credit
+            lossback_amount += credited_amount or 0.0
     lossback_claimed_users = len(lossback_first_credit)
 
     lossback_then_deposited_users = 0
@@ -3323,6 +3325,8 @@ def fd_users_retention_report(report_daily_db_path, deposit_rows, withdrawal_row
         "second_deposit_pct": pct(second_deposit_same_day),
         "withdraw_same_day_users": len(withdraw_same_day_users),
         "withdraw_same_day_pct": pct(len(withdraw_same_day_users)),
+        "lossback_amount": round(lossback_amount, 2),
+        "lossback_pct_of_total_bonus": round(lossback_amount / total_bonus * 100, 2) if total_bonus else 0.0,
         "lossback_claimed_users": lossback_claimed_users,
         "lossback_then_deposited_users": lossback_then_deposited_users,
         "lossback_then_deposited_pct": round(lossback_then_deposited_users / lossback_claimed_users * 100, 2) if lossback_claimed_users else 0.0,
