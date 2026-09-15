@@ -15,6 +15,10 @@ const PAGE = `<!DOCTYPE html>
   .hero { background: linear-gradient(120deg, #4338ca 0%, #6d28d9 45%, #7c3aed 100%); color: #fff; padding: 28px 24px; margin-bottom: 24px; position: relative; }
   .lang-switch { position: absolute; top: 20px; right: 24px; background: rgba(255,255,255,0.16); color: #fff; border: 1px solid rgba(255,255,255,0.35); padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
   .lang-switch:hover { background: rgba(255,255,255,0.28); }
+  #google_translate_element { display: none; }
+  .goog-te-banner-frame, .goog-tooltip, .goog-tooltip:hover, #goog-gt-tt, .goog-te-balloon-frame { display: none !important; }
+  body { top: 0 !important; }
+  .goog-text-highlight { background: none !important; box-shadow: none !important; }
   .hero .wrap { padding: 0 24px; }
   .hero h1 { font-size: 24px; margin: 0 0 6px; font-weight: 700; letter-spacing: -0.01em; }
   .hero .updated { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.14); padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; }
@@ -377,6 +381,7 @@ const PAGE = `<!DOCTYPE html>
 <body>
 <div class="hero">
   <a href="#" class="lang-switch" id="lang-switch">中文</a>
+  <div id="google_translate_element"></div>
   <div class="wrap">
     <h1>Project 04 &mdash; Performance &amp; Analysis</h1>
     <div class="updated" id="updated-badge"><span class="dot"></span> Loading&hellip;</div>
@@ -424,211 +429,73 @@ const PAGE = `<!DOCTYPE html>
 </div>
 
 <script>
-// Chinese translation layer -- see docstring in ZH_DICT for the approach.
-// Kept deliberately separate from the render functions below (rather than
-// wrapping every one of this file's 200+ hardcoded label/title strings in
-// a t() call at its call site) because this file is a single 4700+ line
-// template literal that has broken from small syntax slips more than once
-// this project's life -- touching hundreds of individual call sites for
-// an i18n retrofit is a lot of surface area for a new one. Instead this
-// walks the RENDERED DOM after the fact and swaps known English chrome
-// text for its Chinese translation, scoped to structural/label elements
-// only (headings, table headers, buttons, nav, notes) and deliberately
-// NEVER data cells (td), so user IDs/agent names/city names/bonus
-// category names always render exactly as stored, regardless of language.
+// Chinese translation layer, via Google's Website Translator widget --
+// covers every string on the page automatically (including free-form
+// explanatory notes a hand-built dictionary would need constant upkeep
+// for), rather than a maintained EN->ZH dictionary keyed to this file's
+// 200+ hardcoded label/title strings.
+//
+// Google's widget translates the DOM indiscriminately, so table DATA
+// (user IDs, agent names, city names, bonus category values) would get
+// mistranslated right along with the UI chrome unless explicitly excluded.
+// Marking every one of this file's 70+ scattered <td> call sites with a
+// notranslate attribute individually would be the same kind of
+// error-prone, large-surface-area retrofit this file's size has broken
+// from before -- instead this reuses the same DOM-walk-after-render +
+// MutationObserver pattern (proven safe already) to mark <td> elements
+// translate="no" programmatically, so no existing render code needs to
+// change. Runs unconditionally (not just once Chinese is selected) so
+// cells are protected before Google's scanner ever sees the page.
 let LANG = localStorage.getItem('dashLang') || 'en';
 
-const ZH_DICT = {
-  // Top bar / nav
-  'Project 04 — Performance & Analysis': 'Project 04 — 业绩与分析',
-  'Home': '首页', 'Action Center': '行动中心', 'Performance': '业绩',
-  'Analytics': '数据分析', 'Platform Analysis': '平台分析', 'Search User': '用户查询',
-  'Reset to Today': '重置为今天', 'Total Users:': '总用户数：', 'Registered Active:': '注册活跃：',
-  'Excel': 'Excel 导出', 'Apply to all': '应用到全部', 'Download Excel': '下载 Excel',
-  'Save': '保存', 'Next': '下一页', 'Prev': '上一页',
+function protectDataCells(root) {
+  const cells = [];
+  if (root.tagName === 'TD') cells.push(root);
+  if (root.querySelectorAll) cells.push(...root.querySelectorAll('td'));
+  for (const td of cells) td.setAttribute('translate', 'no');
+}
 
-  // Section titles (h2)
-  'Acquisition & Bonus Economics': '获客与奖金经济分析', 'Active Users': '活跃用户',
-  'Amount Range': '金额区间', 'Bonus Claim Report': '奖金领取报告',
-  'Daily / Range Performance': '每日/区间业绩', 'Deposit Analysis': '存款分析',
-  'Deposit Channel Analysis': '存款渠道分析', 'Deposit by VIP Level': '按VIP等级存款',
-  'Eligible Users This Week': '本周符合条件用户', 'FD Users Retention': '首存用户留存',
-  'FTD': '首次存款', 'Financial Overview': '财务概览',
-  'First-Deposit Day-1 Retention': '首存次日留存', 'Game & Revenue Economics': '游戏与收入经济分析',
-  'Game Activity': '游戏活跃度', 'High - Active Users (V5-V15)': '高级 - 活跃用户（V5-V15）',
-  'High - VIP Near Upgrade': '高级 - 临近升级VIP', 'High - VIP Upgrade (V5-V15)': '高级 - VIP升级（V5-V15）',
-  'High Premium Active': '高级高价值活跃', 'High Roller Active': '高额投注活跃用户',
-  'High V - Reactivation (V5-V15)': '高级 - 用户召回（V5-V15）', 'Highest Deposit Users': '最高存款用户',
-  'Highest Single Bet - New Users': '单笔最高投注 - 新用户', 'Highest Withdraw Users': '最高提款用户',
-  'Inactive Users': '不活跃用户', 'Inactive Users - High': '不活跃用户 - 高级',
-  'Inactive Users - Low': '不活跃用户 - 低级', 'Last 7 Days Activity': '近7天活跃度',
-  'Low - Active Users (V2-V4)': '低级 - 活跃用户（V2-V4）', 'Low - VIP Near Upgrade': '低级 - 临近升级VIP',
-  'Low - VIP Upgrade (V2-V4)': '低级 - VIP升级（V2-V4）', 'Low Premium Active': '低级高价值活跃',
-  'Low Roller Active': '低额投注活跃用户', 'Low V - Reactivation (V2-V4)': '低级 - 用户召回（V2-V4）',
-  'Monthly Leaderboard & Incentives': '月度排行榜与激励', 'Net Revenue by Region & VIP': '按地区和VIP的净收入',
-  'New Users Lossback': '新用户返损', 'New vs Old User Analysis — Last 33 Days': '新老用户对比分析 — 近33天',
-  'No-Return FD Conversion': '未回归首存转化率', 'No-Return First Deposit Users': '未回归首存用户',
-  'Profit Users of the Day': '当日盈利用户', 'Reactivation': '用户召回', 'Recent Games & Bonuses': '近期游戏与奖金',
-  'Region & VIP Deposit Analytics': '地区与VIP存款分析', 'Region vs VIP Depositor Matrix': '地区与VIP存款矩阵',
-  'Retention': '留存', 'Suspicious Withdraw Users': '可疑提款用户', 'This Week vs Last Week': '本周对比上周',
-  'Top 10 Regions by Deposit': '存款前十地区', 'Top Games - New Users': '热门游戏 - 新用户',
-  'User Category & Status': '用户类别与状态', 'VIP Level Upgrade': 'VIP等级升级', 'VIP Near Upgrade': '临近升级VIP',
-  'Weekly Cashback Shield': '每周返现保障', 'Weekly Performance': '每周业绩', 'Withdrawal Amount Range': '提款金额区间',
-  'Withdrawal Analysis': '提款分析', 'Yesterday First Deposit Users': '昨日首存用户',
-
-  // Column headers (th) -- shared across most tables in the dashboard
-  '% Change': '变化率', '% of Target': '目标完成率', 'Actual': '实际值', 'Agent': '代理',
-  'Amount': '金额', 'Amount Over Minimum': '超出最低金额', 'Amount to Reach Next Level': '升级所需金额',
-  'Avg Dep (New)': '平均存款（新）', 'Avg Dep (Old)': '平均存款（老）',
-  'Avg Deposit of New Users': '新用户平均存款', 'Avg Deposit of Old Users': '老用户平均存款',
-  'Avg FD': '平均首存', 'Avg WD (New)': '平均提款（新）', 'Avg WD (Old)': '平均提款（老）',
-  'Avg Withdraw - New Users': '新用户平均提款', 'Avg Withdraw - Old Users': '老用户平均提款',
-  'Balance %': '余额占比', 'Bonus': '奖金', 'Bonus Amount': '奖金金额', 'Change': '变化',
-  'Channel': '渠道', 'Claimed Users': '领取用户数', 'Cost Ratio %': '成本比率', 'Current VIP Level': '当前VIP等级',
-  'D2 %': '次日留存率', 'D2 Users': '次日留存用户', 'D3 %': '三日留存率', 'D3 Users': '三日留存用户',
-  'Date': '日期', 'Dep Today': '今日存款', 'Deposit (3d)': '存款（3天）', 'Deposit Amount': '存款金额',
-  'Deposit Count': '存款次数', 'Deposit Today': '今日存款', 'Deposited After': '之后存款',
-  'Eligible %': '符合条件比例', 'FD Amount': '首存金额', 'FD Date': '首存日期', 'FD Users': '首存用户',
-  'Game': '游戏', 'Game Name': '游戏名称', 'Games Played (3d)': '游戏局数（3天）', 'Highest Bet': '最高投注',
-  'In Review?': '审核中？', 'Inactive Days': '不活跃天数', 'Last Active': '最后活跃', 'Last Active Date': '最后活跃日期',
-  'Last Dep': '最后存款', 'Last WD': '最后提款', 'Last Week': '上周', 'Last Week (7d avg)': '上周（7天均值）',
-  'Loss %': '亏损率', 'Metric': '指标', 'Net Dep': '净存款', 'Net Deposit': '净存款', 'Net Revenue': '净收入',
-  'Never Withdrew - Count': '从未提款人数', 'Never Withdrew - Retention %': '从未提款留存率',
-  'Never Withdrew - Returned': '从未提款回归数', 'New Users': '新用户', 'New Users (Withdrew)': '新用户（已提款）',
-  'New Users Count': '新用户数', 'New WD Users': '新提款用户', 'Next VIP Level': '下一VIP等级',
-  'Old Users': '老用户', 'Old Users (Withdrew)': '老用户（已提款）', 'Old Users Count': '老用户数',
-  'Old WD Users': '老提款用户', 'Order No': '订单号', 'Orders': '订单', 'Profit/Loss': '盈亏', 'Quality': '质量',
-  'Region': '地区', 'Reward %': '奖励比例', 'Reward Amount': '奖励金额', 'Status': '状态', 'Target': '目标',
-  'This Week': '本周', 'Top Game Played': '最常玩游戏', 'Total': '总计', 'Total Bet Amount': '总投注金额',
-  'Total Bonus': '总奖金', 'Total Deposit': '总存款', 'Total Deposit (Day)': '总存款（当日）',
-  'Total Deposit Amount': '总存款金额', 'Total Deposit Today': '今日总存款', 'Total Depositor Count (Day)': '当日存款人数',
-  'Total Depositors': '存款总人数', 'Total Withdraw': '总提款', 'Total Withdrawal': '总提款', 'Type': '类型',
-  'User Balance': '用户余额', 'User ID': '用户ID', 'Users': '用户数', 'VIP After': '升级后VIP',
-  'VIP Before': '升级前VIP', 'VIP Level': 'VIP等级', 'Variance': '差异', 'Verified Loss': '已核实亏损',
-  'WD Today': '今日提款', 'Wallet Bal': '钱包余额', 'Wallet Balance': '钱包余额', 'Week': '周',
-  'Withdraw': '提款', 'Withdraw (3d)': '提款（3天）', 'Withdraw Today': '今日提款',
-  'Withdrew - Count': '提款人数', 'Withdrew - Retention %': '提款留存率', 'Withdrew - Returned': '提款回归数',
-
-  // Weekly Performance's own metric-name values (server-supplied via
-  // r.metric in weekly_performance.comparison/.target, not a hardcoded
-  // client-side label -- see WEEKLY_TARGET_LABELS / _WEEKLY_PERF_METRIC_LABELS
-  // in build_deposit_report.py). Note the em dash (—), not a hyphen --
-  // these are DIFFERENT strings from the plain-hyphen "Avg Withdraw - Old
-  // Users" column-label entries above used elsewhere in this same section.
-  'Avg Deposit — Old Users': '平均存款 — 老用户', 'Avg Deposit — New Users': '平均存款 — 新用户',
-  'Old Users Withdraw Count': '老用户提款人数', 'Avg Withdraw — Old Users': '平均提款 — 老用户',
-  'New Users Withdraw Count': '新用户提款人数', 'Avg Withdraw — New Users': '平均提款 — 新用户',
-  'Avg Total Deposit (Day)': '平均总存款（当日）', 'MET': '已达成', 'BEHIND': '未达成',
-
-  // Weekly Performance's retention-comparison sub-table (h3 + row labels,
-  // all hardcoded client-side, but in <td> cells -- see the "Metric" pivot
-  // table handling in translateSubtree() below for why these still apply).
-  'New User 3-Day Retention': '新用户三日留存', 'Cohorts Included': '纳入的用户群',
-  'Avg New Users / Cohort': '平均新用户数/群组', 'Withdrew, then Redeposited %': '提款后再存款比例',
-  'Never Withdrew, then Redeposited %': '从未提款后再存款比例',
-};
-
-// A handful of h2/h3 titles are built with an interpolated live value
-// (a count, a day-count, or a date range), so an exact-text dictionary
-// lookup never matches -- handled as regex patterns instead, tried after
-// ZH_DICT. zh is the fixed replacement for the STATIC portion matched by
-// the capturing group in re; the captured dynamic portion is preserved
-// verbatim in the output.
-const ZH_DYNAMIC = [
-  { re: /^Bonuses Claimed \((\d+)\)$/, zh: n => '已领取奖金 (' + n + ')' },
-  { re: /^Deposits \((\d+)\)$/, zh: n => '存款记录 (' + n + ')' },
-  { re: /^Withdrawals \((\d+)\)$/, zh: n => '提款记录 (' + n + ')' },
-  { re: /^Recent Games Played \((\d+)\)$/, zh: n => '近期游戏记录 (' + n + ')' },
-  { re: /^This Week \((\d+)d avg\)$/, zh: n => '本周（' + n + '天均值）' },
-  { re: /^Target vs Actual -- Week of (.+)$/, zh: range => '目标与实际对比 —— 周期：' + range },
-];
-
-function translateNode(textNode) {
-  const raw = textNode.nodeValue;
-  const trimmed = raw.trim();
-  if (!trimmed) return;
-  if (ZH_DICT[trimmed]) {
-    textNode.nodeValue = raw.replace(trimmed, ZH_DICT[trimmed]);
-    return;
-  }
-  for (const d of ZH_DYNAMIC) {
-    const m = trimmed.match(d.re);
-    if (m) {
-      textNode.nodeValue = raw.replace(trimmed, d.zh(m[1]));
-      return;
+protectDataCells(document.body);
+new MutationObserver(mutations => {
+  for (const m of mutations) {
+    for (const node of m.addedNodes) {
+      if (node.nodeType === 1) protectDataCells(node);
     }
   }
+}).observe(document.body, { childList: true, subtree: true });
+
+function googleTranslateElementInit() {
+  new google.translate.TranslateElement(
+    { pageLanguage: 'en', includedLanguages: 'zh-CN', autoDisplay: false },
+    'google_translate_element'
+  );
+  if (LANG === 'zh') setGoogleTranslateLanguage('zh-CN');
 }
 
-// Deliberately scoped to structural/label elements only -- h1/h2/h3/caption
-// (section titles), .ac-note (explanatory text), th (column headers),
-// button/.download-btn-sm/.nav-item/.lang-switch/label/option (controls),
-// .stat/.day-label/.today-tag/.badge (small chrome labels). Never td, never
-// a bare div/span, so table DATA (user IDs, agent names, city names, bonus
-// category values) is never touched regardless of language.
-const ZH_SCOPE_SELECTOR = 'h1, h2, h3, caption, .ac-note, th, button, .download-btn-sm, .nav-item, ' +
-  '#lang-switch, label, option, .stat, .day-label, .today-tag, .badge, .b-orange, .rh-count small, .rh-pct small';
-
-// A few tables (Weekly Performance's week-on-week comparison, its
-// retention/target sub-tables) put a fixed, finite set of METRIC NAMES in
-// the first <td> of each row rather than a <th> -- e.g. "Old Users Count",
-// "Cohorts Included". These are structurally indistinguishable from real
-// per-row DATA (user IDs, category names) by tag alone, so they're excluded
-// from ZH_SCOPE_SELECTOR by default -- but every such table in this
-// dashboard is identifiable by its header row starting with a "Metric"
-// (or already-translated "指标") column, so those tables' <td> cells are
-// safe to also translate: their non-label columns hold only numbers/money
-// strings, which simply won't match any ZH_DICT entry and pass through
-// untouched.
-function metricPivotTableCells(root) {
-  const tables = [];
-  if (root.tagName === 'TABLE') tables.push(root);
-  if (root.querySelectorAll) tables.push(...root.querySelectorAll('table'));
-  const cells = [];
-  for (const table of tables) {
-    const firstTh = table.querySelector('thead th:first-child');
-    const label = firstTh && firstTh.textContent.trim();
-    if (label === 'Metric' || label === '指标') cells.push(...table.querySelectorAll('tbody td'));
-  }
-  return cells;
-}
-
-function translateSubtree(root) {
-  if (LANG !== 'zh') return;
-  const targets = [];
-  if (root.matches && root.matches(ZH_SCOPE_SELECTOR)) targets.push(root);
-  if (root.querySelectorAll) targets.push(...root.querySelectorAll(ZH_SCOPE_SELECTOR));
-  targets.push(...metricPivotTableCells(root));
-  for (const el of targets) {
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) translateNode(node);
-  }
+function setGoogleTranslateLanguage(lang) {
+  const select = document.querySelector('select.goog-te-combo');
+  if (!select) { setTimeout(() => setGoogleTranslateLanguage(lang), 300); return; }
+  select.value = lang;
+  select.dispatchEvent(new Event('change'));
 }
 
 function initLanguage() {
+  const script = document.createElement('script');
+  script.src = '//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
+  document.head.appendChild(script);
+
   const link = document.getElementById('lang-switch');
-  if (LANG === 'zh') {
-    document.documentElement.lang = 'zh-CN';
-    if (link) link.textContent = 'English';
-    translateSubtree(document.body);
-    new MutationObserver(mutations => {
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
-          if (node.nodeType === 1) translateSubtree(node);
-        }
-      }
-    }).observe(document.body, { childList: true, subtree: true });
-  } else if (link) {
-    link.textContent = '中文';
-  }
-  if (link) {
-    link.addEventListener('click', e => {
-      e.preventDefault();
-      localStorage.setItem('dashLang', LANG === 'zh' ? 'en' : 'zh');
-      location.reload();
-    });
-  }
+  if (!link) return;
+  link.textContent = LANG === 'zh' ? 'English' : '中文';
+  if (LANG === 'zh') document.documentElement.lang = 'zh-CN';
+  link.addEventListener('click', e => {
+    e.preventDefault();
+    const next = LANG === 'zh' ? 'en' : 'zh';
+    localStorage.setItem('dashLang', next);
+    setGoogleTranslateLanguage(next === 'zh' ? 'zh-CN' : 'en');
+    link.textContent = next === 'zh' ? 'English' : '中文';
+    LANG = next;
+  });
 }
 initLanguage();
 
