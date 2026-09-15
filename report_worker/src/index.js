@@ -508,16 +508,39 @@ const ZH_DICT = {
   'WD Today': '今日提款', 'Wallet Bal': '钱包余额', 'Wallet Balance': '钱包余额', 'Week': '周',
   'Withdraw': '提款', 'Withdraw (3d)': '提款（3天）', 'Withdraw Today': '今日提款',
   'Withdrew - Count': '提款人数', 'Withdrew - Retention %': '提款留存率', 'Withdrew - Returned': '提款回归数',
+
+  // Weekly Performance's own metric-name values (server-supplied via
+  // r.metric in weekly_performance.comparison/.target, not a hardcoded
+  // client-side label -- see WEEKLY_TARGET_LABELS / _WEEKLY_PERF_METRIC_LABELS
+  // in build_deposit_report.py). Note the em dash (—), not a hyphen --
+  // these are DIFFERENT strings from the plain-hyphen "Avg Withdraw - Old
+  // Users" column-label entries above used elsewhere in this same section.
+  'Avg Deposit — Old Users': '平均存款 — 老用户', 'Avg Deposit — New Users': '平均存款 — 新用户',
+  'Old Users Withdraw Count': '老用户提款人数', 'Avg Withdraw — Old Users': '平均提款 — 老用户',
+  'New Users Withdraw Count': '新用户提款人数', 'Avg Withdraw — New Users': '平均提款 — 新用户',
+  'Avg Total Deposit (Day)': '平均总存款（当日）', 'MET': '已达成', 'BEHIND': '未达成',
+
+  // Weekly Performance's retention-comparison sub-table (h3 + row labels,
+  // all hardcoded client-side, but in <td> cells -- see the "Metric" pivot
+  // table handling in translateSubtree() below for why these still apply).
+  'New User 3-Day Retention': '新用户三日留存', 'Cohorts Included': '纳入的用户群',
+  'Avg New Users / Cohort': '平均新用户数/群组', 'Withdrew, then Redeposited %': '提款后再存款比例',
+  'Never Withdrew, then Redeposited %': '从未提款后再存款比例',
 };
 
-// A handful of h2 titles are built with an interpolated live count
-// (e.g. "Bonuses Claimed (42)"), so an exact-text dictionary lookup never
-// matches -- handled as prefix patterns instead, tried after ZH_DICT.
+// A handful of h2/h3 titles are built with an interpolated live value
+// (a count, a day-count, or a date range), so an exact-text dictionary
+// lookup never matches -- handled as regex patterns instead, tried after
+// ZH_DICT. zh is the fixed replacement for the STATIC portion matched by
+// the capturing group in re; the captured dynamic portion is preserved
+// verbatim in the output.
 const ZH_DYNAMIC = [
-  { re: /^Bonuses Claimed \(\d+\)$/, base: 'Bonuses Claimed', zh: '已领取奖金' },
-  { re: /^Deposits \(\d+\)$/, base: 'Deposits', zh: '存款记录' },
-  { re: /^Withdrawals \(\d+\)$/, base: 'Withdrawals', zh: '提款记录' },
-  { re: /^Recent Games Played \(\d+\)$/, base: 'Recent Games Played', zh: '近期游戏记录' },
+  { re: /^Bonuses Claimed \((\d+)\)$/, zh: n => '已领取奖金 (' + n + ')' },
+  { re: /^Deposits \((\d+)\)$/, zh: n => '存款记录 (' + n + ')' },
+  { re: /^Withdrawals \((\d+)\)$/, zh: n => '提款记录 (' + n + ')' },
+  { re: /^Recent Games Played \((\d+)\)$/, zh: n => '近期游戏记录 (' + n + ')' },
+  { re: /^This Week \((\d+)d avg\)$/, zh: n => '本周（' + n + '天均值）' },
+  { re: /^Target vs Actual -- Week of (.+)$/, zh: range => '目标与实际对比 —— 周期：' + range },
 ];
 
 function translateNode(textNode) {
@@ -529,9 +552,9 @@ function translateNode(textNode) {
     return;
   }
   for (const d of ZH_DYNAMIC) {
-    if (d.re.test(trimmed)) {
-      const count = trimmed.match(/\((\d+)\)/);
-      textNode.nodeValue = raw.replace(trimmed, d.zh + (count ? ' (' + count[1] + ')' : ''));
+    const m = trimmed.match(d.re);
+    if (m) {
+      textNode.nodeValue = raw.replace(trimmed, d.zh(m[1]));
       return;
     }
   }
@@ -546,11 +569,36 @@ function translateNode(textNode) {
 const ZH_SCOPE_SELECTOR = 'h1, h2, h3, caption, .ac-note, th, button, .download-btn-sm, .nav-item, ' +
   '#lang-switch, label, option, .stat, .day-label, .today-tag, .badge, .b-orange, .rh-count small, .rh-pct small';
 
+// A few tables (Weekly Performance's week-on-week comparison, its
+// retention/target sub-tables) put a fixed, finite set of METRIC NAMES in
+// the first <td> of each row rather than a <th> -- e.g. "Old Users Count",
+// "Cohorts Included". These are structurally indistinguishable from real
+// per-row DATA (user IDs, category names) by tag alone, so they're excluded
+// from ZH_SCOPE_SELECTOR by default -- but every such table in this
+// dashboard is identifiable by its header row starting with a "Metric"
+// (or already-translated "指标") column, so those tables' <td> cells are
+// safe to also translate: their non-label columns hold only numbers/money
+// strings, which simply won't match any ZH_DICT entry and pass through
+// untouched.
+function metricPivotTableCells(root) {
+  const tables = [];
+  if (root.tagName === 'TABLE') tables.push(root);
+  if (root.querySelectorAll) tables.push(...root.querySelectorAll('table'));
+  const cells = [];
+  for (const table of tables) {
+    const firstTh = table.querySelector('thead th:first-child');
+    const label = firstTh && firstTh.textContent.trim();
+    if (label === 'Metric' || label === '指标') cells.push(...table.querySelectorAll('tbody td'));
+  }
+  return cells;
+}
+
 function translateSubtree(root) {
   if (LANG !== 'zh') return;
   const targets = [];
   if (root.matches && root.matches(ZH_SCOPE_SELECTOR)) targets.push(root);
   if (root.querySelectorAll) targets.push(...root.querySelectorAll(ZH_SCOPE_SELECTOR));
+  targets.push(...metricPivotTableCells(root));
   for (const el of targets) {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     let node;
