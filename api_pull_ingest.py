@@ -195,6 +195,24 @@ def fetch_token(s3, bucket):
     return token
 
 
+def is_auth_failure(e):
+    """True only for a genuine business-API auth rejection -- either an
+    actual 401/403 HTTP status, or the API's own habit (confirmed
+    2026-09-20) of returning HTTP 200 with an app-level {"code":401,...}
+    body for a bad/expired token, which fetch_export() surfaces as a
+    RuntimeError from its content-type check. Anything else (5xx server
+    errors like the 524 Cloudflare edge timeout confirmed to be the ACTUAL
+    cause of the 2026-09-18/19/20 outage, timeouts, connection errors) is
+    the business API's own server being slow or temporarily unavailable,
+    not a token problem, and must NOT trigger the "update your bearer
+    token" banner -- that mislabeling cost two days of chasing a
+    perfectly valid token, when the deposits/withdrawals fetches in that
+    very run (same token) succeeded fine and only detail/export timed out."""
+    if isinstance(e, requests.exceptions.HTTPError) and e.response is not None:
+        return e.response.status_code in (401, 403)
+    return '"code":401' in str(e) or '认证失败' in str(e)
+
+
 def fetch_export(token, path, payload, attempts=3):
     last_err = None
     for attempt in range(1, attempts + 1):
@@ -791,6 +809,20 @@ def main():
     today = ist_today()
     ts = int(time.time() * 1000)
 
+    # Each of the three exports is fetched independently now (confirmed
+    # 2026-09-20: detail/export -- by far the heaviest query, a full day's
+    # wallet transactions across the whole platform -- intermittently hits
+    # a 524 Cloudflare edge timeout on busy days, while deposits/withdrawals
+    # succeed fine with the SAME token). Previously one shared try/except
+    # meant a single wallet timeout discarded two already-successful
+    # fetches and every hourly run for two straight days, on top of wrongly
+    # flagging a perfectly valid token as invalid. Now: ingest whatever
+    # actually succeeded this run, and only genuine auth rejections (see
+    # is_auth_failure()) raise the token-invalid banner.
+    deposit_path = withdraw_path = wallet_path = wallet_target = None
+    fetch_errors = []
+    auth_failed = False
+
     try:
         # Deposits: 5-day window, date-only bounds (confirmed inclusive of the full end day)
         dep_start = today - datetime.timedelta(days=4)
@@ -800,7 +832,11 @@ def main():
         })
         deposit_path = save_xlsx(deposit_bytes, f"{ts}_water_api_pull.xlsx")
         print(f"Fetched deposits {dep_start} .. {today}: {len(deposit_bytes)} bytes")
+    except Exception as e:
+        fetch_errors.append(("deposits", e))
+        auth_failed = auth_failed or is_auth_failure(e)
 
+    try:
         # Withdrawals: end bound is exclusive of the named day, so use (today + 1) at
         # 00:00:00 to include all of today. Query all 5 statuses (In-Review, Processing,
         # Complete, Rejected, Failed) -- the whole point of the 5-day window is to catch
@@ -814,7 +850,11 @@ def main():
         })
         withdraw_path = save_xlsx(withdraw_bytes, f"{ts}_withdraw_api_pull.xlsx")
         print(f"Fetched withdrawals {wd_start} .. {today} (inclusive): {len(withdraw_bytes)} bytes")
+    except Exception as e:
+        fetch_errors.append(("withdrawals", e))
+        auth_failed = auth_failed or is_auth_failure(e)
 
+    try:
         # Wallet: single day, with day-rollover-aware target date
         wallet_state = get_wallet_state(s3, bucket)
         last_run_date = wallet_state.get("last_run_date")
@@ -831,20 +871,34 @@ def main():
         wallet_path = save_xlsx(wallet_bytes, f"{ts}_detail_api_pull.xlsx")
         print(f"Fetched wallet {wallet_target}: {len(wallet_bytes)} bytes")
     except Exception as e:
-        # Every export uses the same bearer token, so any unrecoverable fetch failure
-        # here is treated as an expired/invalid token -- surfaced on the upload page.
+        fetch_errors.append(("wallet", e))
+        auth_failed = auth_failed or is_auth_failure(e)
+        wallet_path = None  # don't advance wallet_state below on a failed fetch
+
+    for name, e in fetch_errors:
+        kind = "AUTH REJECTED" if is_auth_failure(e) else "non-auth (server/network issue, will retry next run)"
+        print(f"WARNING: {name} fetch failed [{kind}]: {e}", file=sys.stderr)
+
+    if auth_failed:
         put_token_status(s3, bucket, ok=False, message="update new bearer token to run the pipeline")
-        print(f"FATAL: business API fetch failed, marking token as invalid: {e}", file=sys.stderr)
+
+    if not (deposit_path or withdraw_path or wallet_path):
+        print("FATAL: all business API fetches failed this run", file=sys.stderr)
         sys.exit(1)
 
-    # Ingest everything in one pass (handles purge + re-upload to R2 internally)
+    # Ingest whatever was actually fetched this run (handles purge +
+    # re-upload to R2 internally) -- ingest_update.py's own main() already
+    # treats each of --deposits/--withdrawals/--wallet independently
+    # (nargs="*", default=[]), so omitting one a fetch failed on is a
+    # no-op for that piece rather than a hard requirement.
     argv_backup = sys.argv
-    sys.argv = [
-        "ingest_update.py",
-        "--deposits", deposit_path,
-        "--withdrawals", withdraw_path,
-        "--wallet", wallet_path,
-    ]
+    sys.argv = ["ingest_update.py"]
+    if deposit_path:
+        sys.argv += ["--deposits", deposit_path]
+    if withdraw_path:
+        sys.argv += ["--withdrawals", withdraw_path]
+    if wallet_path:
+        sys.argv += ["--wallet", wallet_path]
     try:
         iu.main()
     finally:
@@ -919,7 +973,7 @@ def main():
     except sqlite3.OperationalError:
         bonus_rows_for_sync = []  # table doesn't exist yet (e.g. no wallet data ingested so far)
     daily_conn.close()
-    dep_info = extract_deposit_user_info(deposit_path)
+    dep_info = extract_deposit_user_info(deposit_path) if deposit_path else {}
     ok, reactivation_candidates, vip_upgrade_candidates = sync_master_userlist(
         master_db_path, deposit_rows_for_sync, withdrawal_rows_for_sync, wallet_activity,
         wallet_balance_by_user, bonus_rows_for_sync, dep_info, today
@@ -962,9 +1016,15 @@ def main():
     print(f"Wrote {len(vip_upgrade_candidates['low'])} low + {len(vip_upgrade_candidates['high'])} high VIP upgrade candidates to {vip_upgrade_path}")
     s3.upload_file(vip_upgrade_path, bucket, "reports/vip_upgrade_candidates.json")
 
-    # Only mark the wallet target date as covered after a successful ingest
-    put_wallet_state(s3, bucket, {"last_run_date": today.isoformat(), "last_wallet_target": wallet_target.isoformat()})
-    print(f"Wallet state updated: last_run_date={today}")
+    # Only mark the wallet target date as covered after a successful fetch
+    # AND ingest -- if the wallet fetch failed this run (wallet_path/
+    # wallet_target left None), leave the state untouched so the next run
+    # retries the SAME target date rather than skipping ahead to today's.
+    if wallet_path and wallet_target:
+        put_wallet_state(s3, bucket, {"last_run_date": today.isoformat(), "last_wallet_target": wallet_target.isoformat()})
+        print(f"Wallet state updated: last_run_date={today}")
+    else:
+        print("Wallet fetch failed this run -- wallet state left unchanged, will retry the same target date next run")
 
     # Successful pull+ingest confirms the token is valid -- clear any stale alert
     put_token_status(s3, bucket, ok=True)
