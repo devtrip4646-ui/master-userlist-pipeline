@@ -41,6 +41,11 @@ def main():
 
     result = {}
 
+    head = s3.head_object(Bucket=bucket, Key="master_userlist.db")
+    result["master_userlist_db_bytes"] = head["ContentLength"]
+    result["master_userlist_db_mb"] = round(head["ContentLength"] / (1024 * 1024), 2)
+    result["master_userlist_db_last_modified"] = str(head["LastModified"])
+
     conn = sqlite3.connect(MASTER_DB)
     cur = conn.cursor()
     result["raw_users_table_count"] = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -50,6 +55,18 @@ def main():
     result["sample_rows"] = cur.execute(
         "SELECT user_id, vip_level, total_recharge, recharge_count, last_active_time, create_time FROM users LIMIT 5"
     ).fetchall()
+    result["max_user_id"] = cur.execute("SELECT MAX(user_id) FROM users").fetchone()[0]
+    result["min_user_id"] = cur.execute("SELECT MIN(user_id) FROM users").fetchone()[0]
+    try:
+        result["ingested_files_count"] = cur.execute("SELECT COUNT(*) FROM ingested_files").fetchone()[0]
+        result["recent_ingested_files"] = cur.execute(
+            "SELECT filename, ingested_at FROM ingested_files ORDER BY ingested_at DESC LIMIT 15"
+        ).fetchall()
+    except Exception as e:
+        result["ingested_files_error"] = f"{type(e).__name__}: {e}"
+    result["all_tables"] = [r[0] for r in cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()]
     conn.close()
 
     try:
