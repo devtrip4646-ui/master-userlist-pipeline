@@ -1,0 +1,4 @@
+{
+  "versioning_check_error": "AccessDenied: An error occurred (AccessDenied) when calling the GetBucketVersioning operation: Access Denied",
+  "list_versions_error": "ClientError: An error occurred (NotImplemented) when calling the ListObjectVersions operation: ListObjectVersions not implemented"
+}
