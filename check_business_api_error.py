@@ -6,6 +6,7 @@ every exception gets collapsed into by main()'s blanket except-clause.
 Writes results to debug/business_api_error.json and commits it back to
 the repo. One-off; delete both this script and its workflow after use.
 """
+import base64
 import datetime
 import json
 import os
@@ -13,6 +14,24 @@ import subprocess
 
 import boto3
 import requests
+
+
+def decode_jwt_payload(token):
+    """Decode (NOT verify -- no secret needed or available) a JWT's middle
+    segment, to check for exp/iat claims. Every business-API bearer token
+    seen so far only carries a login_user_key (an opaque server-side
+    session id), no exp/iat -- if that's still true, it confirms this
+    token's actual validity window is tracked server-side, not something
+    we can read off the token itself, which matters for diagnosing
+    whether short-lived session tokens are the real problem here."""
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return {"error": "not a 3-part JWT"}
+        payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload_b64))
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
 
 API_BASE = "https://api.dlmanagers.online/prod-api/business"
 PACKAGE_ID = "5"
@@ -41,6 +60,7 @@ def main():
         token = obj["Body"].read().decode("utf-8").strip()
         result["token_length"] = len(token)
         result["token_last_modified"] = str(obj.get("LastModified"))
+        result["token_jwt_payload"] = decode_jwt_payload(token)
     except Exception as e:
         result["token_read_error"] = f"{type(e).__name__}: {e}"
         token = None
