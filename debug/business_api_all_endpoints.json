@@ -1,0 +1,23 @@
+{
+  "checked_at": "2026-09-20T05:28:43.609539",
+  "token_length": 184,
+  "token_last_modified": "2026-09-20 04:27:49+00:00",
+  "1_water_export": {
+    "http_status": 200,
+    "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8",
+    "is_spreadsheet": true,
+    "body_first_300_chars_if_not_spreadsheet": null
+  },
+  "2_withdraw_export": {
+    "http_status": 200,
+    "content_type": "application/vnd.ms-excel;charset=UTF-8",
+    "is_spreadsheet": true,
+    "body_first_300_chars_if_not_spreadsheet": null
+  },
+  "3_detail_export": {
+    "http_status": 200,
+    "content_type": "application/vnd.ms-excel;charset=UTF-8",
+    "is_spreadsheet": true,
+    "body_first_300_chars_if_not_spreadsheet": null
+  }
+}
