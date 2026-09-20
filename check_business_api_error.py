@@ -68,6 +68,14 @@ def main():
     if token:
         today = datetime.datetime.utcnow().date()
         dep_start = today - datetime.timedelta(days=4)
+        payload = {
+            "packageId": PACKAGE_ID, "pageNum": 1, "pageSize": 10, "useUpiQuery": "true",
+            "queryDate[0]": dep_start.isoformat(), "queryDate[1]": today.isoformat(),
+        }
+
+        # Variant A: exactly what api_pull_ingest.py currently sends (bare
+        # Authorization header, no browser-identifying headers) -- this is
+        # the known-failing baseline.
         try:
             resp = requests.post(
                 f"{API_BASE}/water/export",
@@ -75,17 +83,41 @@ def main():
                     "Authorization": f"Bearer {token}",
                     "Content-Type": "application/x-www-form-urlencoded",
                 },
-                data={
-                    "packageId": PACKAGE_ID, "pageNum": 1, "pageSize": 10, "useUpiQuery": "true",
-                    "queryDate[0]": dep_start.isoformat(), "queryDate[1]": today.isoformat(),
-                },
+                data=payload,
                 timeout=60,
             )
-            result["http_status"] = resp.status_code
-            result["response_headers_content_type"] = resp.headers.get("content-type")
-            result["response_body_first_1000_chars"] = resp.text[:1000]
+            result["variant_a_bare_headers"] = {
+                "http_status": resp.status_code,
+                "content_type": resp.headers.get("content-type"),
+                "body_first_500_chars": resp.text[:500],
+            }
         except requests.exceptions.RequestException as e:
-            result["request_exception"] = f"{type(e).__name__}: {e}"
+            result["variant_a_bare_headers"] = {"request_exception": f"{type(e).__name__}: {e}"}
+
+        # Variant B: same call, but with Origin/Referer/User-Agent added to
+        # look like a request from the admin panel's own browser session --
+        # testing whether the API rejects non-browser-looking requests
+        # regardless of an otherwise-valid token.
+        try:
+            resp = requests.post(
+                f"{API_BASE}/water/export",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": "https://admin.dlmanagers.online",
+                    "Referer": "https://admin.dlmanagers.online/index",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                },
+                data=payload,
+                timeout=60,
+            )
+            result["variant_b_browser_like_headers"] = {
+                "http_status": resp.status_code,
+                "content_type": resp.headers.get("content-type"),
+                "body_first_500_chars": resp.text[:500],
+            }
+        except requests.exceptions.RequestException as e:
+            result["variant_b_browser_like_headers"] = {"request_exception": f"{type(e).__name__}: {e}"}
 
     out_path = os.path.join(BASE, "debug")
     os.makedirs(out_path, exist_ok=True)
