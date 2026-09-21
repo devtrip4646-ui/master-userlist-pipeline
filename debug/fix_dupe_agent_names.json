@@ -1,0 +1,53 @@
+{
+  "all_agent_names_before": [
+    "Aarthy (SL)",
+    "Amar (WFH)",
+    "Anitha (WFH)",
+    "Lakshmi (WFH)",
+    "Murali (WFH)",
+    "Muskhan (WFH)",
+    "Naira (WFH)",
+    "Nisha (WFH)",
+    "Reetu (WFH)",
+    "Rithika (WFH)",
+    "Sahana (SL)",
+    "Sathya (WFH)",
+    "Shakshi (WFH)"
+  ],
+  "renames": {
+    "Lakshmi( WFH)": {
+      "good": "Lakshmi (WFH)",
+      "agent_assignments_rows": 0,
+      "agent_roster_rows": 0
+    },
+    "Reetu( WFH)": {
+      "good": "Reetu (WFH)",
+      "agent_assignments_rows": 0,
+      "agent_roster_rows": 0
+    }
+  },
+  "all_agent_names_after": [
+    "Aarthy (SL)",
+    "Amar (WFH)",
+    "Anitha (WFH)",
+    "Lakshmi (WFH)",
+    "Murali (WFH)",
+    "Muskhan (WFH)",
+    "Naira (WFH)",
+    "Nisha (WFH)",
+    "Reetu (WFH)",
+    "Rithika (WFH)",
+    "Sahana (SL)",
+    "Sathya (WFH)",
+    "Shakshi (WFH)"
+  ],
+  "overrides_after": {
+    "Aarthy (SL)": "PR0987",
+    "Amar (WFH)": "AM0987"
+  },
+  "build_deposit_report_returncode": 1,
+  "build_deposit_report_stdout_tail": "",
+  "build_deposit_report_stderr_tail": "Traceback (most recent call last):\n  File \"/home/runner/work/master-userlist-pipeline/master-userlist-pipeline/build_deposit_report.py\", line 4263, in <module>\n    main()\n  File \"/home/runner/work/master-userlist-pipeline/master-userlist-pipeline/build_deposit_report.py\", line 3584, in main\n    shutil.copyfile(DB_PATH, report_daily_db_path)\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/shutil.py\", line 256, in copyfile\n    with open(src, 'rb') as fsrc:\n         ^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/home/runner/work/master-userlist-pipeline/master-userlist-pipeline/daily_records.db'\n",
+  "status": "error",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/runner/work/master-userlist-pipeline/master-userlist-pipeline/fix_dupe_agent_names.py\", line 122, in main\n    run_migration(result)\n  File \"/home/runner/work/master-userlist-pipeline/master-userlist-pipeline/fix_dupe_agent_names.py\", line 114, in run_migration\n    proc.check_returncode()\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/subprocess.py\", line 502, in check_returncode\n    raise CalledProcessError(self.returncode, self.args, self.stdout,\nsubprocess.CalledProcessError: Command '['python3', '/home/runner/work/master-userlist-pipeline/master-userlist-pipeline/build_deposit_report.py']' returned non-zero exit status 1.\n"
+}
