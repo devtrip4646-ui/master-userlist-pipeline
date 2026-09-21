@@ -70,6 +70,17 @@ def mark_ingested(conn, filename):
     conn.execute("INSERT OR IGNORE INTO ingested_files (filename) VALUES (?)", (os.path.basename(filename),))
 
 
+def normalize_agent_name(name):
+    """Canonicalize spacing around the trailing "(WFH)"/"(SL)" tag so that
+    header variants like "Lakshmi( WFH)" and "Lakshmi (WFH)" collapse to the
+    same agent instead of silently creating a duplicate agent with its own
+    (identical, formula-derived) password -- confirmed happening in
+    production 2026-09-21 for "Lakshmi"/"Reetu" after a sheet re-export had
+    inconsistent spacing in its header row."""
+    name = re.sub(r"\s*\(\s*", " (", name.strip())
+    return re.sub(r"\s+", " ", name)
+
+
 def ingest_agents(files):
     """Agent-to-user assignment sheet (e.g. "Agent-users.xlsx"). Unlike the
     other ingest_* functions, the source layout isn't one-row-per-user --
@@ -96,7 +107,7 @@ def ingest_agents(files):
         ws = wb[sheet_name]
         rows = ws.iter_rows(values_only=True)
         header = next(rows)
-        col_agents = {i: str(h).strip() for i, h in enumerate(header) if h}
+        col_agents = {i: normalize_agent_name(str(h)) for i, h in enumerate(header) if h}
         mapping = {}
         for row in rows:
             for i, agent in col_agents.items():
