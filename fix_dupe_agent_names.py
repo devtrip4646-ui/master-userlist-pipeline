@@ -20,6 +20,7 @@ import boto3
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 MASTER_DB = os.path.join(BASE, "master_userlist.db")
+DAILY_DB = os.path.join(BASE, "daily_records.db")
 
 RENAMES = {
     "Lakshmi( WFH)": "Lakshmi (WFH)",
@@ -102,6 +103,11 @@ def run_migration(result):
         result["overrides_after"] = overrides
     except s3.exceptions.NoSuchKey:
         result["overrides_after"] = None
+
+    # build_deposit_report.py requires daily_records.db to already be present
+    # locally (normally left behind by the ingest step that runs right before
+    # it in ingest.yml) -- this standalone script needs to fetch it itself.
+    s3.download_file(bucket, "daily_records.db", DAILY_DB)
 
     # Regenerate reports/agent_list.json from the corrected DB.
     proc = subprocess.run(
