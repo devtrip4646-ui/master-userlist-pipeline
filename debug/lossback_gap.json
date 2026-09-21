@@ -1,0 +1,268 @@
+{
+  "lossback_rows_by_game_name_and_day": [
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-05",
+      "count": 73,
+      "min_id": 24321006304797,
+      "max_id": 24321006669344
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-06",
+      "count": 24,
+      "min_id": 24321007703614,
+      "max_id": 24321007924734
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-07",
+      "count": 56,
+      "min_id": 24321008850976,
+      "max_id": 24321009524921
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-08",
+      "count": 169,
+      "min_id": 24321010294331,
+      "max_id": 24321011220958
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-09",
+      "count": 250,
+      "min_id": 24321011279192,
+      "max_id": 24321012896395
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-10",
+      "count": 162,
+      "min_id": 24321013381736,
+      "max_id": 24321014128707
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-11",
+      "count": 144,
+      "min_id": 24321014943559,
+      "max_id": 24321015911689
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-12",
+      "count": 150,
+      "min_id": 24321016385610,
+      "max_id": 24321016888949
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-13",
+      "count": 219,
+      "min_id": 24321018157223,
+      "max_id": 24321018732033
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-14",
+      "count": 248,
+      "min_id": 24321019836428,
+      "max_id": 24321020662458
+    },
+    {
+      "game_name": "Elle Import Excel Add",
+      "day": "2026-09-14",
+      "count": 33,
+      "min_id": 24321019699167,
+      "max_id": 24321019699304
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-15",
+      "count": 345,
+      "min_id": 24321021229658,
+      "max_id": 24321022618534
+    },
+    {
+      "game_name": "Elle Import Excel Add",
+      "day": "2026-09-15",
+      "count": 83,
+      "min_id": 24321021514610,
+      "max_id": 24321021528478
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-16",
+      "count": 608,
+      "min_id": 24321023106309,
+      "max_id": 24321024568211
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-17",
+      "count": 411,
+      "min_id": 24321025392481,
+      "max_id": 24321026289870
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-18",
+      "count": 378,
+      "min_id": 24321027371372,
+      "max_id": 24321028399589
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-19",
+      "count": 412,
+      "min_id": 24321029868863,
+      "max_id": 24321030442239
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-20",
+      "count": 323,
+      "min_id": 24321031910539,
+      "max_id": 24321032444541
+    },
+    {
+      "game_name": "04Siya Import Excel Add",
+      "day": "2026-09-21",
+      "count": 79,
+      "min_id": 24321033738704,
+      "max_id": 24321033885167
+    }
+  ],
+  "missing_from_bonuses_by_game_and_day": {
+    "04Siya Import Excel Add|2026-09-05": {
+      "total": 73,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-06": {
+      "total": 24,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-07": {
+      "total": 56,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-08": {
+      "total": 169,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-09": {
+      "total": 250,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-10": {
+      "total": 162,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-11": {
+      "total": 144,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-12": {
+      "total": 150,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-13": {
+      "total": 219,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-14": {
+      "total": 248,
+      "missing_from_bonuses": 0
+    },
+    "Elle Import Excel Add|2026-09-14": {
+      "total": 33,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-15": {
+      "total": 345,
+      "missing_from_bonuses": 0
+    },
+    "Elle Import Excel Add|2026-09-15": {
+      "total": 83,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-16": {
+      "total": 608,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-17": {
+      "total": 411,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-18": {
+      "total": 378,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-19": {
+      "total": 412,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-20": {
+      "total": 323,
+      "missing_from_bonuses": 0
+    },
+    "04Siya Import Excel Add|2026-09-21": {
+      "total": 79,
+      "missing_from_bonuses": 0
+    }
+  },
+  "backfill_state": {
+    "rules_version": "8",
+    "last_backfilled_id": "24321044343140"
+  },
+  "max_wallet_transactions_id": 24321044343140,
+  "max_bonuses_id": 24321033936981,
+  "sample_rows_most_recent_day": [
+    {
+      "id": 24321033885167,
+      "game_name": "04Siya Import Excel Add",
+      "source": null,
+      "source_id": "New Users Lossback:20260921125635:945550",
+      "user_id": 2020229,
+      "change_value": 40.0,
+      "create_time": "2026-09-21 12:56:35"
+    },
+    {
+      "id": 24321033885164,
+      "game_name": "04Siya Import Excel Add",
+      "source": null,
+      "source_id": "New Users Lossback:20260921125635:951808",
+      "user_id": 2021722,
+      "change_value": 40.0,
+      "create_time": "2026-09-21 12:56:35"
+    },
+    {
+      "id": 24321033885160,
+      "game_name": "04Siya Import Excel Add",
+      "source": null,
+      "source_id": "New Users Lossback:20260921125634:997307",
+      "user_id": 2021713,
+      "change_value": 40.0,
+      "create_time": "2026-09-21 12:56:35"
+    },
+    {
+      "id": 24321033885159,
+      "game_name": "04Siya Import Excel Add",
+      "source": null,
+      "source_id": "New Users Lossback:20260921125634:941301",
+      "user_id": 2021690,
+      "change_value": 40.0,
+      "create_time": "2026-09-21 12:56:35"
+    },
+    {
+      "id": 24321033885157,
+      "game_name": "04Siya Import Excel Add",
+      "source": null,
+      "source_id": "New Users Lossback:20260921125634:983817",
+      "user_id": 2017584,
+      "change_value": 40.0,
+      "create_time": "2026-09-21 12:56:35"
+    }
+  ]
+}
