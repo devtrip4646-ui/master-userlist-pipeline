@@ -1,0 +1,409 @@
+{
+  "wallet_state": {
+    "last_run_date": "2026-09-21",
+    "last_wallet_target": "2026-09-21"
+  },
+  "wallet_transactions_2026-09-19": 2134202,
+  "wallet_transactions_2026-09-20": 2158845,
+  "wallet_transactions_2026-09-21": 1102382,
+  "max_wallet_create_time": "2026-09-21 17:40:25",
+  "recent_04Siya Import Excel Add_since_sep20": [
+    [
+      "New Users Lossback:20260921171221:912021",
+      "2026-09-21 17:12:22"
+    ],
+    [
+      "New Users Lossback:20260921171221:957296",
+      "2026-09-21 17:12:22"
+    ],
+    [
+      "New Users Lossback:20260921171221:961128",
+      "2026-09-21 17:12:22"
+    ],
+    [
+      "New Users Lossback:20260921171221:914739",
+      "2026-09-21 17:12:22"
+    ],
+    [
+      "New Users Lossback:20260921171222:918291",
+      "2026-09-21 17:12:22"
+    ],
+    [
+      "New Users Lossback:20260921171220:910219",
+      "2026-09-21 17:12:21"
+    ],
+    [
+      "New Users Lossback:20260921171220:968358",
+      "2026-09-21 17:12:21"
+    ],
+    [
+      "New Users Lossback:20260921171220:954302",
+      "2026-09-21 17:12:21"
+    ],
+    [
+      "New Users Lossback:20260921171221:999872",
+      "2026-09-21 17:12:21"
+    ],
+    [
+      "New Users Lossback:20260921171221:990164",
+      "2026-09-21 17:12:21"
+    ],
+    [
+      "New Users Lossback:20260921171221:965336",
+      "2026-09-21 17:12:21"
+    ],
+    [
+      "New Users Lossback:20260921171221:945296",
+      "2026-09-21 17:12:21"
+    ],
+    [
+      "New Users Lossback:20260921171221:958150",
+      "2026-09-21 17:12:21"
+    ],
+    [
+      "New Users Lossback:20260921171219:936043",
+      "2026-09-21 17:12:20"
+    ],
+    [
+      "New Users Lossback:20260921171219:978256",
+      "2026-09-21 17:12:20"
+    ]
+  ],
+  "recent_Elle Import Excel Add_since_sep20": [
+    [
+      "Weekly Loss Bonus:20260920161116:948344",
+      "2026-09-20 16:11:17"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161116:920785",
+      "2026-09-20 16:11:17"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161116:916437",
+      "2026-09-20 16:11:17"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161117:953800",
+      "2026-09-20 16:11:17"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161117:908034",
+      "2026-09-20 16:11:17"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161117:979803",
+      "2026-09-20 16:11:17"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161115:923724",
+      "2026-09-20 16:11:16"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161115:907030",
+      "2026-09-20 16:11:16"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161115:941321",
+      "2026-09-20 16:11:16"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161116:973569",
+      "2026-09-20 16:11:16"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161116:904732",
+      "2026-09-20 16:11:16"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161116:977237",
+      "2026-09-20 16:11:16"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161116:961390",
+      "2026-09-20 16:11:16"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161114:951151",
+      "2026-09-20 16:11:15"
+    ],
+    [
+      "Weekly Loss Bonus:20260920161114:926409",
+      "2026-09-20 16:11:15"
+    ]
+  ],
+  "bonuses_2026-09-20_by_category": [
+    [
+      "Weekly Loss Bonus",
+      1183,
+      229798.34
+    ],
+    [
+      "First deposit",
+      687,
+      8713.0
+    ],
+    [
+      "Daily Active Bonus",
+      592,
+      56711.08
+    ],
+    [
+      "Daily Active Bonus Low",
+      479,
+      10143.58
+    ],
+    [
+      "BankruptcyActivity",
+      468,
+      15475.0
+    ],
+    [
+      "Second Deposit",
+      326,
+      5110.0
+    ],
+    [
+      "New Users Lossback",
+      323,
+      19912.0
+    ],
+    [
+      "VIP Week Card Perks",
+      171,
+      6396.0
+    ],
+    [
+      "VIP Week Reward 37",
+      112,
+      528.42
+    ],
+    [
+      "Third deposit",
+      80,
+      2770.0
+    ],
+    [
+      "Low VIP",
+      60,
+      2067.0
+    ],
+    [
+      "VIP Level: 2",
+      31,
+      215.0
+    ],
+    [
+      "System Gift",
+      29,
+      1500.0
+    ],
+    [
+      "SPIN FREE",
+      26,
+      760.0
+    ],
+    [
+      "Fourth deposit",
+      25,
+      1680.0
+    ],
+    [
+      "Weekly Check-IN Bonus",
+      15,
+      2300.0
+    ],
+    [
+      "VIP Level: 3",
+      7,
+      230.0
+    ],
+    [
+      "Welcome Back Bonus",
+      6,
+      3100.0
+    ],
+    [
+      "VIP Level: 4",
+      6,
+      215.0
+    ],
+    [
+      "Super Friday - Bonus",
+      6,
+      3000.0
+    ],
+    [
+      "VIP Level: 1",
+      5,
+      50.0
+    ],
+    [
+      "Weekend - Bonus",
+      3,
+      7500.0
+    ],
+    [
+      "VIP Level: 5",
+      3,
+      75.0
+    ],
+    [
+      "VIP Level: 6",
+      2,
+      600.0
+    ],
+    [
+      "ICE Fishing - Bonus",
+      1,
+      1200.0
+    ]
+  ],
+  "bonuses_2026-09-21_by_category": [
+    [
+      "VIP Week Reward 38",
+      3210,
+      37085.35
+    ],
+    [
+      "Weekly Active Bonus",
+      609,
+      240330.0
+    ],
+    [
+      "Daily Active Bonus",
+      583,
+      54079.43
+    ],
+    [
+      "Daily Active Bonus Low",
+      464,
+      9724.880000000001
+    ],
+    [
+      "First deposit",
+      243,
+      3031.0
+    ],
+    [
+      "BankruptcyActivity",
+      181,
+      6075.0
+    ],
+    [
+      "New Users Lossback",
+      162,
+      8642.0
+    ],
+    [
+      "VIP Week Card Perks",
+      160,
+      5897.0
+    ],
+    [
+      "Second Deposit",
+      151,
+      2508.0
+    ],
+    [
+      "Weekly Check-IN Bonus",
+      52,
+      1040.0
+    ],
+    [
+      "Third deposit",
+      43,
+      1140.0
+    ],
+    [
+      "VIP Level: 2",
+      21,
+      135.0
+    ],
+    [
+      "SPIN FREE",
+      18,
+      570.0
+    ],
+    [
+      "Low VIP",
+      17,
+      339.0
+    ],
+    [
+      "Fourth deposit",
+      16,
+      1020.0
+    ],
+    [
+      "System Gift",
+      13,
+      1300.0
+    ],
+    [
+      "VIP Level: 3",
+      8,
+      190.0
+    ],
+    [
+      "Jili - Bonus",
+      8,
+      9300.0
+    ],
+    [
+      "VIP Level: 4",
+      6,
+      215.0
+    ],
+    [
+      "Weekend - Bonus",
+      4,
+      3000.0
+    ],
+    [
+      "VIP Level: 5",
+      3,
+      75.0
+    ],
+    [
+      "Welcome Back Bonus",
+      2,
+      1500.0
+    ],
+    [
+      "VIP Level: 6",
+      2,
+      600.0
+    ],
+    [
+      "VIP Level: 1",
+      2,
+      20.0
+    ],
+    [
+      "VIP Level: 8",
+      1,
+      600.0
+    ],
+    [
+      "VIP Level: 7",
+      1,
+      300.0
+    ],
+    [
+      "Loss back Bonus",
+      1,
+      432.0
+    ],
+    [
+      "ICE Fishing - Bonus",
+      1,
+      600.0
+    ],
+    [
+      "Hold & Win - Bonus",
+      1,
+      2000.0
+    ]
+  ],
+  "status": "success"
+}
