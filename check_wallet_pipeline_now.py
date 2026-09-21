@@ -91,7 +91,13 @@ def main():
     subprocess.run(["git", "add", "debug/wallet_pipeline_now.json"], check=True)
     commit = subprocess.run(["git", "commit", "-m", "debug: fresh wallet pipeline state check"])
     if commit.returncode == 0:
-        subprocess.run(["git", "push"], check=True)
+        for attempt in range(5):
+            push = subprocess.run(["git", "push"])
+            if push.returncode == 0:
+                break
+            subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=True)
+        else:
+            raise RuntimeError("git push failed after 5 rebase retries")
     print(json.dumps(result, indent=2, default=str))
 
     if result.get("status") != "success":
