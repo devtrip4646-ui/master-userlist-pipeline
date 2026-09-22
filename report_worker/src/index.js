@@ -947,6 +947,15 @@ if (IS_ACTION_CENTER) {
     const nul = data.new_users_lossback;
     const fdr = data.fd_retention_report;
 
+    const recoveryBonusCols = [
+      { label: 'User ID', render: r => r.user_id, raw: r => r.user_id },
+      { label: 'Agent', render: r => r.agent || 'Un-Assigned', raw: r => r.agent || 'Un-Assigned' },
+      { label: 'Total Deposit', render: r => money(r.total_deposit), raw: r => r.total_deposit, num: true },
+      { label: 'Wallet Balance', render: r => money(r.wallet_balance), raw: r => r.wallet_balance, num: true },
+      { label: 'Bonus Amount', render: r => money(r.bonus_amount), raw: r => r.bonus_amount, num: true },
+    ];
+    const rcb = data.recovery_bonus;
+
     document.getElementById('action-center-app').innerHTML = \`
       \${acx ? \`
       <div class="analysis-heading deposit"><h2>FTD</h2><div class="line"></div><span class="tag">ACTION CENTER</span></div>
@@ -1071,6 +1080,22 @@ if (IS_ACTION_CENTER) {
       </section>
       \` : ''}
 
+      \${rcb ? \`
+      <section class="acc-orange">
+        <div class="section-head">
+          <div class="sec-title"><div class="badge b-orange">&#128176;</div><h2>Recovery Bonus</h2><span class="today-tag">\${fmt(rcb.eligible_count)}</span></div>
+          <button class="download-btn-sm" id="btn-dl-recovery-bonus">&#128190; Excel</button>
+        </div>
+        <div class="reactivation-highlight">
+          <div class="rh-count">\${fmt(rcb.eligible_count)}<small>Eligible Users</small></div>
+          <div class="rh-pct">\${money(rcb.total_bonus)}<small>Total Bonus Payable</small></div>
+        </div>
+        <div class="ac-note">Yesterday's (\${shortDate(rcb.date)}) first-time depositors who claimed New Users Lossback and now have wallet balance under Rs 10 &middot; reward tiered by lifetime total deposit: &le;500: Rs 50 &middot; 501-1,500: Rs 100 &middot; above 1,500: Rs 200 &middot; report only, credit manually</div>
+        <div id="recovery-bonus-table"></div>
+        <div class="ac-pagination" id="recovery-bonus-pagination"></div>
+      </section>
+      \` : ''}
+
       \${fdr ? \`
       <section class="acc-orange">
         <div class="section-head">
@@ -1104,6 +1129,12 @@ if (IS_ACTION_CENTER) {
       paginatedTable('new-users-lossback-table', 'new-users-lossback-pagination', nul.rows, newUsersLossbackCols, 6, { jumpDropdown: true });
       document.getElementById('btn-dl-new-users-lossback').addEventListener('click', () =>
         downloadExcel(nul.rows, newUsersLossbackCols, 'New Users Lossback', 'new-users-lossback-' + nul.date + '.xlsx'));
+    }
+
+    if (rcb) {
+      paginatedTable('recovery-bonus-table', 'recovery-bonus-pagination', rcb.rows, recoveryBonusCols, 6, { jumpDropdown: true });
+      document.getElementById('btn-dl-recovery-bonus').addEventListener('click', () =>
+        downloadExcel(rcb.rows, recoveryBonusCols, 'Recovery Bonus', 'recovery-bonus-' + rcb.date + '.xlsx'));
     }
 
     paginatedTable('near-low-table', 'near-low-pagination', ac.near_upgrade_low.rows, nearCols, 6, { jumpDropdown: true });

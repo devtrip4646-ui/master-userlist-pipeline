@@ -3123,6 +3123,67 @@ def new_user_lossback_reward_pct(balance_pct):
     return None
 
 
+RECOVERY_BONUS_LOW_BALANCE_MAX = 10.0
+RECOVERY_BONUS_TIERS = [(500.0, 50.0), (1500.0, 100.0), (float("inf"), 200.0)]
+
+
+def recovery_bonus_amount(total_deposit):
+    for max_deposit, amount in RECOVERY_BONUS_TIERS:
+        if total_deposit <= max_deposit:
+            return amount
+    return RECOVERY_BONUS_TIERS[-1][1]
+
+
+def recovery_bonus(mconn, deposit_rows, lossback_recipients, agent_by_user, yesterday):
+    """New, report-only (agent-credited, not auto-paid -- confirmed with the
+    user 2026-09-22, same manual-credit pattern as New Users Lossback/Weekly
+    Loss Bonus) nightly section: users who were a first-time depositor
+    YESTERDAY (same is_first_deposit flag/definition as new_users_lossback,
+    confirmed with the user to reuse that exact population rather than
+    account-signup date) AND have a "New Users Lossback" bonus row at any
+    time (not date-restricted, since that credit can lag past midnight),
+    but whose CURRENT wallet balance has since dropped below an ABSOLUTE
+    10 (not a percentage, unlike New Users Lossback's own balance_pct).
+    Reward is tiered off LIFETIME total_recharge, not just yesterday's
+    deposit: <=500 -> 50, 501-1500 -> 100, >1500 -> 200 (a $0-total user
+    still gets the 50 tier)."""
+    yesterday_first_deposit_users = set()
+    for pay_channel, order_amount, create_time, update_time, status, user_id, is_first_deposit in deposit_rows:
+        if status != "COMPLETE" or user_id is None or is_first_deposit != 1:
+            continue
+        dt = parse_dt(create_time)
+        if dt and dt.date() == yesterday:
+            yesterday_first_deposit_users.add(user_id)
+
+    candidates = yesterday_first_deposit_users & lossback_recipients
+    rows = []
+    if candidates:
+        placeholders = ",".join("?" * len(candidates))
+        for user_id, total_recharge, user_balance in mconn.execute(
+            f"SELECT user_id, total_recharge, user_balance FROM users WHERE user_id IN ({placeholders})",
+            list(candidates),
+        ).fetchall():
+            balance = round(user_balance or 0.0, 2)
+            if balance >= RECOVERY_BONUS_LOW_BALANCE_MAX:
+                continue
+            total_deposit = round(total_recharge or 0.0, 2)
+            rows.append({
+                "user_id": user_id,
+                "agent": agent_for(agent_by_user, user_id),
+                "total_deposit": total_deposit,
+                "wallet_balance": balance,
+                "bonus_amount": recovery_bonus_amount(total_deposit),
+            })
+    rows.sort(key=lambda r: -r["bonus_amount"])
+
+    return {
+        "date": yesterday.isoformat(),
+        "eligible_count": len(rows),
+        "total_bonus": round(sum(r["bonus_amount"] for r in rows), 2),
+        "rows": rows,
+    }
+
+
 def new_users_lossback(mconn, deposit_rows, withdrawal_rows, agent_by_user, today):
     """Second Action Center section under Weekly Cashback Shield: TODAY's
     first-time depositors (source system's own is_first_deposit flag, same
@@ -3653,6 +3714,11 @@ def main():
     ).fetchall()
     channel_performance = channel_performance_report(conn, now.date())
     recent_activity = build_recent_activity_by_user(conn, now.date())
+    new_users_lossback_recipients = {
+        uid for (uid,) in cur.execute(
+            "SELECT DISTINCT user_id FROM bonuses WHERE matched_category = 'New Users Lossback' AND user_id IS NOT NULL"
+        ).fetchall()
+    }
     conn.close()
 
     by_date_bet_users = defaultdict(set)
@@ -3669,6 +3735,7 @@ def main():
     action_center = None
     weekly_cashback = None
     new_users_lossback_report = None
+    recovery_bonus_report = None
     reactivation = None
     vip_upgrade = None
     performance = None
@@ -3689,6 +3756,9 @@ def main():
         action_center = action_center_reports(mconn, now, agent_by_user)
         weekly_cashback = weekly_cashback_shield(mconn, deposit_rows, withdrawal_rows, agent_by_user, now)
         new_users_lossback_report = new_users_lossback(mconn, deposit_rows, withdrawal_rows, agent_by_user, now.date())
+        recovery_bonus_report = recovery_bonus(
+            mconn, deposit_rows, new_users_lossback_recipients, agent_by_user, now.date() - timedelta(days=1)
+        )
         fallback_creds = load_creds()
         reactivation_candidates_path = os.path.join(BASE, "reactivation_candidates.json")
         reactivation_candidates = load_json_with_r2_fallback(
@@ -4108,6 +4178,7 @@ def main():
         "action_center_extra": action_center_extra,
         "weekly_cashback_shield": weekly_cashback,
         "new_users_lossback": new_users_lossback_report,
+        "recovery_bonus": recovery_bonus_report,
         "fd_retention_report": fd_retention_report,
         "region_vip_analytics": region_vip_analytics_data,
         "reactivation": reactivation,
