@@ -477,10 +477,24 @@ def classify_bonus(game_name, source, source_id):
         starts with some casing of "New Users Lossback" plus a per-instance
         suffix -- normalized the same way Weekly Loss Bonus is, so every
         instance rolls up into one "New Users Lossback" category instead of
-        splitting into near-duplicates."""
+        splitting into near-duplicates.
+
+    0. Either game_name or source_id starts with "Recovery Bonus" (any
+       casing) -- this pipeline's own new manually-applied reward (added
+       2026-09-22), same one-name-per-instance shape as New Users Lossback.
+       Checked FIRST, ahead of every wrapper-specific rule below, since it's
+       not yet known which wrapper label (if any -- "04Siya Import Excel
+       Add", "Elle Import Excel Add", or unwrapped) the source system will
+       actually use once agents start crediting it through the platform;
+       matching on the "Recovery Bonus" text itself regardless of wrapper
+       means every instance rolls up into one category no matter where it
+       lands."""
     game_name = str(game_name).strip() if game_name else ""
     source = str(source).strip() if source else ""
     source_id = str(source_id).strip() if source_id else ""
+
+    if source_id.lower().startswith("recovery bonus") or game_name.lower().startswith("recovery bonus"):
+        return "Recovery Bonus"
 
     if game_name == "Elle Import Excel Add":
         if source_id:
@@ -543,7 +557,7 @@ def classify_bonus(game_name, source, source_id):
 # under the new rules, then fall back to only scanning genuinely new rows.
 # Without this, a rule change would only apply to rows inserted AFTER the
 # change; existing rows that now match would silently stay unclassified.
-CLASSIFY_BONUS_RULES_VERSION = 8
+CLASSIFY_BONUS_RULES_VERSION = 9
 
 
 def stable_wallet_id(raw_id, create_time):
