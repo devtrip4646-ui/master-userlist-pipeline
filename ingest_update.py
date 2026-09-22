@@ -657,6 +657,18 @@ def ingest_wallet(files):
     )
     conn.commit()
 
+    # Retroactive cleanup: rows credited as "Recovery Bonus:<timestamp>:
+    # <random>" before classify_bonus() had its top-level rule for it
+    # (added 2026-09-22) fell through to the generic "bonus" in source_id
+    # rule and got stuck with the raw per-instance source_id as their
+    # matched_category -- same blind spot as the Weekly Loss Bonus cleanup
+    # above. Safe to run every time (a no-op once none remain split out).
+    cur.execute(
+        "UPDATE bonuses SET matched_category = 'Recovery Bonus' "
+        "WHERE matched_category LIKE 'Recovery Bonus%' AND matched_category != 'Recovery Bonus'"
+    )
+    conn.commit()
+
     # Retroactive cleanup: rows with game_name "04Siya Import Excel Add"
     # ingested before classify_bonus() had a rule for it fell through to
     # the generic "game_name and not source" rule and got stuck with the
