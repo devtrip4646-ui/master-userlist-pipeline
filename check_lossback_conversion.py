@@ -50,6 +50,23 @@ def run(result):
     claim_time_by_user = {uid: ct for uid, ct in claim_rows}
     result["total_lossback_claimers"] = len(claim_time_by_user)
 
+    # "Total New Users" is scoped to the SAME date range the lossback claims
+    # themselves span (earliest claim date, excluding today) -- otherwise
+    # this count would include first-time depositors from long before the
+    # bonuses table's ~33-day retention window even starts, making the
+    # funnel percentages meaningless against the claim population above.
+    claim_dates = [ct[:10] for ct in claim_time_by_user.values()]
+    window_start = min(claim_dates) if claim_dates else today_ist
+    result["new_user_window"] = {"start": window_start, "end_exclusive": today_ist}
+
+    new_user_rows = cur.execute(
+        "SELECT DISTINCT user_id FROM deposits "
+        "WHERE status = 'COMPLETE' AND is_first_deposit = 1 AND user_id IS NOT NULL "
+        "AND substr(create_time, 1, 10) >= ? AND substr(create_time, 1, 10) < ?",
+        (window_start, today_ist),
+    ).fetchall()
+    result["total_new_users"] = len(new_user_rows)
+
     deposit_rows = cur.execute(
         "SELECT user_id, create_time FROM deposits "
         "WHERE status = 'COMPLETE' AND user_id IS NOT NULL AND substr(create_time, 1, 10) < ?",
@@ -70,6 +87,9 @@ def run(result):
 
     result["claimed_then_deposited"] = converted
     result["conversion_pct"] = round(converted / len(claim_time_by_user) * 100, 2) if claim_time_by_user else 0.0
+    result["claim_rate_of_new_users_pct"] = (
+        round(len(claim_time_by_user) / result["total_new_users"] * 100, 2) if result["total_new_users"] else 0.0
+    )
     result["status"] = "success"
 
 
