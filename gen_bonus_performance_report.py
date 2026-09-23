@@ -52,6 +52,15 @@ def run(result):
         "WHERE matched_category IS NOT NULL AND create_time >= ?",
         (window_start,),
     ).fetchall()
+
+    total_deposits_window = dcur.execute(
+        "SELECT COALESCE(SUM(order_amount), 0), COUNT(DISTINCT user_id) FROM deposits "
+        "WHERE status = 'COMPLETE' AND create_time >= ?",
+        (window_start,),
+    ).fetchone()
+    result["total_deposits_window"] = round(total_deposits_window[0], 2)
+    result["distinct_depositors_window"] = total_deposits_window[1]
+
     dconn.close()
     result["bonus_rows_scanned"] = len(bonus_rows)
 
