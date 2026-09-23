@@ -41,23 +41,20 @@ def run(result):
     conn = sqlite3.connect(DAILY_DB)
     cur = conn.cursor()
 
+    # Fixed window per the user (2026-09-23): New Users Lossback didn't
+    # exist before 2026-09-07, so "total new users" for this funnel is
+    # 2026-09-07 through yesterday -- not derived from the claim data itself.
+    window_start = "2026-09-07"
+    result["new_user_window"] = {"start": window_start, "end_exclusive": today_ist}
+
     claim_rows = cur.execute(
         "SELECT user_id, MIN(create_time) FROM bonuses "
         "WHERE matched_category = 'New Users Lossback' AND user_id IS NOT NULL "
-        "AND substr(create_time, 1, 10) < ? GROUP BY user_id",
-        (today_ist,),
+        "AND substr(create_time, 1, 10) >= ? AND substr(create_time, 1, 10) < ? GROUP BY user_id",
+        (window_start, today_ist),
     ).fetchall()
     claim_time_by_user = {uid: ct for uid, ct in claim_rows}
     result["total_lossback_claimers"] = len(claim_time_by_user)
-
-    # "Total New Users" is scoped to the SAME date range the lossback claims
-    # themselves span (earliest claim date, excluding today) -- otherwise
-    # this count would include first-time depositors from long before the
-    # bonuses table's ~33-day retention window even starts, making the
-    # funnel percentages meaningless against the claim population above.
-    claim_dates = [ct[:10] for ct in claim_time_by_user.values()]
-    window_start = min(claim_dates) if claim_dates else today_ist
-    result["new_user_window"] = {"start": window_start, "end_exclusive": today_ist}
 
     new_user_rows = cur.execute(
         "SELECT DISTINCT user_id FROM deposits "
