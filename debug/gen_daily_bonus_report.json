@@ -3,9 +3,9 @@
     "start": "2026-09-01",
     "end_exclusive": "2026-09-26"
   },
-  "row_count": 848,
+  "row_count": 698,
   "distinct_days": 25,
-  "distinct_categories": 252,
+  "distinct_categories": 102,
   "grand_total_value": 5128793.07,
   "status": "success"
 }
