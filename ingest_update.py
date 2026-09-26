@@ -479,22 +479,30 @@ def classify_bonus(game_name, source, source_id):
         instance rolls up into one "New Users Lossback" category instead of
         splitting into near-duplicates.
 
-    0. Either game_name or source_id starts with "Recovery Bonus" (any
-       casing) -- this pipeline's own new manually-applied reward (added
-       2026-09-22), same one-name-per-instance shape as New Users Lossback.
-       Checked FIRST, ahead of every wrapper-specific rule below, since it's
-       not yet known which wrapper label (if any -- "04Siya Import Excel
-       Add", "Elle Import Excel Add", or unwrapped) the source system will
-       actually use once agents start crediting it through the platform;
-       matching on the "Recovery Bonus" text itself regardless of wrapper
-       means every instance rolls up into one category no matter where it
-       lands."""
+    0. Either game_name or source_id starts with "Recovery Bonus" or "New
+       Users Lossback" (any casing, and "loss back" as two words is also
+       accepted for the latter -- confirmed 2026-09-26 as a real spacing
+       variant in production data). Checked FIRST, ahead of every
+       wrapper-specific rule below, and regardless of which wrapper label
+       (if any -- "04Siya Import Excel Add", "Elle Import Excel Add", or
+       unwrapped directly in game_name) the source system used to credit it
+       -- confirmed with the user 2026-09-26 that it doesn't matter who
+       added it or which wrapper it arrived under, only the bonus's own
+       name should decide the category, so every instance of either bonus
+       rolls up into one category no matter where it lands."""
     game_name = str(game_name).strip() if game_name else ""
     source = str(source).strip() if source else ""
     source_id = str(source_id).strip() if source_id else ""
+    game_name_lower = game_name.lower()
+    source_id_lower = source_id.lower()
 
-    if source_id.lower().startswith("recovery bonus") or game_name.lower().startswith("recovery bonus"):
+    if source_id_lower.startswith("recovery bonus") or game_name_lower.startswith("recovery bonus"):
         return "Recovery Bonus"
+    if (
+        source_id_lower.startswith("new users lossback") or game_name_lower.startswith("new users lossback")
+        or source_id_lower.startswith("new users loss back") or game_name_lower.startswith("new users loss back")
+    ):
+        return "New Users Lossback"
 
     if game_name == "Elle Import Excel Add":
         if source_id:
@@ -666,6 +674,25 @@ def ingest_wallet(files):
     cur.execute(
         "UPDATE bonuses SET matched_category = 'Recovery Bonus' "
         "WHERE matched_category LIKE 'Recovery Bonus%' AND matched_category != 'Recovery Bonus'"
+    )
+    conn.commit()
+
+    # Retroactive cleanup: rows credited directly as "New Users Lossback:
+    # <timestamp>:<random>" (or the confirmed "New Users Loss Back" two-word
+    # spacing variant) in game_name with blank source, predating -- or
+    # simply not routed through -- the 04Siya/Elle wrapper convention, fell
+    # through to rule 1 ("game_name is a real bonus name AND source is
+    # blank") and got stuck with the raw per-instance game_name as their
+    # matched_category. Confirmed with the user 2026-09-26: it doesn't
+    # matter which wrapper (or no wrapper at all) a bonus arrives under,
+    # only its own name should decide the category. SQLite's LIKE is
+    # case-insensitive for ASCII by default, so this also catches "new
+    # users lossback"/"NEW USERS LOSS BACK" etc. Safe to run every time (a
+    # no-op once none remain split out).
+    cur.execute(
+        "UPDATE bonuses SET matched_category = 'New Users Lossback' "
+        "WHERE (matched_category LIKE 'New Users Lossback%' OR matched_category LIKE 'New Users Loss Back%') "
+        "AND matched_category != 'New Users Lossback'"
     )
     conn.commit()
 
