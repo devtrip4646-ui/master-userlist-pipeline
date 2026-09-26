@@ -182,6 +182,49 @@ document.getElementById('createAgentForm').addEventListener('submit', async (e) 
 
 <hr style="margin:40px 0;border:none;border-top:1px solid #eee;">
 
+<h1>Remove Agent</h1>
+<p>Removes an agent that has zero users currently assigned to them. If the agent still has assigned users, this will fail -- reassign those users to another agent (or Un-Assigned) from the dashboard's Search User page first, then remove them here. Historical performance data for the agent is kept, not deleted.</p>
+<form id="removeAgentForm">
+  <input type="text" id="removeAgentInput" placeholder="Agent name to remove, e.g. Priya (WFH)" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:13px;box-sizing:border-box;">
+  <button type="submit" id="removeAgentBtn" style="margin-top:10px;background:#dc2626;">Remove Agent</button>
+</form>
+<div id="removeAgentMsg" style="margin-top:10px;font-size:14px;"></div>
+
+<script>
+document.getElementById('removeAgentForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('removeAgentBtn');
+  const msg = document.getElementById('removeAgentMsg');
+  const input = document.getElementById('removeAgentInput');
+  const agent_name = input.value.trim();
+  if (!agent_name) return;
+  if (!confirm('Remove agent "' + agent_name + '"? This will fail if they still have users assigned.')) return;
+  const password = await askPassword('Enter password to remove an agent:');
+  if (password === null) return;
+  btn.disabled = true;
+  msg.textContent = 'Removing...';
+  msg.className = '';
+  try {
+    const res = await fetch('/remove-agent', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agent_name, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.status);
+    msg.textContent = '"' + agent_name + '" queued for removal -- check the GitHub Actions run if they still have assigned users, since removal is refused in that case.';
+    msg.className = 'ok';
+    input.value = '';
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.className = 'err';
+  }
+  btn.disabled = false;
+});
+</script>
+
+<hr style="margin:40px 0;border:none;border-top:1px solid #eee;">
+
 <h1>Agent Logins</h1>
 <p>Every agent currently in the agent list, with their dashboard login password (first 2 letters of their name + "0987", bumped to 3 letters for any agent whose 2-letter prefix collides with another -- or a custom password, if you've changed one). Computed fresh from the current agent list every time -- any agent (created above, or with users already assigned) shows up here automatically. Use "Change" to set a custom password for any agent; it replaces their default one.</p>
 <button id="agentLoginsBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:14px;cursor:pointer;">Show Agent Logins</button>
@@ -449,6 +492,10 @@ async function triggerCreateAgent(env, agentName) {
   return dispatchWorkflow(env, "create_agent.yml", { agent_name: agentName });
 }
 
+async function triggerRemoveAgent(env, agentName) {
+  return dispatchWorkflow(env, "remove_agent.yml", { agent_name: agentName });
+}
+
 async function triggerBanUser(env, userId) {
   return dispatchWorkflow(env, "ban_user.yml", { user_id: String(userId) });
 }
@@ -711,6 +758,28 @@ export default {
           return jsonError('"Un-Assigned" is a reserved label, not a real agent name', 400);
         }
         await triggerCreateAgent(env, agentName);
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      } catch (err) {
+        return jsonError(err.message || "Unknown error", 500);
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/remove-agent") {
+      try {
+        const { agent_name, password } = await request.json();
+        if (password !== env.ACTION_PASSWORD) {
+          return jsonError("Access Denied", 403);
+        }
+        const agentName = typeof agent_name === "string" ? agent_name.trim() : "";
+        if (!agentName) {
+          return jsonError("agent_name is required", 400);
+        }
+        if (agentName === "Un-Assigned") {
+          return jsonError('"Un-Assigned" is a reserved label, not a real agent name', 400);
+        }
+        await triggerRemoveAgent(env, agentName);
         return new Response(JSON.stringify({ ok: true }), {
           headers: { "content-type": "application/json" },
         });
