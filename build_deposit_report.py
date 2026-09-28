@@ -3431,7 +3431,7 @@ AGENT_PERF_TARGETS = {
     "High VIP Upgrade": {"type": "count", "target": 5},
     "Low Premium Active": {"type": "rate", "target": 35},
     "High Premium Active": {"type": "rate", "target": 35},
-    "FD 2-5 Days Conversion": {"type": "rate", "target": 30},
+    "FD 2-5 Days Conversion": {"type": "rate", "target": 20},
 }
 
 AGENT_PERF_RETENTION_DAYS = 35
