@@ -1,0 +1,12 @@
+{
+  "window": {
+    "start": "2026-09-01",
+    "end_exclusive": "2026-10-01"
+  },
+  "row_count": 35,
+  "distinct_days": 26,
+  "grand_total_new_users_lossback": 323687.56,
+  "grand_total_recovery_bonus": 23300.0,
+  "grand_total_combined": 346987.56,
+  "status": "success"
+}
