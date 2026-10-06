@@ -1,4 +1,2503 @@
 {
- "status": "error",
- "traceback": "Traceback (most recent call last):\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/s3transfer/download.py\", line 809, in _main\n    response = client.get_object(\n               ^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/botocore/client.py\", line 606, in _api_call\n    return self._make_api_call(operation_name, kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/botocore/context.py\", line 123, in wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/botocore/client.py\", line 1094, in _make_api_call\n    raise error_class(parsed_response, operation_name)\nbotocore.exceptions.ClientError: An error occurred (PreconditionFailed) when calling the GetObject operation: At least one of the pre-conditions you specified did not hold.\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/runner/work/master-userlist-pipeline/master-userlist-pipeline/check_october_baselines.py\", line 221, in main\n    run(result)\n  File \"/home/runner/work/master-userlist-pipeline/master-userlist-pipeline/check_october_baselines.py\", line 54, in run\n    s3.download_file(bucket, \"daily_records.db\", DAILY_DB)\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/botocore/context.py\", line 123, in wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/boto3/s3/inject.py\", line 223, in download_file\n    return transfer.download_file(\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/boto3/s3/transfer.py\", line 484, in download_file\n    future.result()\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/s3transfer/futures.py\", line 111, in result\n    return self._coordinator.result()\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/s3transfer/futures.py\", line 287, in result\n    raise self._exception\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/s3transfer/tasks.py\", line 142, in __call__\n    return self._execute_main(kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/s3transfer/tasks.py\", line 165, in _execute_main\n    return_value = self._main(**kwargs)\n                   ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/s3transfer/download.py\", line 848, in _main\n    raise S3DownloadFailedError(\ns3transfer.exceptions.S3DownloadFailedError: Contents of stored object \"daily_records.db\" in bucket \"master-userlist-db\" did not match expected ETag.\n"
+ "today_excluded": "2026-10-06",
+ "window": {
+  "first": "2026-09-04",
+  "last": "2026-10-05",
+  "days": 32
+ },
+ "daily": [
+  {
+   "date": "2026-09-04",
+   "total_deposit": 3470859.0,
+   "orders": 4035,
+   "depositors": 1716,
+   "new_users": 156,
+   "old_users": 1560,
+   "new_user_deposit": 37900.0,
+   "old_user_deposit": 3432959.0,
+   "avg_deposit_per_depositor": 2022.65,
+   "avg_deposit_old_user": 2200.61,
+   "withdrawals_completed": 2501910.0,
+   "hold_pct": 27.92,
+   "bonus_value": 52717.97,
+   "bonus_pct_of_deposit": 1.52,
+   "wd_under_4h": 978,
+   "wd_over_4h": 148
+  },
+  {
+   "date": "2026-09-05",
+   "total_deposit": 4009850.0,
+   "orders": 4596,
+   "depositors": 1799,
+   "new_users": 123,
+   "old_users": 1676,
+   "new_user_deposit": 31200.0,
+   "old_user_deposit": 3978650.0,
+   "avg_deposit_per_depositor": 2228.93,
+   "avg_deposit_old_user": 2373.9,
+   "withdrawals_completed": 2897340.0,
+   "hold_pct": 27.74,
+   "bonus_value": 116910.35,
+   "bonus_pct_of_deposit": 2.92,
+   "wd_under_4h": 1038,
+   "wd_over_4h": 295
+  },
+  {
+   "date": "2026-09-06",
+   "total_deposit": 3765700.0,
+   "orders": 4313,
+   "depositors": 1791,
+   "new_users": 126,
+   "old_users": 1665,
+   "new_user_deposit": 31000.0,
+   "old_user_deposit": 3734700.0,
+   "avg_deposit_per_depositor": 2102.57,
+   "avg_deposit_old_user": 2243.06,
+   "withdrawals_completed": 3041034.33,
+   "hold_pct": 19.24,
+   "bonus_value": 310991.06,
+   "bonus_pct_of_deposit": 8.26,
+   "wd_under_4h": 1245,
+   "wd_over_4h": 188
+  },
+  {
+   "date": "2026-09-07",
+   "total_deposit": 4026300.0,
+   "orders": 4524,
+   "depositors": 1820,
+   "new_users": 136,
+   "old_users": 1684,
+   "new_user_deposit": 39050.0,
+   "old_user_deposit": 3987250.0,
+   "avg_deposit_per_depositor": 2212.25,
+   "avg_deposit_old_user": 2367.73,
+   "withdrawals_completed": 2876730.0,
+   "hold_pct": 28.55,
+   "bonus_value": 388231.44,
+   "bonus_pct_of_deposit": 9.64,
+   "wd_under_4h": 1075,
+   "wd_over_4h": 354
+  },
+  {
+   "date": "2026-09-08",
+   "total_deposit": 4212000.0,
+   "orders": 5026,
+   "depositors": 2009,
+   "new_users": 265,
+   "old_users": 1744,
+   "new_user_deposit": 67950.0,
+   "old_user_deposit": 4144050.0,
+   "avg_deposit_per_depositor": 2096.57,
+   "avg_deposit_old_user": 2376.18,
+   "withdrawals_completed": 2923920.0,
+   "hold_pct": 30.58,
+   "bonus_value": 173382.75,
+   "bonus_pct_of_deposit": 4.12,
+   "wd_under_4h": 1105,
+   "wd_over_4h": 339
+  },
+  {
+   "date": "2026-09-09",
+   "total_deposit": 4753550.0,
+   "orders": 5254,
+   "depositors": 2226,
+   "new_users": 411,
+   "old_users": 1815,
+   "new_user_deposit": 108400.0,
+   "old_user_deposit": 4645150.0,
+   "avg_deposit_per_depositor": 2135.47,
+   "avg_deposit_old_user": 2559.31,
+   "withdrawals_completed": 3176430.0,
+   "hold_pct": 33.18,
+   "bonus_value": 176642.45,
+   "bonus_pct_of_deposit": 3.72,
+   "wd_under_4h": 1455,
+   "wd_over_4h": 173
+  },
+  {
+   "date": "2026-09-10",
+   "total_deposit": 4408650.0,
+   "orders": 5231,
+   "depositors": 2130,
+   "new_users": 306,
+   "old_users": 1824,
+   "new_user_deposit": 89900.0,
+   "old_user_deposit": 4318750.0,
+   "avg_deposit_per_depositor": 2069.79,
+   "avg_deposit_old_user": 2367.74,
+   "withdrawals_completed": 2961900.0,
+   "hold_pct": 32.82,
+   "bonus_value": 135475.04,
+   "bonus_pct_of_deposit": 3.07,
+   "wd_under_4h": 1471,
+   "wd_over_4h": 33
+  },
+  {
+   "date": "2026-09-11",
+   "total_deposit": 4087950.0,
+   "orders": 4875,
+   "depositors": 2013,
+   "new_users": 236,
+   "old_users": 1777,
+   "new_user_deposit": 61500.0,
+   "old_user_deposit": 4026450.0,
+   "avg_deposit_per_depositor": 2030.77,
+   "avg_deposit_old_user": 2265.87,
+   "withdrawals_completed": 3099830.0,
+   "hold_pct": 24.17,
+   "bonus_value": 269519.0,
+   "bonus_pct_of_deposit": 6.59,
+   "wd_under_4h": 1466,
+   "wd_over_4h": 66
+  },
+  {
+   "date": "2026-09-12",
+   "total_deposit": 4286650.0,
+   "orders": 4825,
+   "depositors": 2080,
+   "new_users": 325,
+   "old_users": 1755,
+   "new_user_deposit": 90450.0,
+   "old_user_deposit": 4196200.0,
+   "avg_deposit_per_depositor": 2060.89,
+   "avg_deposit_old_user": 2391.0,
+   "withdrawals_completed": 2970370.0,
+   "hold_pct": 30.71,
+   "bonus_value": 121375.87,
+   "bonus_pct_of_deposit": 2.83,
+   "wd_under_4h": 1388,
+   "wd_over_4h": 67
+  },
+  {
+   "date": "2026-09-13",
+   "total_deposit": 4090450.0,
+   "orders": 5099,
+   "depositors": 2259,
+   "new_users": 459,
+   "old_users": 1800,
+   "new_user_deposit": 121950.0,
+   "old_user_deposit": 3968500.0,
+   "avg_deposit_per_depositor": 1810.73,
+   "avg_deposit_old_user": 2204.72,
+   "withdrawals_completed": 2894640.0,
+   "hold_pct": 29.23,
+   "bonus_value": 332856.73,
+   "bonus_pct_of_deposit": 8.14,
+   "wd_under_4h": 1356,
+   "wd_over_4h": 109
+  },
+  {
+   "date": "2026-09-14",
+   "total_deposit": 4506900.0,
+   "orders": 5611,
+   "depositors": 2499,
+   "new_users": 635,
+   "old_users": 1864,
+   "new_user_deposit": 149900.0,
+   "old_user_deposit": 4357000.0,
+   "avg_deposit_per_depositor": 1803.48,
+   "avg_deposit_old_user": 2337.45,
+   "withdrawals_completed": 3257000.0,
+   "hold_pct": 27.73,
+   "bonus_value": 412948.85,
+   "bonus_pct_of_deposit": 9.16,
+   "wd_under_4h": 1631,
+   "wd_over_4h": 166
+  },
+  {
+   "date": "2026-09-15",
+   "total_deposit": 4720362.0,
+   "orders": 5753,
+   "depositors": 2624,
+   "new_users": 693,
+   "old_users": 1931,
+   "new_user_deposit": 167312.0,
+   "old_user_deposit": 4553050.0,
+   "avg_deposit_per_depositor": 1798.92,
+   "avg_deposit_old_user": 2357.87,
+   "withdrawals_completed": 3508730.0,
+   "hold_pct": 25.67,
+   "bonus_value": 171465.85,
+   "bonus_pct_of_deposit": 3.63,
+   "wd_under_4h": 1670,
+   "wd_over_4h": 109
+  },
+  {
+   "date": "2026-09-16",
+   "total_deposit": 4854000.0,
+   "orders": 5868,
+   "depositors": 2668,
+   "new_users": 776,
+   "old_users": 1892,
+   "new_user_deposit": 187050.0,
+   "old_user_deposit": 4666950.0,
+   "avg_deposit_per_depositor": 1819.34,
+   "avg_deposit_old_user": 2466.68,
+   "withdrawals_completed": 3547420.0,
+   "hold_pct": 26.92,
+   "bonus_value": 189327.96,
+   "bonus_pct_of_deposit": 3.9,
+   "wd_under_4h": 1627,
+   "wd_over_4h": 80
+  },
+  {
+   "date": "2026-09-17",
+   "total_deposit": 4678700.0,
+   "orders": 5582,
+   "depositors": 2592,
+   "new_users": 643,
+   "old_users": 1949,
+   "new_user_deposit": 157300.0,
+   "old_user_deposit": 4521400.0,
+   "avg_deposit_per_depositor": 1805.05,
+   "avg_deposit_old_user": 2319.86,
+   "withdrawals_completed": 3067840.0,
+   "hold_pct": 34.43,
+   "bonus_value": 152525.42,
+   "bonus_pct_of_deposit": 3.26,
+   "wd_under_4h": 1590,
+   "wd_over_4h": 112
+  },
+  {
+   "date": "2026-09-18",
+   "total_deposit": 4782200.0,
+   "orders": 5825,
+   "depositors": 2647,
+   "new_users": 673,
+   "old_users": 1974,
+   "new_user_deposit": 163500.0,
+   "old_user_deposit": 4618700.0,
+   "avg_deposit_per_depositor": 1806.65,
+   "avg_deposit_old_user": 2339.77,
+   "withdrawals_completed": 3585070.0,
+   "hold_pct": 25.03,
+   "bonus_value": 144239.82,
+   "bonus_pct_of_deposit": 3.02,
+   "wd_under_4h": 1708,
+   "wd_over_4h": 87
+  },
+  {
+   "date": "2026-09-19",
+   "total_deposit": 4595099.0,
+   "orders": 5903,
+   "depositors": 2680,
+   "new_users": 681,
+   "old_users": 1999,
+   "new_user_deposit": 172800.0,
+   "old_user_deposit": 4422299.0,
+   "avg_deposit_per_depositor": 1714.59,
+   "avg_deposit_old_user": 2212.26,
+   "withdrawals_completed": 3528280.0,
+   "hold_pct": 23.22,
+   "bonus_value": 159239.45,
+   "bonus_pct_of_deposit": 3.47,
+   "wd_under_4h": 1623,
+   "wd_over_4h": 136
+  },
+  {
+   "date": "2026-09-20",
+   "total_deposit": 4404200.0,
+   "orders": 5971,
+   "depositors": 2766,
+   "new_users": 726,
+   "old_users": 2040,
+   "new_user_deposit": 189550.0,
+   "old_user_deposit": 4214650.0,
+   "avg_deposit_per_depositor": 1592.26,
+   "avg_deposit_old_user": 2066.0,
+   "withdrawals_completed": 3671490.0,
+   "hold_pct": 16.64,
+   "bonus_value": 380049.42,
+   "bonus_pct_of_deposit": 8.63,
+   "wd_under_4h": 1881,
+   "wd_over_4h": 51
+  },
+  {
+   "date": "2026-09-21",
+   "total_deposit": 4332850.0,
+   "orders": 5152,
+   "depositors": 2292,
+   "new_users": 396,
+   "old_users": 1896,
+   "new_user_deposit": 98800.0,
+   "old_user_deposit": 4234050.0,
+   "avg_deposit_per_depositor": 1890.42,
+   "avg_deposit_old_user": 2233.15,
+   "withdrawals_completed": 3603670.0,
+   "hold_pct": 16.83,
+   "bonus_value": 456919.75,
+   "bonus_pct_of_deposit": 10.55,
+   "wd_under_4h": 1540,
+   "wd_over_4h": 185
+  },
+  {
+   "date": "2026-09-22",
+   "total_deposit": 4649500.0,
+   "orders": 5094,
+   "depositors": 2282,
+   "new_users": 364,
+   "old_users": 1918,
+   "new_user_deposit": 102050.0,
+   "old_user_deposit": 4547450.0,
+   "avg_deposit_per_depositor": 2037.47,
+   "avg_deposit_old_user": 2370.93,
+   "withdrawals_completed": 3037030.0,
+   "hold_pct": 34.68,
+   "bonus_value": 133054.77,
+   "bonus_pct_of_deposit": 2.86,
+   "wd_under_4h": 1392,
+   "wd_over_4h": 148
+  },
+  {
+   "date": "2026-09-23",
+   "total_deposit": 4361900.0,
+   "orders": 4914,
+   "depositors": 2200,
+   "new_users": 364,
+   "old_users": 1836,
+   "new_user_deposit": 91450.0,
+   "old_user_deposit": 4270450.0,
+   "avg_deposit_per_depositor": 1982.68,
+   "avg_deposit_old_user": 2325.95,
+   "withdrawals_completed": 3405333.0,
+   "hold_pct": 21.93,
+   "bonus_value": 125005.48,
+   "bonus_pct_of_deposit": 2.87,
+   "wd_under_4h": 1404,
+   "wd_over_4h": 121
+  },
+  {
+   "date": "2026-09-24",
+   "total_deposit": 4090700.0,
+   "orders": 4563,
+   "depositors": 1998,
+   "new_users": 262,
+   "old_users": 1736,
+   "new_user_deposit": 65700.0,
+   "old_user_deposit": 4025000.0,
+   "avg_deposit_per_depositor": 2047.4,
+   "avg_deposit_old_user": 2318.55,
+   "withdrawals_completed": 2907730.0,
+   "hold_pct": 28.92,
+   "bonus_value": 113454.54,
+   "bonus_pct_of_deposit": 2.77,
+   "wd_under_4h": 1243,
+   "wd_over_4h": 189
+  },
+  {
+   "date": "2026-09-25",
+   "total_deposit": 4045450.0,
+   "orders": 4744,
+   "depositors": 1905,
+   "new_users": 230,
+   "old_users": 1675,
+   "new_user_deposit": 57200.0,
+   "old_user_deposit": 3988250.0,
+   "avg_deposit_per_depositor": 2123.6,
+   "avg_deposit_old_user": 2381.04,
+   "withdrawals_completed": 3364730.0,
+   "hold_pct": 16.83,
+   "bonus_value": 112405.48,
+   "bonus_pct_of_deposit": 2.78,
+   "wd_under_4h": 1204,
+   "wd_over_4h": 257
+  },
+  {
+   "date": "2026-09-26",
+   "total_deposit": 4332550.0,
+   "orders": 4722,
+   "depositors": 1813,
+   "new_users": 140,
+   "old_users": 1673,
+   "new_user_deposit": 35300.0,
+   "old_user_deposit": 4297250.0,
+   "avg_deposit_per_depositor": 2389.71,
+   "avg_deposit_old_user": 2568.59,
+   "withdrawals_completed": 2893910.0,
+   "hold_pct": 33.21,
+   "bonus_value": 105044.03,
+   "bonus_pct_of_deposit": 2.42,
+   "wd_under_4h": 1189,
+   "wd_over_4h": 179
+  },
+  {
+   "date": "2026-09-27",
+   "total_deposit": 4016950.0,
+   "orders": 4757,
+   "depositors": 1873,
+   "new_users": 132,
+   "old_users": 1741,
+   "new_user_deposit": 35600.0,
+   "old_user_deposit": 3981350.0,
+   "avg_deposit_per_depositor": 2144.66,
+   "avg_deposit_old_user": 2286.82,
+   "withdrawals_completed": 3253830.0,
+   "hold_pct": 19.0,
+   "bonus_value": 310350.52,
+   "bonus_pct_of_deposit": 7.73,
+   "wd_under_4h": 1143,
+   "wd_over_4h": 284
+  },
+  {
+   "date": "2026-09-28",
+   "total_deposit": 4023700.0,
+   "orders": 4555,
+   "depositors": 1782,
+   "new_users": 114,
+   "old_users": 1668,
+   "new_user_deposit": 29100.0,
+   "old_user_deposit": 3994600.0,
+   "avg_deposit_per_depositor": 2257.97,
+   "avg_deposit_old_user": 2394.84,
+   "withdrawals_completed": 2753320.0,
+   "hold_pct": 31.57,
+   "bonus_value": 384876.7,
+   "bonus_pct_of_deposit": 9.57,
+   "wd_under_4h": 1017,
+   "wd_over_4h": 361
+  },
+  {
+   "date": "2026-09-29",
+   "total_deposit": 4356350.0,
+   "orders": 4490,
+   "depositors": 1742,
+   "new_users": 126,
+   "old_users": 1616,
+   "new_user_deposit": 33000.0,
+   "old_user_deposit": 4323350.0,
+   "avg_deposit_per_depositor": 2500.77,
+   "avg_deposit_old_user": 2675.34,
+   "withdrawals_completed": 3632720.0,
+   "hold_pct": 16.61,
+   "bonus_value": 134564.76,
+   "bonus_pct_of_deposit": 3.09,
+   "wd_under_4h": 1009,
+   "wd_over_4h": 410
+  },
+  {
+   "date": "2026-09-30",
+   "total_deposit": 4466600.0,
+   "orders": 4840,
+   "depositors": 1960,
+   "new_users": 290,
+   "old_users": 1670,
+   "new_user_deposit": 72600.0,
+   "old_user_deposit": 4394000.0,
+   "avg_deposit_per_depositor": 2278.88,
+   "avg_deposit_old_user": 2631.14,
+   "withdrawals_completed": 3140360.0,
+   "hold_pct": 29.69,
+   "bonus_value": 187517.3,
+   "bonus_pct_of_deposit": 4.2,
+   "wd_under_4h": 1136,
+   "wd_over_4h": 280
+  },
+  {
+   "date": "2026-10-01",
+   "total_deposit": 4838100.0,
+   "orders": 5060,
+   "depositors": 2038,
+   "new_users": 252,
+   "old_users": 1786,
+   "new_user_deposit": 77600.0,
+   "old_user_deposit": 4760500.0,
+   "avg_deposit_per_depositor": 2373.95,
+   "avg_deposit_old_user": 2665.45,
+   "withdrawals_completed": 3411960.0,
+   "hold_pct": 29.48,
+   "bonus_value": 150271.67,
+   "bonus_pct_of_deposit": 3.11,
+   "wd_under_4h": 1102,
+   "wd_over_4h": 294
+  },
+  {
+   "date": "2026-10-02",
+   "total_deposit": 4765350.0,
+   "orders": 4972,
+   "depositors": 2066,
+   "new_users": 253,
+   "old_users": 1813,
+   "new_user_deposit": 61500.0,
+   "old_user_deposit": 4703850.0,
+   "avg_deposit_per_depositor": 2306.56,
+   "avg_deposit_old_user": 2594.51,
+   "withdrawals_completed": 3601220.0,
+   "hold_pct": 24.43,
+   "bonus_value": 126438.48,
+   "bonus_pct_of_deposit": 2.65,
+   "wd_under_4h": 973,
+   "wd_over_4h": 458
+  },
+  {
+   "date": "2026-10-03",
+   "total_deposit": 4516649.0,
+   "orders": 4780,
+   "depositors": 2062,
+   "new_users": 272,
+   "old_users": 1790,
+   "new_user_deposit": 66550.0,
+   "old_user_deposit": 4450099.0,
+   "avg_deposit_per_depositor": 2190.42,
+   "avg_deposit_old_user": 2486.09,
+   "withdrawals_completed": 3870660.0,
+   "hold_pct": 14.3,
+   "bonus_value": 132077.78,
+   "bonus_pct_of_deposit": 2.92,
+   "wd_under_4h": 922,
+   "wd_over_4h": 550
+  },
+  {
+   "date": "2026-10-04",
+   "total_deposit": 4633950.0,
+   "orders": 4975,
+   "depositors": 2048,
+   "new_users": 229,
+   "old_users": 1819,
+   "new_user_deposit": 63500.0,
+   "old_user_deposit": 4570450.0,
+   "avg_deposit_per_depositor": 2262.67,
+   "avg_deposit_old_user": 2512.62,
+   "withdrawals_completed": 3926660.0,
+   "hold_pct": 15.26,
+   "bonus_value": 327458.54,
+   "bonus_pct_of_deposit": 7.07,
+   "wd_under_4h": 973,
+   "wd_over_4h": 496
+  },
+  {
+   "date": "2026-10-05",
+   "total_deposit": 4634150.0,
+   "orders": 4523,
+   "depositors": 1958,
+   "new_users": 206,
+   "old_users": 1752,
+   "new_user_deposit": 68500.0,
+   "old_user_deposit": 4565650.0,
+   "avg_deposit_per_depositor": 2366.78,
+   "avg_deposit_old_user": 2605.96,
+   "withdrawals_completed": 3201010.0,
+   "hold_pct": 30.93,
+   "bonus_value": 421322.04,
+   "bonus_pct_of_deposit": 9.09,
+   "wd_under_4h": 592,
+   "wd_over_4h": 447
+  }
+ ],
+ "d0_repeat": [
+  {
+   "date": "2026-09-04",
+   "new_users": 156,
+   "d0_repeat_users": 36
+  },
+  {
+   "date": "2026-09-05",
+   "new_users": 123,
+   "d0_repeat_users": 24
+  },
+  {
+   "date": "2026-09-06",
+   "new_users": 126,
+   "d0_repeat_users": 21
+  },
+  {
+   "date": "2026-09-07",
+   "new_users": 136,
+   "d0_repeat_users": 25
+  },
+  {
+   "date": "2026-09-08",
+   "new_users": 265,
+   "d0_repeat_users": 56
+  },
+  {
+   "date": "2026-09-09",
+   "new_users": 411,
+   "d0_repeat_users": 87
+  },
+  {
+   "date": "2026-09-10",
+   "new_users": 306,
+   "d0_repeat_users": 62
+  },
+  {
+   "date": "2026-09-11",
+   "new_users": 236,
+   "d0_repeat_users": 44
+  },
+  {
+   "date": "2026-09-12",
+   "new_users": 325,
+   "d0_repeat_users": 64
+  },
+  {
+   "date": "2026-09-13",
+   "new_users": 459,
+   "d0_repeat_users": 85
+  },
+  {
+   "date": "2026-09-14",
+   "new_users": 635,
+   "d0_repeat_users": 147
+  },
+  {
+   "date": "2026-09-15",
+   "new_users": 693,
+   "d0_repeat_users": 129
+  },
+  {
+   "date": "2026-09-16",
+   "new_users": 776,
+   "d0_repeat_users": 118
+  },
+  {
+   "date": "2026-09-17",
+   "new_users": 643,
+   "d0_repeat_users": 133
+  },
+  {
+   "date": "2026-09-18",
+   "new_users": 673,
+   "d0_repeat_users": 147
+  },
+  {
+   "date": "2026-09-19",
+   "new_users": 681,
+   "d0_repeat_users": 166
+  },
+  {
+   "date": "2026-09-20",
+   "new_users": 726,
+   "d0_repeat_users": 164
+  },
+  {
+   "date": "2026-09-21",
+   "new_users": 396,
+   "d0_repeat_users": 80
+  },
+  {
+   "date": "2026-09-22",
+   "new_users": 364,
+   "d0_repeat_users": 67
+  },
+  {
+   "date": "2026-09-23",
+   "new_users": 364,
+   "d0_repeat_users": 77
+  },
+  {
+   "date": "2026-09-24",
+   "new_users": 262,
+   "d0_repeat_users": 53
+  },
+  {
+   "date": "2026-09-25",
+   "new_users": 230,
+   "d0_repeat_users": 57
+  },
+  {
+   "date": "2026-09-26",
+   "new_users": 140,
+   "d0_repeat_users": 33
+  },
+  {
+   "date": "2026-09-27",
+   "new_users": 132,
+   "d0_repeat_users": 28
+  },
+  {
+   "date": "2026-09-28",
+   "new_users": 114,
+   "d0_repeat_users": 30
+  },
+  {
+   "date": "2026-09-29",
+   "new_users": 126,
+   "d0_repeat_users": 33
+  },
+  {
+   "date": "2026-09-30",
+   "new_users": 290,
+   "d0_repeat_users": 64
+  },
+  {
+   "date": "2026-10-01",
+   "new_users": 252,
+   "d0_repeat_users": 61
+  },
+  {
+   "date": "2026-10-02",
+   "new_users": 253,
+   "d0_repeat_users": 45
+  },
+  {
+   "date": "2026-10-03",
+   "new_users": 272,
+   "d0_repeat_users": 68
+  },
+  {
+   "date": "2026-10-04",
+   "new_users": 229,
+   "d0_repeat_users": 53
+  },
+  {
+   "date": "2026-10-05",
+   "new_users": 206,
+   "d0_repeat_users": 37
+  }
+ ],
+ "cohorts": [
+  {
+   "date": "2026-09-04",
+   "cohort": 156,
+   "exact_d1": 33,
+   "by_d1": 33,
+   "exact_d2": 22,
+   "by_d2": 43,
+   "exact_d3": 20,
+   "by_d3": 49,
+   "exact_d7": 10,
+   "by_d7": 57,
+   "exact_d15": 11,
+   "by_d15": 63
+  },
+  {
+   "date": "2026-09-05",
+   "cohort": 123,
+   "exact_d1": 25,
+   "by_d1": 25,
+   "exact_d2": 20,
+   "by_d2": 34,
+   "exact_d3": 12,
+   "by_d3": 40,
+   "exact_d7": 6,
+   "by_d7": 48,
+   "exact_d15": 3,
+   "by_d15": 51
+  },
+  {
+   "date": "2026-09-06",
+   "cohort": 126,
+   "exact_d1": 26,
+   "by_d1": 26,
+   "exact_d2": 13,
+   "by_d2": 34,
+   "exact_d3": 12,
+   "by_d3": 38,
+   "exact_d7": 7,
+   "by_d7": 43,
+   "exact_d15": 5,
+   "by_d15": 46
+  },
+  {
+   "date": "2026-09-07",
+   "cohort": 136,
+   "exact_d1": 27,
+   "by_d1": 27,
+   "exact_d2": 17,
+   "by_d2": 34,
+   "exact_d3": 12,
+   "by_d3": 37,
+   "exact_d7": 2,
+   "by_d7": 40,
+   "exact_d15": 6,
+   "by_d15": 43
+  },
+  {
+   "date": "2026-09-08",
+   "cohort": 265,
+   "exact_d1": 51,
+   "by_d1": 51,
+   "exact_d2": 28,
+   "by_d2": 69,
+   "exact_d3": 21,
+   "by_d3": 76,
+   "exact_d7": 16,
+   "by_d7": 96,
+   "exact_d15": 11,
+   "by_d15": 106
+  },
+  {
+   "date": "2026-09-09",
+   "cohort": 411,
+   "exact_d1": 73,
+   "by_d1": 73,
+   "exact_d2": 32,
+   "by_d2": 91,
+   "exact_d3": 39,
+   "by_d3": 109,
+   "exact_d7": 18,
+   "by_d7": 130,
+   "exact_d15": 9,
+   "by_d15": 144
+  },
+  {
+   "date": "2026-09-10",
+   "cohort": 306,
+   "exact_d1": 48,
+   "by_d1": 48,
+   "exact_d2": 24,
+   "by_d2": 63,
+   "exact_d3": 22,
+   "by_d3": 71,
+   "exact_d7": 10,
+   "by_d7": 88,
+   "exact_d15": 2,
+   "by_d15": 96
+  },
+  {
+   "date": "2026-09-11",
+   "cohort": 236,
+   "exact_d1": 45,
+   "by_d1": 45,
+   "exact_d2": 26,
+   "by_d2": 55,
+   "exact_d3": 20,
+   "by_d3": 58,
+   "exact_d7": 9,
+   "by_d7": 72,
+   "exact_d15": 7,
+   "by_d15": 78
+  },
+  {
+   "date": "2026-09-12",
+   "cohort": 325,
+   "exact_d1": 65,
+   "by_d1": 65,
+   "exact_d2": 37,
+   "by_d2": 81,
+   "exact_d3": 32,
+   "by_d3": 91,
+   "exact_d7": 11,
+   "by_d7": 106,
+   "exact_d15": 9,
+   "by_d15": 113
+  },
+  {
+   "date": "2026-09-13",
+   "cohort": 459,
+   "exact_d1": 90,
+   "by_d1": 90,
+   "exact_d2": 55,
+   "by_d2": 119,
+   "exact_d3": 40,
+   "by_d3": 135,
+   "exact_d7": 21,
+   "by_d7": 156,
+   "exact_d15": 5,
+   "by_d15": 166
+  },
+  {
+   "date": "2026-09-14",
+   "cohort": 635,
+   "exact_d1": 123,
+   "by_d1": 123,
+   "exact_d2": 67,
+   "by_d2": 152,
+   "exact_d3": 58,
+   "by_d3": 172,
+   "exact_d7": 29,
+   "by_d7": 198,
+   "exact_d15": 18,
+   "by_d15": 212
+  },
+  {
+   "date": "2026-09-15",
+   "cohort": 693,
+   "exact_d1": 122,
+   "by_d1": 122,
+   "exact_d2": 77,
+   "by_d2": 159,
+   "exact_d3": 63,
+   "by_d3": 179,
+   "exact_d7": 36,
+   "by_d7": 207,
+   "exact_d15": 21,
+   "by_d15": 220
+  },
+  {
+   "date": "2026-09-16",
+   "cohort": 776,
+   "exact_d1": 116,
+   "by_d1": 116,
+   "exact_d2": 87,
+   "by_d2": 157,
+   "exact_d3": 54,
+   "by_d3": 176,
+   "exact_d7": 36,
+   "by_d7": 219,
+   "exact_d15": 24,
+   "by_d15": 241
+  },
+  {
+   "date": "2026-09-17",
+   "cohort": 643,
+   "exact_d1": 118,
+   "by_d1": 118,
+   "exact_d2": 65,
+   "by_d2": 142,
+   "exact_d3": 47,
+   "by_d3": 162,
+   "exact_d7": 20,
+   "by_d7": 190,
+   "exact_d15": 18,
+   "by_d15": 208
+  },
+  {
+   "date": "2026-09-18",
+   "cohort": 673,
+   "exact_d1": 119,
+   "by_d1": 119,
+   "exact_d2": 70,
+   "by_d2": 159,
+   "exact_d3": 53,
+   "by_d3": 173,
+   "exact_d7": 26,
+   "by_d7": 209,
+   "exact_d15": 17,
+   "by_d15": 222
+  },
+  {
+   "date": "2026-09-19",
+   "cohort": 681,
+   "exact_d1": 118,
+   "by_d1": 118,
+   "exact_d2": 79,
+   "by_d2": 152,
+   "exact_d3": 54,
+   "by_d3": 167,
+   "exact_d7": 16,
+   "by_d7": 198,
+   "exact_d15": 12,
+   "by_d15": 213
+  },
+  {
+   "date": "2026-09-20",
+   "cohort": 726,
+   "exact_d1": 118,
+   "by_d1": 118,
+   "exact_d2": 61,
+   "by_d2": 139,
+   "exact_d3": 35,
+   "by_d3": 155,
+   "exact_d7": 29,
+   "by_d7": 190,
+   "exact_d15": 15,
+   "by_d15": 204
+  },
+  {
+   "date": "2026-09-21",
+   "cohort": 396,
+   "exact_d1": 69,
+   "by_d1": 69,
+   "exact_d2": 47,
+   "by_d2": 95,
+   "exact_d3": 23,
+   "by_d3": 100,
+   "exact_d7": 8,
+   "by_d7": 118,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-09-22",
+   "cohort": 364,
+   "exact_d1": 49,
+   "by_d1": 49,
+   "exact_d2": 23,
+   "by_d2": 61,
+   "exact_d3": 18,
+   "by_d3": 69,
+   "exact_d7": 12,
+   "by_d7": 94,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-09-23",
+   "cohort": 364,
+   "exact_d1": 61,
+   "by_d1": 61,
+   "exact_d2": 39,
+   "by_d2": 79,
+   "exact_d3": 34,
+   "by_d3": 94,
+   "exact_d7": 17,
+   "by_d7": 118,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-09-24",
+   "cohort": 262,
+   "exact_d1": 47,
+   "by_d1": 47,
+   "exact_d2": 33,
+   "by_d2": 65,
+   "exact_d3": 24,
+   "by_d3": 74,
+   "exact_d7": 15,
+   "by_d7": 86,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-09-25",
+   "cohort": 230,
+   "exact_d1": 41,
+   "by_d1": 41,
+   "exact_d2": 31,
+   "by_d2": 54,
+   "exact_d3": 21,
+   "by_d3": 64,
+   "exact_d7": 16,
+   "by_d7": 83,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-09-26",
+   "cohort": 140,
+   "exact_d1": 33,
+   "by_d1": 33,
+   "exact_d2": 15,
+   "by_d2": 39,
+   "exact_d3": 14,
+   "by_d3": 42,
+   "exact_d7": 11,
+   "by_d7": 53,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-09-27",
+   "cohort": 132,
+   "exact_d1": 29,
+   "by_d1": 29,
+   "exact_d2": 15,
+   "by_d2": 35,
+   "exact_d3": 15,
+   "by_d3": 40,
+   "exact_d7": 12,
+   "by_d7": 49,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-09-28",
+   "cohort": 114,
+   "exact_d1": 20,
+   "by_d1": 20,
+   "exact_d2": 19,
+   "by_d2": 31,
+   "exact_d3": 19,
+   "by_d3": 38,
+   "exact_d7": 6,
+   "by_d7": 47,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-09-29",
+   "cohort": 126,
+   "exact_d1": 20,
+   "by_d1": 20,
+   "exact_d2": 18,
+   "by_d2": 31,
+   "exact_d3": 15,
+   "by_d3": 37,
+   "exact_d7": null,
+   "by_d7": null,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-09-30",
+   "cohort": 290,
+   "exact_d1": 57,
+   "by_d1": 57,
+   "exact_d2": 43,
+   "by_d2": 80,
+   "exact_d3": 34,
+   "by_d3": 91,
+   "exact_d7": null,
+   "by_d7": null,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-10-01",
+   "cohort": 252,
+   "exact_d1": 50,
+   "by_d1": 50,
+   "exact_d2": 33,
+   "by_d2": 66,
+   "exact_d3": 30,
+   "by_d3": 79,
+   "exact_d7": null,
+   "by_d7": null,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-10-02",
+   "cohort": 253,
+   "exact_d1": 43,
+   "by_d1": 43,
+   "exact_d2": 36,
+   "by_d2": 62,
+   "exact_d3": 24,
+   "by_d3": 73,
+   "exact_d7": null,
+   "by_d7": null,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-10-03",
+   "cohort": 272,
+   "exact_d1": 58,
+   "by_d1": 58,
+   "exact_d2": 46,
+   "by_d2": 79,
+   "exact_d3": null,
+   "by_d3": null,
+   "exact_d7": null,
+   "by_d7": null,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-10-04",
+   "cohort": 229,
+   "exact_d1": 53,
+   "by_d1": 53,
+   "exact_d2": null,
+   "by_d2": null,
+   "exact_d3": null,
+   "by_d3": null,
+   "exact_d7": null,
+   "by_d7": null,
+   "exact_d15": null,
+   "by_d15": null
+  },
+  {
+   "date": "2026-10-05",
+   "cohort": 206,
+   "exact_d1": null,
+   "by_d1": null,
+   "exact_d2": null,
+   "by_d2": null,
+   "exact_d3": null,
+   "by_d3": null,
+   "exact_d7": null,
+   "by_d7": null,
+   "exact_d15": null,
+   "by_d15": null
+  }
+ ],
+ "reactivation": [
+  {
+   "date": "2026-09-18",
+   "reactivated_users": 237,
+   "old_depositors": 1974,
+   "reactivated_deposit": 185500.0
+  },
+  {
+   "date": "2026-09-19",
+   "reactivated_users": 256,
+   "old_depositors": 1999,
+   "reactivated_deposit": 167950.0
+  },
+  {
+   "date": "2026-09-20",
+   "reactivated_users": 216,
+   "old_depositors": 2040,
+   "reactivated_deposit": 147750.0
+  },
+  {
+   "date": "2026-09-21",
+   "reactivated_users": 167,
+   "old_depositors": 1896,
+   "reactivated_deposit": 85800.0
+  },
+  {
+   "date": "2026-09-22",
+   "reactivated_users": 182,
+   "old_depositors": 1918,
+   "reactivated_deposit": 145200.0
+  },
+  {
+   "date": "2026-09-23",
+   "reactivated_users": 180,
+   "old_depositors": 1836,
+   "reactivated_deposit": 142000.0
+  },
+  {
+   "date": "2026-09-24",
+   "reactivated_users": 151,
+   "old_depositors": 1736,
+   "reactivated_deposit": 98600.0
+  },
+  {
+   "date": "2026-09-25",
+   "reactivated_users": 131,
+   "old_depositors": 1675,
+   "reactivated_deposit": 190100.0
+  },
+  {
+   "date": "2026-09-26",
+   "reactivated_users": 149,
+   "old_depositors": 1673,
+   "reactivated_deposit": 163350.0
+  },
+  {
+   "date": "2026-09-27",
+   "reactivated_users": 162,
+   "old_depositors": 1741,
+   "reactivated_deposit": 159950.0
+  },
+  {
+   "date": "2026-09-28",
+   "reactivated_users": 142,
+   "old_depositors": 1668,
+   "reactivated_deposit": 137500.0
+  },
+  {
+   "date": "2026-09-29",
+   "reactivated_users": 134,
+   "old_depositors": 1616,
+   "reactivated_deposit": 111900.0
+  },
+  {
+   "date": "2026-09-30",
+   "reactivated_users": 181,
+   "old_depositors": 1670,
+   "reactivated_deposit": 181550.0
+  },
+  {
+   "date": "2026-10-01",
+   "reactivated_users": 190,
+   "old_depositors": 1786,
+   "reactivated_deposit": 158500.0
+  },
+  {
+   "date": "2026-10-02",
+   "reactivated_users": 181,
+   "old_depositors": 1813,
+   "reactivated_deposit": 137050.0
+  },
+  {
+   "date": "2026-10-03",
+   "reactivated_users": 178,
+   "old_depositors": 1790,
+   "reactivated_deposit": 158899.0
+  },
+  {
+   "date": "2026-10-04",
+   "reactivated_users": 181,
+   "old_depositors": 1819,
+   "reactivated_deposit": 142250.0
+  },
+  {
+   "date": "2026-10-05",
+   "reactivated_users": 165,
+   "old_depositors": 1752,
+   "reactivated_deposit": 172650.0
+  }
+ ],
+ "agent_performance": {
+  "FD 2-5 Days Conversion": {
+   "days": 28,
+   "num_total_28d": 942.0,
+   "den_total_28d": 27350.0,
+   "num_total_last14": 466.0,
+   "den_total_last14": 12432.0,
+   "daily": [
+    {
+     "date": "2026-09-08",
+     "numerator": 16.0,
+     "denominator": 409.0
+    },
+    {
+     "date": "2026-09-09",
+     "numerator": 15.0,
+     "denominator": 379.0
+    },
+    {
+     "date": "2026-09-10",
+     "numerator": 22.0,
+     "denominator": 461.0
+    },
+    {
+     "date": "2026-09-11",
+     "numerator": 26.0,
+     "denominator": 693.0
+    },
+    {
+     "date": "2026-09-12",
+     "numerator": 42.0,
+     "denominator": 844.0
+    },
+    {
+     "date": "2026-09-13",
+     "numerator": 27.0,
+     "denominator": 880.0
+    },
+    {
+     "date": "2026-09-14",
+     "numerator": 24.0,
+     "denominator": 921.0
+    },
+    {
+     "date": "2026-09-15",
+     "numerator": 43.0,
+     "denominator": 941.0
+    },
+    {
+     "date": "2026-09-16",
+     "numerator": 49.0,
+     "denominator": 1182.0
+    },
+    {
+     "date": "2026-09-17",
+     "numerator": 56.0,
+     "denominator": 1527.0
+    },
+    {
+     "date": "2026-09-18",
+     "numerator": 63.0,
+     "denominator": 1895.0
+    },
+    {
+     "date": "2026-09-19",
+     "numerator": 0,
+     "denominator": 2042.0
+    },
+    {
+     "date": "2026-09-20",
+     "numerator": 20.0,
+     "denominator": 422.0
+    },
+    {
+     "date": "2026-09-21",
+     "numerator": 73.0,
+     "denominator": 2322.0
+    },
+    {
+     "date": "2026-09-22",
+     "numerator": 53.0,
+     "denominator": 1898.0
+    },
+    {
+     "date": "2026-09-23",
+     "numerator": 55.0,
+     "denominator": 1710.0
+    },
+    {
+     "date": "2026-09-24",
+     "numerator": 28.0,
+     "denominator": 1539.0
+    },
+    {
+     "date": "2026-09-25",
+     "numerator": 39.0,
+     "denominator": 1298.0
+    },
+    {
+     "date": "2026-09-26",
+     "numerator": 30.0,
+     "denominator": 944.0
+    },
+    {
+     "date": "2026-09-27",
+     "numerator": 37.0,
+     "denominator": 862.0
+    },
+    {
+     "date": "2026-09-28",
+     "numerator": 19.0,
+     "denominator": 671.0
+    },
+    {
+     "date": "2026-09-29",
+     "numerator": 18.0,
+     "denominator": 505.0
+    },
+    {
+     "date": "2026-09-30",
+     "numerator": 21.0,
+     "denominator": 399.0
+    },
+    {
+     "date": "2026-10-01",
+     "numerator": 18.0,
+     "denominator": 328.0
+    },
+    {
+     "date": "2026-10-02",
+     "numerator": 34.0,
+     "denominator": 440.0
+    },
+    {
+     "date": "2026-10-03",
+     "numerator": 29.0,
+     "denominator": 517.0
+    },
+    {
+     "date": "2026-10-04",
+     "numerator": 41.0,
+     "denominator": 620.0
+    },
+    {
+     "date": "2026-10-05",
+     "numerator": 44.0,
+     "denominator": 701.0
+    }
+   ]
+  },
+  "High Premium Active": {
+   "days": 28,
+   "num_total_28d": 18707.0,
+   "den_total_28d": 56149.0,
+   "num_total_last14": 9934.0,
+   "den_total_last14": 30354.0,
+   "daily": [
+    {
+     "date": "2026-09-08",
+     "numerator": 774.0,
+     "denominator": 2040.0
+    },
+    {
+     "date": "2026-09-09",
+     "numerator": 774.0,
+     "denominator": 2051.0
+    },
+    {
+     "date": "2026-09-10",
+     "numerator": 713.0,
+     "denominator": 2054.0
+    },
+    {
+     "date": "2026-09-11",
+     "numerator": 729.0,
+     "denominator": 2053.0
+    },
+    {
+     "date": "2026-09-12",
+     "numerator": 742.0,
+     "denominator": 2055.0
+    },
+    {
+     "date": "2026-09-13",
+     "numerator": 728.0,
+     "denominator": 2060.0
+    },
+    {
+     "date": "2026-09-14",
+     "numerator": 722.0,
+     "denominator": 2058.0
+    },
+    {
+     "date": "2026-09-15",
+     "numerator": 714.0,
+     "denominator": 2060.0
+    },
+    {
+     "date": "2026-09-16",
+     "numerator": 649.0,
+     "denominator": 2036.0
+    },
+    {
+     "date": "2026-09-17",
+     "numerator": 656.0,
+     "denominator": 2048.0
+    },
+    {
+     "date": "2026-09-18",
+     "numerator": 618.0,
+     "denominator": 2052.0
+    },
+    {
+     "date": "2026-09-19",
+     "numerator": 0,
+     "denominator": 299.0
+    },
+    {
+     "date": "2026-09-20",
+     "numerator": 128.0,
+     "denominator": 359.0
+    },
+    {
+     "date": "2026-09-21",
+     "numerator": 826.0,
+     "denominator": 2570.0
+    },
+    {
+     "date": "2026-09-22",
+     "numerator": 716.0,
+     "denominator": 2183.0
+    },
+    {
+     "date": "2026-09-23",
+     "numerator": 702.0,
+     "denominator": 2175.0
+    },
+    {
+     "date": "2026-09-24",
+     "numerator": 719.0,
+     "denominator": 2160.0
+    },
+    {
+     "date": "2026-09-25",
+     "numerator": 708.0,
+     "denominator": 2176.0
+    },
+    {
+     "date": "2026-09-26",
+     "numerator": 663.0,
+     "denominator": 2186.0
+    },
+    {
+     "date": "2026-09-27",
+     "numerator": 740.0,
+     "denominator": 2179.0
+    },
+    {
+     "date": "2026-09-28",
+     "numerator": 662.0,
+     "denominator": 2180.0
+    },
+    {
+     "date": "2026-09-29",
+     "numerator": 719.0,
+     "denominator": 2168.0
+    },
+    {
+     "date": "2026-09-30",
+     "numerator": 720.0,
+     "denominator": 2158.0
+    },
+    {
+     "date": "2026-10-01",
+     "numerator": 689.0,
+     "denominator": 2161.0
+    },
+    {
+     "date": "2026-10-02",
+     "numerator": 724.0,
+     "denominator": 2158.0
+    },
+    {
+     "date": "2026-10-03",
+     "numerator": 754.0,
+     "denominator": 2152.0
+    },
+    {
+     "date": "2026-10-04",
+     "numerator": 676.0,
+     "denominator": 2159.0
+    },
+    {
+     "date": "2026-10-05",
+     "numerator": 742.0,
+     "denominator": 2159.0
+    }
+   ]
+  },
+  "High VIP Upgrade": {
+   "days": 28,
+   "num_total_28d": 122.0,
+   "den_total_28d": 1970.0,
+   "num_total_last14": 64.0,
+   "den_total_last14": 980.0,
+   "daily": [
+    {
+     "date": "2026-09-08",
+     "numerator": 7.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-09",
+     "numerator": 6.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-10",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-11",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-12",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-13",
+     "numerator": 4.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-14",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-15",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-16",
+     "numerator": 2.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-17",
+     "numerator": 4.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-18",
+     "numerator": 3.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-19",
+     "numerator": 3.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-20",
+     "numerator": 0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-21",
+     "numerator": 4.0,
+     "denominator": 80.0
+    },
+    {
+     "date": "2026-09-22",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-23",
+     "numerator": 2.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-24",
+     "numerator": 2.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-25",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-26",
+     "numerator": 6.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-27",
+     "numerator": 1.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-28",
+     "numerator": 7.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-29",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-30",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-01",
+     "numerator": 6.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-02",
+     "numerator": 5.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-03",
+     "numerator": 8.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-04",
+     "numerator": 2.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-05",
+     "numerator": 5.0,
+     "denominator": 70.0
+    }
+   ]
+  },
+  "Low Premium Active": {
+   "days": 28,
+   "num_total_28d": 20033.0,
+   "den_total_28d": 161197.0,
+   "num_total_last14": 10373.0,
+   "den_total_last14": 89048.0,
+   "daily": [
+    {
+     "date": "2026-09-08",
+     "numerator": 797.0,
+     "denominator": 5489.0
+    },
+    {
+     "date": "2026-09-09",
+     "numerator": 830.0,
+     "denominator": 5464.0
+    },
+    {
+     "date": "2026-09-10",
+     "numerator": 724.0,
+     "denominator": 5446.0
+    },
+    {
+     "date": "2026-09-11",
+     "numerator": 775.0,
+     "denominator": 5471.0
+    },
+    {
+     "date": "2026-09-12",
+     "numerator": 784.0,
+     "denominator": 5519.0
+    },
+    {
+     "date": "2026-09-13",
+     "numerator": 824.0,
+     "denominator": 5567.0
+    },
+    {
+     "date": "2026-09-14",
+     "numerator": 838.0,
+     "denominator": 5638.0
+    },
+    {
+     "date": "2026-09-15",
+     "numerator": 844.0,
+     "denominator": 5696.0
+    },
+    {
+     "date": "2026-09-16",
+     "numerator": 719.0,
+     "denominator": 5688.0
+    },
+    {
+     "date": "2026-09-17",
+     "numerator": 742.0,
+     "denominator": 5768.0
+    },
+    {
+     "date": "2026-09-18",
+     "numerator": 736.0,
+     "denominator": 5819.0
+    },
+    {
+     "date": "2026-09-19",
+     "numerator": 0,
+     "denominator": 1625.0
+    },
+    {
+     "date": "2026-09-20",
+     "numerator": 203.0,
+     "denominator": 1171.0
+    },
+    {
+     "date": "2026-09-21",
+     "numerator": 844.0,
+     "denominator": 7788.0
+    },
+    {
+     "date": "2026-09-22",
+     "numerator": 819.0,
+     "denominator": 6581.0
+    },
+    {
+     "date": "2026-09-23",
+     "numerator": 794.0,
+     "denominator": 6554.0
+    },
+    {
+     "date": "2026-09-24",
+     "numerator": 778.0,
+     "denominator": 6548.0
+    },
+    {
+     "date": "2026-09-25",
+     "numerator": 737.0,
+     "denominator": 6541.0
+    },
+    {
+     "date": "2026-09-26",
+     "numerator": 619.0,
+     "denominator": 6540.0
+    },
+    {
+     "date": "2026-09-27",
+     "numerator": 774.0,
+     "denominator": 6526.0
+    },
+    {
+     "date": "2026-09-28",
+     "numerator": 662.0,
+     "denominator": 6507.0
+    },
+    {
+     "date": "2026-09-29",
+     "numerator": 729.0,
+     "denominator": 6424.0
+    },
+    {
+     "date": "2026-09-30",
+     "numerator": 736.0,
+     "denominator": 6293.0
+    },
+    {
+     "date": "2026-10-01",
+     "numerator": 693.0,
+     "denominator": 6203.0
+    },
+    {
+     "date": "2026-10-02",
+     "numerator": 828.0,
+     "denominator": 6170.0
+    },
+    {
+     "date": "2026-10-03",
+     "numerator": 783.0,
+     "denominator": 6083.0
+    },
+    {
+     "date": "2026-10-04",
+     "numerator": 671.0,
+     "denominator": 6061.0
+    },
+    {
+     "date": "2026-10-05",
+     "numerator": 750.0,
+     "denominator": 6017.0
+    }
+   ]
+  },
+  "Low VIP Upgrade": {
+   "days": 28,
+   "num_total_28d": 396.0,
+   "den_total_28d": 3940.0,
+   "num_total_last14": 206.0,
+   "den_total_last14": 1960.0,
+   "daily": [
+    {
+     "date": "2026-09-08",
+     "numerator": 23.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-09",
+     "numerator": 12.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-10",
+     "numerator": 10.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-11",
+     "numerator": 16.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-12",
+     "numerator": 15.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-13",
+     "numerator": 18.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-14",
+     "numerator": 12.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-15",
+     "numerator": 21.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-16",
+     "numerator": 12.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-17",
+     "numerator": 6.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-18",
+     "numerator": 16.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-19",
+     "numerator": 16.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-20",
+     "numerator": 0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-21",
+     "numerator": 13.0,
+     "denominator": 160.0
+    },
+    {
+     "date": "2026-09-22",
+     "numerator": 17.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-23",
+     "numerator": 19.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-24",
+     "numerator": 8.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-25",
+     "numerator": 10.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-26",
+     "numerator": 7.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-27",
+     "numerator": 15.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-28",
+     "numerator": 23.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-29",
+     "numerator": 15.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-09-30",
+     "numerator": 12.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-10-01",
+     "numerator": 10.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-10-02",
+     "numerator": 14.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-10-03",
+     "numerator": 27.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-10-04",
+     "numerator": 9.0,
+     "denominator": 140.0
+    },
+    {
+     "date": "2026-10-05",
+     "numerator": 20.0,
+     "denominator": 140.0
+    }
+   ]
+  },
+  "Reactivation High": {
+   "days": 28,
+   "num_total_28d": 348.0,
+   "den_total_28d": 1970.0,
+   "num_total_last14": 196.0,
+   "den_total_last14": 980.0,
+   "daily": [
+    {
+     "date": "2026-09-08",
+     "numerator": 17.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-09",
+     "numerator": 15.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-10",
+     "numerator": 14.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-11",
+     "numerator": 12.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-12",
+     "numerator": 12.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-13",
+     "numerator": 13.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-14",
+     "numerator": 11.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-15",
+     "numerator": 17.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-16",
+     "numerator": 2.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-17",
+     "numerator": 25.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-18",
+     "numerator": 8.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-19",
+     "numerator": 0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-20",
+     "numerator": 0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-21",
+     "numerator": 6.0,
+     "denominator": 80.0
+    },
+    {
+     "date": "2026-09-22",
+     "numerator": 14.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-23",
+     "numerator": 14.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-24",
+     "numerator": 10.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-25",
+     "numerator": 18.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-26",
+     "numerator": 16.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-27",
+     "numerator": 11.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-28",
+     "numerator": 7.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-29",
+     "numerator": 14.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-09-30",
+     "numerator": 16.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-01",
+     "numerator": 14.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-02",
+     "numerator": 12.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-03",
+     "numerator": 20.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-04",
+     "numerator": 16.0,
+     "denominator": 70.0
+    },
+    {
+     "date": "2026-10-05",
+     "numerator": 14.0,
+     "denominator": 70.0
+    }
+   ]
+  },
+  "Reactivation Low": {
+   "days": 28,
+   "num_total_28d": 2147.0,
+   "den_total_28d": 9850.0,
+   "num_total_last14": 1078.0,
+   "den_total_last14": 4900.0,
+   "daily": [
+    {
+     "date": "2026-09-08",
+     "numerator": 107.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-09",
+     "numerator": 115.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-10",
+     "numerator": 53.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-11",
+     "numerator": 78.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-12",
+     "numerator": 92.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-13",
+     "numerator": 88.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-14",
+     "numerator": 97.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-15",
+     "numerator": 89.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-16",
+     "numerator": 61.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-17",
+     "numerator": 121.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-18",
+     "numerator": 71.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-19",
+     "numerator": 18.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-20",
+     "numerator": 0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-21",
+     "numerator": 79.0,
+     "denominator": 400.0
+    },
+    {
+     "date": "2026-09-22",
+     "numerator": 78.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-23",
+     "numerator": 84.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-24",
+     "numerator": 80.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-25",
+     "numerator": 57.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-26",
+     "numerator": 74.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-27",
+     "numerator": 74.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-28",
+     "numerator": 67.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-29",
+     "numerator": 74.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-09-30",
+     "numerator": 81.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-10-01",
+     "numerator": 75.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-10-02",
+     "numerator": 95.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-10-03",
+     "numerator": 75.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-10-04",
+     "numerator": 74.0,
+     "denominator": 350.0
+    },
+    {
+     "date": "2026-10-05",
+     "numerator": 90.0,
+     "denominator": 350.0
+    }
+   ]
+  },
+  "Retention": {
+   "days": 28,
+   "num_total_28d": 1574.0,
+   "den_total_28d": 9488.0,
+   "num_total_last14": 550.0,
+   "den_total_last14": 3075.0,
+   "daily": [
+    {
+     "date": "2026-09-08",
+     "numerator": 27.0,
+     "denominator": 134.0
+    },
+    {
+     "date": "2026-09-09",
+     "numerator": 50.0,
+     "denominator": 257.0
+    },
+    {
+     "date": "2026-09-10",
+     "numerator": 69.0,
+     "denominator": 404.0
+    },
+    {
+     "date": "2026-09-11",
+     "numerator": 47.0,
+     "denominator": 300.0
+    },
+    {
+     "date": "2026-09-12",
+     "numerator": 39.0,
+     "denominator": 215.0
+    },
+    {
+     "date": "2026-09-13",
+     "numerator": 62.0,
+     "denominator": 301.0
+    },
+    {
+     "date": "2026-09-14",
+     "numerator": 79.0,
+     "denominator": 407.0
+    },
+    {
+     "date": "2026-09-15",
+     "numerator": 123.0,
+     "denominator": 627.0
+    },
+    {
+     "date": "2026-09-16",
+     "numerator": 107.0,
+     "denominator": 674.0
+    },
+    {
+     "date": "2026-09-17",
+     "numerator": 103.0,
+     "denominator": 753.0
+    },
+    {
+     "date": "2026-09-18",
+     "numerator": 105.0,
+     "denominator": 618.0
+    },
+    {
+     "date": "2026-09-19",
+     "numerator": 0,
+     "denominator": 475.0
+    },
+    {
+     "date": "2026-09-20",
+     "numerator": 106.0,
+     "denominator": 551.0
+    },
+    {
+     "date": "2026-09-21",
+     "numerator": 107.0,
+     "denominator": 697.0
+    },
+    {
+     "date": "2026-09-22",
+     "numerator": 46.0,
+     "denominator": 310.0
+    },
+    {
+     "date": "2026-09-23",
+     "numerator": 43.0,
+     "denominator": 317.0
+    },
+    {
+     "date": "2026-09-24",
+     "numerator": 57.0,
+     "denominator": 328.0
+    },
+    {
+     "date": "2026-09-25",
+     "numerator": 43.0,
+     "denominator": 240.0
+    },
+    {
+     "date": "2026-09-26",
+     "numerator": 33.0,
+     "denominator": 219.0
+    },
+    {
+     "date": "2026-09-27",
+     "numerator": 28.0,
+     "denominator": 124.0
+    },
+    {
+     "date": "2026-09-28",
+     "numerator": 23.0,
+     "denominator": 113.0
+    },
+    {
+     "date": "2026-09-29",
+     "numerator": 18.0,
+     "denominator": 98.0
+    },
+    {
+     "date": "2026-09-30",
+     "numerator": 19.0,
+     "denominator": 119.0
+    },
+    {
+     "date": "2026-10-01",
+     "numerator": 50.0,
+     "denominator": 269.0
+    },
+    {
+     "date": "2026-10-02",
+     "numerator": 48.0,
+     "denominator": 231.0
+    },
+    {
+     "date": "2026-10-03",
+     "numerator": 41.0,
+     "denominator": 233.0
+    },
+    {
+     "date": "2026-10-04",
+     "numerator": 49.0,
+     "denominator": 257.0
+    },
+    {
+     "date": "2026-10-05",
+     "numerator": 52.0,
+     "denominator": 217.0
+    }
+   ]
+  }
+ },
+ "status": "success"
 }
