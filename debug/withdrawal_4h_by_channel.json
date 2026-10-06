@@ -1,0 +1,250 @@
+{
+  "dates": [
+    "2026-09-30",
+    "2026-10-01",
+    "2026-10-02",
+    "2026-10-03",
+    "2026-10-04",
+    "2026-10-05",
+    "2026-10-06"
+  ],
+  "completed_rows_scanned": 8357,
+  "daily": [
+    {
+      "date": "2026-09-30",
+      "within_4h": 1136,
+      "more_than_4h": 280
+    },
+    {
+      "date": "2026-10-01",
+      "within_4h": 1102,
+      "more_than_4h": 294
+    },
+    {
+      "date": "2026-10-02",
+      "within_4h": 973,
+      "more_than_4h": 458
+    },
+    {
+      "date": "2026-10-03",
+      "within_4h": 922,
+      "more_than_4h": 550
+    },
+    {
+      "date": "2026-10-04",
+      "within_4h": 973,
+      "more_than_4h": 496
+    },
+    {
+      "date": "2026-10-05",
+      "within_4h": 592,
+      "more_than_4h": 433
+    },
+    {
+      "date": "2026-10-06",
+      "within_4h": 115,
+      "more_than_4h": 33
+    }
+  ],
+  "channels": [
+    {
+      "channel": "coinsPay PaymentCenter",
+      "completed": 4209,
+      "over_4h": 1740,
+      "pct_over_4h": 41.3,
+      "avg_hours": 4.42,
+      "median_hours": 2.46,
+      "max_hours": 43.52,
+      "by_day_pct_over_4h": {
+        "2026-09-30": 28.1,
+        "2026-10-01": 25.4,
+        "2026-10-02": 59.3,
+        "2026-10-03": 65.9,
+        "2026-10-04": 40.3,
+        "2026-10-05": 42.5,
+        "2026-10-06": null
+      }
+    },
+    {
+      "channel": "VVPay Paycenter",
+      "completed": 1176,
+      "over_4h": 253,
+      "pct_over_4h": 21.5,
+      "avg_hours": 4.65,
+      "median_hours": 0.29,
+      "max_hours": 64.36,
+      "by_day_pct_over_4h": {
+        "2026-09-30": 4.2,
+        "2026-10-01": 24.6,
+        "2026-10-02": 9.4,
+        "2026-10-03": 44.7,
+        "2026-10-04": 48.8,
+        "2026-10-05": 1.3,
+        "2026-10-06": null
+      }
+    },
+    {
+      "channel": "funPay PaymentCenter",
+      "completed": 1519,
+      "over_4h": 227,
+      "pct_over_4h": 14.9,
+      "avg_hours": 2.05,
+      "median_hours": 1.07,
+      "max_hours": 44.93,
+      "by_day_pct_over_4h": {
+        "2026-09-30": 2.4,
+        "2026-10-01": 13.7,
+        "2026-10-02": 15.2,
+        "2026-10-03": 27.1,
+        "2026-10-04": 14.1,
+        "2026-10-05": 0.0,
+        "2026-10-06": 41.6
+      }
+    },
+    {
+      "channel": "donePay",
+      "completed": 719,
+      "over_4h": 168,
+      "pct_over_4h": 23.4,
+      "avg_hours": 2.37,
+      "median_hours": 0.47,
+      "max_hours": 35.05,
+      "by_day_pct_over_4h": {
+        "2026-09-30": 3.8,
+        "2026-10-01": 0.0,
+        "2026-10-02": 17.9,
+        "2026-10-03": 13.2,
+        "2026-10-04": 100.0,
+        "2026-10-05": 62.5,
+        "2026-10-06": 0.0
+      }
+    },
+    {
+      "channel": "allpay Paycenter",
+      "completed": 347,
+      "over_4h": 115,
+      "pct_over_4h": 33.1,
+      "avg_hours": 5.01,
+      "median_hours": 1.9,
+      "max_hours": 49.32,
+      "by_day_pct_over_4h": {
+        "2026-09-30": 5.0,
+        "2026-10-01": 83.3,
+        "2026-10-02": 9.1,
+        "2026-10-03": 35.0,
+        "2026-10-04": 49.3,
+        "2026-10-05": 67.3,
+        "2026-10-06": 0.0
+      }
+    },
+    {
+      "channel": "betixPay-india PaymentCenter",
+      "completed": 229,
+      "over_4h": 39,
+      "pct_over_4h": 17.0,
+      "avg_hours": 3.32,
+      "median_hours": 0.89,
+      "max_hours": 25.19,
+      "by_day_pct_over_4h": {
+        "2026-09-30": null,
+        "2026-10-01": null,
+        "2026-10-02": null,
+        "2026-10-03": 15.9,
+        "2026-10-04": null,
+        "2026-10-05": 44.4,
+        "2026-10-06": null
+      }
+    },
+    {
+      "channel": "pgPay PaymentCenter",
+      "completed": 65,
+      "over_4h": 1,
+      "pct_over_4h": 1.5,
+      "avg_hours": 1.29,
+      "median_hours": 1.19,
+      "max_hours": 4.4,
+      "by_day_pct_over_4h": {
+        "2026-09-30": 0.0,
+        "2026-10-01": 0.0,
+        "2026-10-02": 0.0,
+        "2026-10-03": 4.5,
+        "2026-10-04": 0.0,
+        "2026-10-05": 0.0,
+        "2026-10-06": null
+      }
+    },
+    {
+      "channel": "boPay PaymentCenter",
+      "completed": 18,
+      "over_4h": 1,
+      "pct_over_4h": 5.6,
+      "avg_hours": 1.96,
+      "median_hours": 1.94,
+      "max_hours": 4.26,
+      "by_day_pct_over_4h": {
+        "2026-09-30": null,
+        "2026-10-01": null,
+        "2026-10-02": null,
+        "2026-10-03": null,
+        "2026-10-04": null,
+        "2026-10-05": 0.0,
+        "2026-10-06": 6.7
+      }
+    },
+    {
+      "channel": "koshPay PaymentCenter",
+      "completed": 69,
+      "over_4h": 0,
+      "pct_over_4h": 0.0,
+      "avg_hours": 0.9,
+      "median_hours": 0.91,
+      "max_hours": 2.54,
+      "by_day_pct_over_4h": {
+        "2026-09-30": 0.0,
+        "2026-10-01": 0.0,
+        "2026-10-02": 0.0,
+        "2026-10-03": 0.0,
+        "2026-10-04": 0.0,
+        "2026-10-05": 0.0,
+        "2026-10-06": null
+      }
+    },
+    {
+      "channel": "mcPay PaymentCenter",
+      "completed": 1,
+      "over_4h": 0,
+      "pct_over_4h": 0.0,
+      "avg_hours": 1.06,
+      "median_hours": 1.06,
+      "max_hours": 1.06,
+      "by_day_pct_over_4h": {
+        "2026-09-30": null,
+        "2026-10-01": 0.0,
+        "2026-10-02": null,
+        "2026-10-03": null,
+        "2026-10-04": null,
+        "2026-10-05": null,
+        "2026-10-06": null
+      }
+    },
+    {
+      "channel": "waasPay PaymentCenter",
+      "completed": 5,
+      "over_4h": 0,
+      "pct_over_4h": 0.0,
+      "avg_hours": 0.0,
+      "median_hours": 0.0,
+      "max_hours": 0.01,
+      "by_day_pct_over_4h": {
+        "2026-09-30": null,
+        "2026-10-01": 0.0,
+        "2026-10-02": 0.0,
+        "2026-10-03": null,
+        "2026-10-04": null,
+        "2026-10-05": null,
+        "2026-10-06": null
+      }
+    }
+  ],
+  "status": "success"
+}
