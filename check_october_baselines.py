@@ -12,6 +12,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import time
 import traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -35,6 +36,19 @@ def r2_client():
     )
 
 
+def download_with_retry(s3, bucket, key, dest, attempts=5):
+    # The hourly pipeline re-uploads these DBs; a download that overlaps an
+    # upload fails with an ETag mismatch, so just try again.
+    for i in range(attempts):
+        try:
+            s3.download_file(bucket, key, dest)
+            return
+        except Exception:
+            if i == attempts - 1:
+                raise
+            time.sleep(20)
+
+
 def parse_dt(s):
     if not s:
         return None
@@ -51,8 +65,8 @@ def d(s):
 def run(result):
     bucket = os.environ["R2_BUCKET"]
     s3 = r2_client()
-    s3.download_file(bucket, "daily_records.db", DAILY_DB)
-    s3.download_file(bucket, "master_userlist.db", MASTER_DB)
+    download_with_retry(s3, bucket, "daily_records.db", DAILY_DB)
+    download_with_retry(s3, bucket, "master_userlist.db", MASTER_DB)
 
     today = (datetime.utcnow() + timedelta(hours=5, minutes=30)).date()
     today_s = today.isoformat()
