@@ -7,7 +7,13 @@ password keeps working under the new name). Unlike reassign_agent.py
 renames the AGENT ENTITY itself -- every user stays with the same agent,
 just under the corrected name.
 
-Usage: python3 rename_agent.py --from "Preethy (WFH)" --to "Aarthy (WFH)"
+Also renames the agent_roster entry (so the old name doesn't linger in the
+agent list), and refuses if the new name already exists. With
+--reset-password the old name's custom login password override is dropped
+instead of carried forward, so the agent gets the default password derived
+from their NEW name.
+
+Usage: python3 rename_agent.py --from "Preethy (WFH)" --to "Aarthy (WFH)" [--reset-password]
 """
 import argparse
 import json
@@ -35,9 +41,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--from", dest="from_name", required=True, help="Exact current agent_name")
     ap.add_argument("--to", dest="to_name", required=True, help="Exact new agent_name")
+    ap.add_argument("--reset-password", action="store_true",
+                    help="Drop the old name's custom password override instead of carrying it to the new name")
     args = ap.parse_args()
 
-    from_name, to_name = args.from_name, args.to_name
+    from_name, to_name = args.from_name.strip(), args.to_name.strip()
     if from_name == to_name:
         print("FATAL: --from and --to are identical, nothing to do", file=sys.stderr)
         sys.exit(1)
@@ -54,11 +62,23 @@ def main():
     conn = sqlite3.connect(MASTER_DB)
     cur = conn.cursor()
 
+    cur.execute("CREATE TABLE IF NOT EXISTS agent_roster (agent_name TEXT PRIMARY KEY, created_at TEXT)")
     assignment_count = cur.execute(
         "SELECT COUNT(*) FROM agent_assignments WHERE agent_name = ?", (from_name,)
     ).fetchone()[0]
-    if assignment_count == 0:
-        print(f"FATAL: no agent_assignments rows found for {from_name!r} -- nothing to rename", file=sys.stderr)
+    roster_row = cur.execute(
+        "SELECT created_at FROM agent_roster WHERE agent_name = ?", (from_name,)
+    ).fetchone()
+    if assignment_count == 0 and roster_row is None:
+        print(f"FATAL: {from_name!r} has no agent_assignments rows and isn't in the roster -- nothing to rename", file=sys.stderr)
+        sys.exit(1)
+
+    # Refuse to merge into an agent that already exists -- a rename should
+    # never silently fold two agents' users together.
+    to_assigned = cur.execute("SELECT COUNT(*) FROM agent_assignments WHERE agent_name = ?", (to_name,)).fetchone()[0]
+    to_in_roster = cur.execute("SELECT 1 FROM agent_roster WHERE agent_name = ?", (to_name,)).fetchone()
+    if to_assigned or to_in_roster:
+        print(f"FATAL: {to_name!r} already exists as an agent -- refusing to rename onto it", file=sys.stderr)
         sys.exit(1)
 
     # Guard against a PK collision: agent_performance's primary key is
@@ -84,6 +104,10 @@ def main():
 
     cur.execute("UPDATE agent_assignments SET agent_name = ? WHERE agent_name = ?", (to_name, from_name))
     reassigned = cur.rowcount
+
+    if roster_row is not None:
+        cur.execute("INSERT INTO agent_roster (agent_name, created_at) VALUES (?, ?)", (to_name, roster_row[0]))
+        cur.execute("DELETE FROM agent_roster WHERE agent_name = ?", (from_name,))
 
     perf_updated = 0
     try:
@@ -113,7 +137,18 @@ def main():
     except Exception:
         overrides = {}
 
-    if from_name in overrides:
+    if args.reset_password:
+        dropped = [n for n in (from_name, to_name) if n in overrides]
+        for n in dropped:
+            del overrides[n]
+        if dropped:
+            s3.put_object(
+                Bucket=bucket, Key="config/agent_password_overrides.json",
+                Body=json.dumps(overrides).encode("utf-8"), ContentType="application/json",
+            )
+        print(f"Password reset: dropped override(s) for {dropped or 'none (none existed)'} -- "
+              f"{to_name!r} now uses the default password derived from the new name")
+    elif from_name in overrides:
         overrides[to_name] = overrides.pop(from_name)
         s3.put_object(
             Bucket=bucket, Key="config/agent_password_overrides.json",
