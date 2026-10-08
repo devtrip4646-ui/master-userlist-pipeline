@@ -59,7 +59,7 @@ def run(result):
     m = sqlite3.connect(MASTER_DB)
     all_rows = m.execute(
         "SELECT user_id, substr(create_time,1,10), register_channel, is_test_account, channel, city, "
-        "recharge_count, total_recharge, total_withdrawal FROM users "
+        "recharge_count, total_recharge, total_withdrawal, register_source FROM users "
         "WHERE substr(create_time,1,10) >= ? AND substr(create_time,1,10) < ?",
         (START, today),
     ).fetchall()
@@ -68,11 +68,17 @@ def run(result):
     result["register_channel_counts"] = Counter(str(r[2]) for r in all_rows).most_common(30)
     result["is_test_account_counts"] = Counter(str(r[3]) for r in all_rows).most_common(10)
 
+    result["register_source_counts_all"] = Counter(str(r[9]) for r in all_rows).most_common(40)
+    result["registerchannel_x_channel_x_source_all"] = Counter(
+        (str(r[2]), str(r[4]), str(r[9])) for r in all_rows
+    ).most_common(120)
+
     promo = [r for r in all_rows if str(r[2]).strip().lower() == "promotion"]
     result["promotion_users_all_incl_test"] = len(promo)
     real = [r for r in promo if not r[3]]  # is_test_account NULL / 0
     result["promotion_users_non_test"] = len(real)
     result["channel_counts_promotion_non_test"] = Counter(str(r[4]) for r in real).most_common(60)
+    result["source_counts_promotion_non_test"] = Counter(str(r[9]) for r in real).most_common(40)
     result["city_counts_promotion_non_test"] = Counter(str(r[5]) for r in real).most_common(250)
 
     ids = {r[0] for r in real}
@@ -96,10 +102,10 @@ def run(result):
 
     result["users"] = [
         {
-            "id": uid, "reg": reg, "ch": ch, "city": city, "rc": rc, "tr": tr, "tw": tw,
+            "id": uid, "reg": reg, "ch": ch, "src": src, "city": city, "rc": rc, "tr": tr, "tw": tw,
             "dep": sorted(dep_dates.get(uid, [])), "wd": sorted(wd_dates.get(uid, [])),
         }
-        for uid, reg, _regch, _test, ch, city, rc, tr, tw in real
+        for uid, reg, _regch, _test, ch, city, rc, tr, tw, src in real
     ]
     result["status"] = "success"
 
@@ -130,7 +136,7 @@ def main():
             subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=True)
         else:
             raise RuntimeError("git push failed after 5 rebase retries")
-    print({k: v for k, v in result.items() if k not in ("users", "city_counts_promotion_non_test")})
+    print({k: v for k, v in result.items() if k not in ("users", "city_counts_promotion_non_test", "registerchannel_x_channel_x_source_all")})
 
     if result.get("status") != "success":
         raise SystemExit(1)
