@@ -440,6 +440,34 @@ def _normalize_weekly_loss_bonus(source_id):
     return None
 
 
+# Bonuses identified purely by their own NAME, regardless of which wrapper
+# label (04Siya/Elle Import Excel Add, or none) or which field (game_name or
+# source_id) the source system put it in -- confirmed with the user: it
+# doesn't matter who added them or how, anything starting with these names
+# rolls up into the one category. (lowercase prefix, category) -- add a line
+# here for any new bonus that should merge this way; classify_bonus() and the
+# retroactive merge in ingest_wallet() both read this list.
+NAME_PREFIX_BONUSES = (
+    ("recovery bonus", "Recovery Bonus"),
+    ("new users lossback", "New Users Lossback"),
+    ("new users loss back", "New Users Lossback"),
+    ("instant loss bonus", "Instant Loss Bonus"),
+)
+
+
+def merge_name_prefix_bonuses(cur):
+    """Retroactively merge already-stored bonuses rows whose matched_category
+    is still a raw per-instance label (e.g. "Instant Loss Bonus:<timestamp>:
+    <random>", stored that way before a rule existed) into the one category.
+    SQLite's LIKE is case-insensitive for ASCII, so casing variants are
+    caught too. Safe to run every time (a no-op once merged)."""
+    for prefix, category in NAME_PREFIX_BONUSES:
+        cur.execute(
+            "UPDATE bonuses SET matched_category = ? WHERE matched_category LIKE ? AND matched_category != ?",
+            (category, prefix + "%", category),
+        )
+
+
 def classify_bonus(game_name, source, source_id):
     """A wallet_transactions row is a bonus credit under any of five rules,
     all confirmed against real data:
@@ -479,10 +507,10 @@ def classify_bonus(game_name, source, source_id):
         instance rolls up into one "New Users Lossback" category instead of
         splitting into near-duplicates.
 
-    0. Either game_name or source_id starts with "Recovery Bonus" or "New
-       Users Lossback" (any casing, and "loss back" as two words is also
-       accepted for the latter -- confirmed 2026-09-26 as a real spacing
-       variant in production data). Checked FIRST, ahead of every
+    0. Either game_name or source_id starts with one of the names in
+       NAME_PREFIX_BONUSES -- "Recovery Bonus", "New Users Lossback" (also
+       "loss back" as two words, a confirmed real spacing variant), "Instant
+       Loss Bonus" -- any casing. Checked FIRST, ahead of every
        wrapper-specific rule below, and regardless of which wrapper label
        (if any -- "04Siya Import Excel Add", "Elle Import Excel Add", or
        unwrapped directly in game_name) the source system used to credit it
@@ -496,13 +524,9 @@ def classify_bonus(game_name, source, source_id):
     game_name_lower = game_name.lower()
     source_id_lower = source_id.lower()
 
-    if source_id_lower.startswith("recovery bonus") or game_name_lower.startswith("recovery bonus"):
-        return "Recovery Bonus"
-    if (
-        source_id_lower.startswith("new users lossback") or game_name_lower.startswith("new users lossback")
-        or source_id_lower.startswith("new users loss back") or game_name_lower.startswith("new users loss back")
-    ):
-        return "New Users Lossback"
+    for prefix, category in NAME_PREFIX_BONUSES:
+        if source_id_lower.startswith(prefix) or game_name_lower.startswith(prefix):
+            return category
 
     if game_name == "Elle Import Excel Add":
         if source_id:
@@ -565,7 +589,7 @@ def classify_bonus(game_name, source, source_id):
 # under the new rules, then fall back to only scanning genuinely new rows.
 # Without this, a rule change would only apply to rows inserted AFTER the
 # change; existing rows that now match would silently stay unclassified.
-CLASSIFY_BONUS_RULES_VERSION = 9
+CLASSIFY_BONUS_RULES_VERSION = 10
 
 
 def stable_wallet_id(raw_id, create_time):
@@ -665,35 +689,13 @@ def ingest_wallet(files):
     )
     conn.commit()
 
-    # Retroactive cleanup: rows credited as "Recovery Bonus:<timestamp>:
-    # <random>" before classify_bonus() had its top-level rule for it
-    # (added 2026-09-22) fell through to the generic "bonus" in source_id
-    # rule and got stuck with the raw per-instance source_id as their
-    # matched_category -- same blind spot as the Weekly Loss Bonus cleanup
-    # above. Safe to run every time (a no-op once none remain split out).
-    cur.execute(
-        "UPDATE bonuses SET matched_category = 'Recovery Bonus' "
-        "WHERE matched_category LIKE 'Recovery Bonus%' AND matched_category != 'Recovery Bonus'"
-    )
-    conn.commit()
-
-    # Retroactive cleanup: rows credited directly as "New Users Lossback:
-    # <timestamp>:<random>" (or the confirmed "New Users Loss Back" two-word
-    # spacing variant) in game_name with blank source, predating -- or
-    # simply not routed through -- the 04Siya/Elle wrapper convention, fell
-    # through to rule 1 ("game_name is a real bonus name AND source is
-    # blank") and got stuck with the raw per-instance game_name as their
-    # matched_category. Confirmed with the user 2026-09-26: it doesn't
-    # matter which wrapper (or no wrapper at all) a bonus arrives under,
-    # only its own name should decide the category. SQLite's LIKE is
-    # case-insensitive for ASCII by default, so this also catches "new
-    # users lossback"/"NEW USERS LOSS BACK" etc. Safe to run every time (a
-    # no-op once none remain split out).
-    cur.execute(
-        "UPDATE bonuses SET matched_category = 'New Users Lossback' "
-        "WHERE (matched_category LIKE 'New Users Lossback%' OR matched_category LIKE 'New Users Loss Back%') "
-        "AND matched_category != 'New Users Lossback'"
-    )
+    # Retroactive cleanup for every bonus identified by name alone (Recovery
+    # Bonus, New Users Lossback incl. the "loss back" variant, Instant Loss
+    # Bonus): rows stored before a rule existed fell through to the generic
+    # "bonus" in source_id / game_name rule and kept the raw per-instance
+    # label as their matched_category, which the backfill scan below never
+    # revisits (it only looks at rows with no bonuses entry at all).
+    merge_name_prefix_bonuses(cur)
     conn.commit()
 
     # Retroactive cleanup: rows with game_name "04Siya Import Excel Add"
