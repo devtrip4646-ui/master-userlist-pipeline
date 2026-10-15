@@ -452,6 +452,7 @@ NAME_PREFIX_BONUSES = (
     ("new users lossback", "New Users Lossback"),
     ("new users loss back", "New Users Lossback"),
     ("instant loss bonus", "Instant Loss Bonus"),
+    ("diwali daily loss bonus", "Diwali Daily Loss Bonus"),
 )
 
 
@@ -510,7 +511,7 @@ def classify_bonus(game_name, source, source_id):
     0. Either game_name or source_id starts with one of the names in
        NAME_PREFIX_BONUSES -- "Recovery Bonus", "New Users Lossback" (also
        "loss back" as two words, a confirmed real spacing variant), "Instant
-       Loss Bonus" -- any casing. Checked FIRST, ahead of every
+       Loss Bonus", "Diwali Daily Loss Bonus" -- any casing. Checked FIRST, ahead of every
        wrapper-specific rule below, and regardless of which wrapper label
        (if any -- "04Siya Import Excel Add", "Elle Import Excel Add", or
        unwrapped directly in game_name) the source system used to credit it
@@ -589,7 +590,7 @@ def classify_bonus(game_name, source, source_id):
 # under the new rules, then fall back to only scanning genuinely new rows.
 # Without this, a rule change would only apply to rows inserted AFTER the
 # change; existing rows that now match would silently stay unclassified.
-CLASSIFY_BONUS_RULES_VERSION = 10
+CLASSIFY_BONUS_RULES_VERSION = 11
 
 
 def stable_wallet_id(raw_id, create_time):
