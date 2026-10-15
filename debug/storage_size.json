@@ -1,0 +1,128 @@
+{
+ "bucket": "master-userlist-db",
+ "object_count": 154,
+ "total_bytes": 11475224330,
+ "total_gb": 11.475,
+ "by_prefix": [
+  {
+   "prefix": "(root)",
+   "objects": 2,
+   "bytes": 10216464384,
+   "mb": 10216.5
+  },
+  {
+   "prefix": "reports/",
+   "objects": 80,
+   "bytes": 586301400,
+   "mb": 586.3
+  },
+  {
+   "prefix": "incoming/",
+   "objects": 29,
+   "bytes": 481199011,
+   "mb": 481.2
+  },
+  {
+   "prefix": "user_search/",
+   "objects": 40,
+   "bytes": 191259209,
+   "mb": 191.3
+  },
+  {
+   "prefix": "config/",
+   "objects": 3,
+   "bytes": 326,
+   "mb": 0.0
+  }
+ ],
+ "largest_objects": [
+  {
+   "key": "daily_records.db",
+   "mb": 9677.5,
+   "last_modified": "2026-10-15T08:12:42.947000+00:00"
+  },
+  {
+   "key": "master_userlist.db",
+   "mb": 539.0,
+   "last_modified": "2026-10-15T08:30:20.717000+00:00"
+  },
+  {
+   "key": "incoming/wallet/1789901038879_detail_20260919_manual.xlsx",
+   "mb": 192.3,
+   "last_modified": "2026-09-20T10:44:08.674000+00:00"
+  },
+  {
+   "key": "reports/user_category_status/total.json",
+   "mb": 116.6,
+   "last_modified": "2026-10-15T08:29:51.965000+00:00"
+  },
+  {
+   "key": "incoming/userlist/1789891574301_lotteryUserInfo_1789891055733.xlsx",
+   "mb": 91.5,
+   "last_modified": "2026-09-20T08:06:26.063000+00:00"
+  },
+  {
+   "key": "reports/user_category_status/row__low-engage.json",
+   "mb": 89.7,
+   "last_modified": "2026-10-15T08:29:26.514000+00:00"
+  },
+  {
+   "key": "incoming/wallet/1789888663518_detail_1789888607844.xlsx",
+   "mb": 83.5,
+   "last_modified": "2026-09-20T07:18:07.094000+00:00"
+  },
+  {
+   "key": "reports/user_category_status/col__dormant-chutiya.json",
+   "mb": 70.7,
+   "last_modified": "2026-10-15T08:29:41.556000+00:00"
+  },
+  {
+   "key": "reports/user_category_status/low-engage__dormant-chutiya.json",
+   "mb": 70.7,
+   "last_modified": "2026-10-15T08:29:17.293000+00:00"
+  },
+  {
+   "key": "incoming/wallet/1789881861185_detail_1789881467140.xlsx",
+   "mb": 66.1,
+   "last_modified": "2026-09-20T05:24:25.930000+00:00"
+  },
+  {
+   "key": "reports/platform_analysis.json",
+   "mb": 50.8,
+   "last_modified": "2026-10-15T08:30:38.648000+00:00"
+  },
+  {
+   "key": "reports/deposit_report.json",
+   "mb": 45.0,
+   "last_modified": "2026-10-15T08:30:31.390000+00:00"
+  },
+  {
+   "key": "incoming/userlist/1789891588008_lotteryUserInfo_1789891186616.xlsx",
+   "mb": 44.8,
+   "last_modified": "2026-09-20T08:06:33.329000+00:00"
+  },
+  {
+   "key": "reports/user_category_status/col__churn.json",
+   "mb": 26.4,
+   "last_modified": "2026-10-15T08:29:34.549000+00:00"
+  },
+  {
+   "key": "reports/user_category_status/low-engage__churn.json",
+   "mb": 13.8,
+   "last_modified": "2026-10-15T08:29:11.604000+00:00"
+  }
+ ],
+ "databases": [
+  {
+   "key": "daily_records.db",
+   "mb": 9677.5,
+   "last_modified": "2026-10-15T08:12:42.947000+00:00"
+  },
+  {
+   "key": "master_userlist.db",
+   "mb": 539.0,
+   "last_modified": "2026-10-15T08:30:20.717000+00:00"
+  }
+ ],
+ "status": "success"
+}
