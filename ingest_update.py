@@ -453,6 +453,7 @@ NAME_PREFIX_BONUSES = (
     ("new users loss back", "New Users Lossback"),
     ("instant loss bonus", "Instant Loss Bonus"),
     ("diwali daily loss bonus", "Diwali Daily Loss Bonus"),
+    ("diwaly daily loss bonus", "Diwali Daily Loss Bonus"),  # misspelling seen in the source data
 )
 
 
@@ -590,7 +591,7 @@ def classify_bonus(game_name, source, source_id):
 # under the new rules, then fall back to only scanning genuinely new rows.
 # Without this, a rule change would only apply to rows inserted AFTER the
 # change; existing rows that now match would silently stay unclassified.
-CLASSIFY_BONUS_RULES_VERSION = 11
+CLASSIFY_BONUS_RULES_VERSION = 12
 
 
 def stable_wallet_id(raw_id, create_time):
